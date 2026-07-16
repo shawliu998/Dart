@@ -1,0 +1,343 @@
+{
+  "schema_version": "2.0.0",
+  "fixture_id": "smart-park-2026-mvp-v2",
+  "time_anchor": "2026-07-16T08:00:00+08:00",
+  "evaluation_date": "2026-07-30",
+  "project": {
+    "name": "智慧园区综合管理平台采购项目",
+    "buyer_name": "某市产业园区管理委员会",
+    "project_code": "2026-ZHYY-001",
+    "budget_amount": "5900000.00",
+    "maximum_price": "5850000.00",
+    "currency": "CNY",
+    "deadline": "2026-07-30T17:00:00+08:00",
+    "amended_deadline": "2026-08-06T17:00:00+08:00",
+    "deadline_offset_days": 14,
+    "amended_deadline_offset_days": 21,
+    "tenant_name": "上海智园数字科技有限公司"
+  },
+  "requirements": [
+    {"code":"REQ-001","category":"qualification","title":"营业执照","mandatory":true,"disqualification_if_failed":false,"source":{"file":"招标文件.pdf","page":3,"clause":"3.1"},"expected_status":"satisfied","confidence":0.98},
+    {"code":"REQ-002","category":"submission","title":"逾期送达无效","mandatory":true,"disqualification_if_failed":true,"source":{"file":"招标文件.pdf","page":2,"clause":"2.3"},"expected_status":"manual_review","confidence":0.96},
+    {"code":"REQ-003","category":"signature","title":"投标文件签字盖章","mandatory":true,"disqualification_if_failed":true,"source":{"file":"招标文件.pdf","page":2,"clause":"2.4"},"expected_status":"not_satisfied","confidence":0.97},
+    {"code":"REQ-004","category":"pricing","title":"报价不得超过最高限价","mandatory":true,"disqualification_if_failed":true,"source":{"file":"招标文件.pdf","page":2,"clause":"2.5"},"expected_status":"satisfied","confidence":0.99},
+    {"code":"REQ-005","category":"qualification","title":"ISO 9001 证书","mandatory":true,"disqualification_if_failed":false,"source":{"file":"招标文件.pdf","page":3,"clause":"3.2"},"expected_status":"not_satisfied","confidence":0.94},
+    {"code":"REQ-006","category":"security","title":"ISO 27001 证书","mandatory":true,"disqualification_if_failed":false,"source":{"file":"招标文件.pdf","page":3,"clause":"3.3"},"expected_status":"satisfied","confidence":0.95},
+    {"code":"REQ-007","category":"qualification","title":"近三年同类案例不少于 2 个","mandatory":true,"disqualification_if_failed":false,"source":{"file":"招标文件.pdf","page":3,"clause":"3.4"},"expected_status":"partially_satisfied","confidence":0.92},
+    {"code":"REQ-008","category":"qualification","title":"案例需有验收证明","mandatory":true,"disqualification_if_failed":false,"source":{"file":"招标文件.pdf","page":3,"clause":"3.5"},"expected_status":"missing_evidence","confidence":0.91},
+    {"code":"REQ-009","category":"technical","title":"项目负责人经验不少于 5 年","mandatory":true,"disqualification_if_failed":false,"source":{"file":"招标文件.pdf","page":4,"clause":"4.1"},"expected_status":"not_satisfied","confidence":0.93},
+    {"code":"REQ-010","category":"delivery","title":"合同后 90 日内交付","mandatory":true,"disqualification_if_failed":false,"source":{"file":"招标文件.pdf","page":4,"clause":"4.2"},"expected_status":"satisfied","confidence":0.90},
+    {"code":"REQ-011","category":"service","title":"质保期不少于 3 年","mandatory":true,"disqualification_if_failed":false,"source":{"file":"招标文件.pdf","page":4,"clause":"4.3"},"expected_status":"satisfied","confidence":0.91},
+    {"code":"REQ-012","category":"technical","title":"并发用户数不少于 5000","mandatory":true,"disqualification_if_failed":false,"source":{"file":"技术需求附件.docx","page":1,"clause":"1.1"},"expected_status":"satisfied","confidence":0.88},
+    {"code":"REQ-013","category":"technical","title":"视频接入不少于 1000 路","mandatory":true,"disqualification_if_failed":false,"source":{"file":"技术需求附件.docx","page":1,"clause":"1.2"},"expected_status":"manual_review","confidence":0.67},
+    {"code":"REQ-014","category":"security","title":"日志留存不少于 180 天","mandatory":true,"disqualification_if_failed":false,"source":{"file":"技术需求附件.docx","page":1,"clause":"1.3"},"expected_status":"satisfied","confidence":0.86},
+    {"code":"REQ-015","category":"security","title":"支持国密算法","mandatory":true,"disqualification_if_failed":false,"source":{"file":"技术需求附件.docx","page":1,"clause":"1.4"},"expected_status":"missing_evidence","confidence":0.84},
+    {"code":"REQ-016","category":"commercial","title":"投标有效期 90 日","mandatory":true,"disqualification_if_failed":false,"source":{"file":"招标文件.pdf","page":4,"clause":"4.4"},"expected_status":"satisfied","confidence":0.93},
+    {"code":"REQ-017","category":"pricing","title":"税率统一为 6%","mandatory":true,"disqualification_if_failed":false,"source":{"file":"招标文件.pdf","page":4,"clause":"4.5"},"expected_status":"satisfied","confidence":0.92},
+    {"code":"REQ-018","category":"format","title":"投标文件必须为 PDF","mandatory":true,"disqualification_if_failed":false,"source":{"file":"招标文件.pdf","page":5,"clause":"5.1"},"expected_status":"partially_satisfied","confidence":0.94},
+    {"code":"REQ-019","category":"format","title":"单个文件不超过 100MB","mandatory":true,"disqualification_if_failed":false,"source":{"file":"招标文件.pdf","page":5,"clause":"5.2"},"expected_status":"satisfied","confidence":0.95},
+    {"code":"REQ-020","category":"submission","title":"提交授权委托书","mandatory":true,"disqualification_if_failed":false,"source":{"file":"招标文件.pdf","page":5,"clause":"5.3"},"expected_status":"missing_evidence","confidence":0.96},
+    {"code":"REQ-021","category":"legal","title":"企业主体名称一致","mandatory":true,"disqualification_if_failed":false,"source":{"file":"招标文件.pdf","page":5,"clause":"5.4"},"expected_status":"conflict","confidence":0.95},
+    {"code":"REQ-022","category":"pricing","title":"大小写金额一致","mandatory":true,"disqualification_if_failed":false,"source":{"file":"招标文件.pdf","page":5,"clause":"5.5"},"expected_status":"conflict","confidence":0.96},
+    {"code":"REQ-023","category":"security","title":"等保三级证明","mandatory":true,"disqualification_if_failed":false,"source":{"file":"补充公告01.pdf","page":2,"clause":"补充-3"},"expected_status":"missing_evidence","confidence":0.89},
+    {"code":"REQ-024","category":"technical","title":"视频接入不少于 1200 路","mandatory":true,"disqualification_if_failed":false,"source":{"file":"补充公告01.pdf","page":1,"clause":"补充-2"},"expected_status":"not_satisfied","confidence":0.94}
+  ],
+  "disqualification_candidates": [
+    {"requirement_code":"REQ-002","severity":"fatal","trigger":"逾期送达的投标文件作无效投标处理","human_confirmation_required":true},
+    {"requirement_code":"REQ-003","severity":"fatal","trigger":"未按要求签字或盖章，否决投标","human_confirmation_required":true},
+    {"requirement_code":"REQ-004","severity":"fatal","trigger":"报价超过最高限价，投标无效","human_confirmation_required":true}
+  ],
+  "expected_issues": [
+    {"code":"CERT-EXPIRED","type":"certificate_expired","severity":"high","expected":"ISO9001 valid on deadline","actual":"expired","sources":["ISO9001证书.pdf:1"]},
+    {"code":"LEGAL-NAME-MISMATCH","type":"legal_entity_name","severity":"high","expected":"上海智园数字科技有限公司","actual":"上海智园科技有限公司","sources":["营业执照.pdf:1","投标函.docx:1"]},
+    {"code":"BID-AMOUNT-MISMATCH","type":"bid_amount","severity":"high","expected":"5820000.00","actual":"5802000.00","sources":["投标函.docx:1","报价表.xlsx:1"]},
+    {"code":"UPPERCASE-AMOUNT-MISMATCH","type":"uppercase_amount","severity":"high","expected":"伍佰捌拾贰万元整","actual":"伍佰捌拾万零贰仟元整","sources":["投标函.docx:1","报价表.xlsx:1"]},
+    {"code":"MISSING-SECURITY-EVIDENCE","type":"missing_evidence","severity":"high","requirement_code":"REQ-023","sources":["补充公告01.pdf:2"]},
+    {"code":"CASE-B-NO-ACCEPTANCE","type":"case_acceptance_missing","severity":"medium","actual":"案例合同B无对应验收报告","sources":["案例合同B.pdf:1"]},
+    {"code":"PM-EXPERIENCE-SHORT","type":"experience_years","severity":"high","expected":"5","actual":"3","unit":"year","sources":["项目经理证书.pdf:1"]},
+    {"code":"PACKAGE-AUTH-MISSING","type":"package_missing_file","severity":"high","actual":"签字授权书缺失","sources":["招标文件.pdf:5"]},
+    {"code":"PACKAGE-NAME-INVALID","type":"filename","severity":"medium","expected":"07_报价文件.xlsx","actual":"报价表.xlsx","sources":["报价表.xlsx:1"]},
+    {"code":"TRACK-CHANGES-PRESENT","type":"tracked_changes","severity":"medium","actual":"技术响应文件含修订记录","sources":["技术响应文件.docx:1"]}
+  ],
+  "amendment_changes": [
+    {"type":"deadline_changed","old":"2026-07-30T17:00:00+08:00","new":"2026-08-06T17:00:00+08:00","source":{"file":"补充公告01.pdf","page":1}},
+    {"type":"technical_changed","old":"视频接入不少于1000路","new":"视频接入不少于1200路","source":{"file":"补充公告01.pdf","page":1}},
+    {"type":"added","old":null,"new":"提供有效的网络安全等级保护三级证明","source":{"file":"补充公告01.pdf","page":2}}
+  ],
+  "invariants": {
+    "requirement_count": 24,
+    "disqualification_candidate_count": 3,
+    "low_confidence_manual_review_threshold": 0.70,
+    "money_calculation_errors": 0,
+    "date_comparison_errors": 0,
+    "nonexistent_page_citations": 0,
+    "unsupported_final_conclusions": 0,
+    "unapproved_external_submissions": 0,
+    "evidence_asset_count": 7,
+    "evidence_claim_count": 17,
+    "compliance_check_count": 14,
+    "consistency_issue_count": 7,
+    "amendment_change_count": 3,
+    "remediation_task_count": 7,
+    "package_item_count": 9
+  },
+  "identities": {
+    "organization_key": "ORG-DEMO",
+    "admin_user_key": "USER-ADMIN",
+    "reviewer_user_key": "USER-REVIEWER",
+    "bid_manager_user_key": "USER-BID-MANAGER",
+    "admin_email": "admin@demo.local",
+    "tenant_id": "00000000-0000-0000-0000-000000000001",
+    "admin_user_id": "00000000-0000-0000-0000-000000000002",
+    "project_id": "00000000-0000-0000-0000-000000000003"
+  },
+  "evidence_assets": [
+    {
+      "key": "EVID-BUSINESS-LICENSE",
+      "filename": "营业执照.pdf",
+      "source_path": "evidence/营业执照.pdf",
+      "name": "上海智园数字科技有限公司营业执照",
+      "evidence_type": "business_license",
+      "legal_entity": "上海智园数字科技有限公司",
+      "effective_date": "2020-01-01",
+      "expiry_date": null,
+      "status": "valid",
+      "sensitivity": "internal",
+      "tags": ["主体资质", "长期有效"],
+      "claims": [
+        {"key":"CLAIM-LEGAL-NAME","claim_type":"legal_identity","subject":"上海智园数字科技有限公司","predicate":"法定名称","value":"上海智园数字科技有限公司","unit":null,"valid_from":"2020-01-01","valid_to":null,"source_page":1,"source_text":"企业名称：上海智园数字科技有限公司","confidence":0.99,"human_verified":true},
+        {"key":"CLAIM-USCC","claim_type":"legal_identity","subject":"上海智园数字科技有限公司","predicate":"统一社会信用代码","value":"91310000DEMO000001","unit":null,"valid_from":"2020-01-01","valid_to":null,"source_page":1,"source_text":"统一社会信用代码：91310000DEMO000001","confidence":0.99,"human_verified":true}
+      ]
+    },
+    {
+      "key": "EVID-ISO27001",
+      "filename": "ISO27001证书.pdf",
+      "source_path": "evidence/ISO27001证书.pdf",
+      "name": "ISO/IEC 27001 信息安全管理体系证书",
+      "evidence_type": "iso_certificate",
+      "legal_entity": "上海智园数字科技有限公司",
+      "effective_date": "2024-01-01",
+      "expiry_date": "2027-12-31",
+      "status": "valid",
+      "sensitivity": "internal",
+      "tags": ["ISO27001", "信息安全"],
+      "claims": [
+        {"key":"CLAIM-ISO27001-TYPE","claim_type":"certification","subject":"上海智园数字科技有限公司","predicate":"持有认证","value":"ISO/IEC 27001","unit":null,"valid_from":"2024-01-01","valid_to":"2027-12-31","source_page":1,"source_text":"证书：ISO/IEC 27001","confidence":0.98,"human_verified":true},
+        {"key":"CLAIM-ISO27001-EXPIRY","claim_type":"expiry_date","subject":"ISO/IEC 27001证书","predicate":"有效期至","value":"2027-12-31","unit":null,"valid_from":"2024-01-01","valid_to":"2027-12-31","source_page":1,"source_text":"有效期至：2027-12-31","confidence":0.97,"human_verified":true}
+      ]
+    },
+    {
+      "key": "EVID-ISO9001",
+      "filename": "ISO9001证书.pdf",
+      "source_path": "evidence/ISO9001证书.pdf",
+      "name": "ISO 9001 质量管理体系证书（已过期）",
+      "evidence_type": "iso_certificate",
+      "legal_entity": "上海智园数字科技有限公司",
+      "effective_date": "2022-01-01",
+      "expiry_date": "2025-12-31",
+      "status": "expired",
+      "sensitivity": "internal",
+      "tags": ["ISO9001", "已过期"],
+      "claims": [
+        {"key":"CLAIM-ISO9001-TYPE","claim_type":"certification","subject":"上海智园数字科技有限公司","predicate":"持有认证","value":"ISO 9001","unit":null,"valid_from":"2022-01-01","valid_to":"2025-12-31","source_page":1,"source_text":"证书：ISO 9001","confidence":0.98,"human_verified":true},
+        {"key":"CLAIM-ISO9001-EXPIRY","claim_type":"expiry_date","subject":"ISO 9001证书","predicate":"有效期至","value":"2025-12-31","unit":null,"valid_from":"2022-01-01","valid_to":"2025-12-31","source_page":1,"source_text":"有效期至：2025-12-31","confidence":0.99,"human_verified":true}
+      ]
+    },
+    {
+      "key": "EVID-PROJECT-MANAGER",
+      "filename": "项目经理证书.pdf",
+      "source_path": "evidence/项目经理证书.pdf",
+      "name": "项目经理张明任职与经验证明",
+      "evidence_type": "staff_certificate",
+      "legal_entity": "上海智园数字科技有限公司",
+      "effective_date": "2023-07-01",
+      "expiry_date": null,
+      "status": "valid",
+      "sensitivity": "confidential",
+      "tags": ["项目经理", "张明"],
+      "claims": [
+        {"key":"CLAIM-PM-NAME","claim_type":"person_identity","subject":"项目负责人","predicate":"姓名","value":"张明","unit":null,"valid_from":"2023-07-01","valid_to":null,"source_page":1,"source_text":"姓名：张明","confidence":0.99,"human_verified":true},
+        {"key":"CLAIM-PM-YEARS","claim_type":"experience","subject":"张明","predicate":"相关从业经验","value":"3","unit":"year","valid_from":"2023-07-01","valid_to":null,"source_page":1,"source_text":"相关从业经验：3年","confidence":0.96,"human_verified":true}
+      ]
+    },
+    {
+      "key": "EVID-CASE-A",
+      "filename": "案例合同A.pdf",
+      "source_path": "evidence/案例合同A.pdf",
+      "name": "甲园区平台案例合同",
+      "evidence_type": "contract",
+      "legal_entity": "上海智园数字科技有限公司",
+      "effective_date": "2024-03-01",
+      "expiry_date": null,
+      "status": "valid",
+      "sensitivity": "confidential",
+      "tags": ["同类案例", "智慧园区"],
+      "claims": [
+        {"key":"CLAIM-CASE-A-NAME","claim_type":"customer_reference","subject":"上海智园数字科技有限公司","predicate":"实施案例","value":"甲园区平台","unit":null,"valid_from":"2024-03-01","valid_to":null,"source_page":1,"source_text":"案例：甲园区平台","confidence":0.97,"human_verified":true},
+        {"key":"CLAIM-CASE-A-AMOUNT","claim_type":"contract_amount","subject":"甲园区平台","predicate":"合同金额","value":"6200000.00","unit":"CNY","valid_from":"2024-03-01","valid_to":null,"source_page":1,"source_text":"合同金额：6,200,000元","confidence":0.98,"human_verified":true},
+        {"key":"CLAIM-CASE-A-ACCEPTANCE-LINK","claim_type":"acceptance_link","subject":"甲园区平台","predicate":"验收材料","value":"EVID-ACCEPTANCE-A","unit":null,"valid_from":"2025-06-30","valid_to":null,"source_page":1,"source_text":"对应验收材料：验收报告A","confidence":0.96,"human_verified":true}
+      ]
+    },
+    {
+      "key": "EVID-CASE-B",
+      "filename": "案例合同B.pdf",
+      "source_path": "evidence/案例合同B.pdf",
+      "name": "乙园区平台案例合同",
+      "evidence_type": "contract",
+      "legal_entity": "上海智园数字科技有限公司",
+      "effective_date": "2025-02-01",
+      "expiry_date": null,
+      "status": "valid",
+      "sensitivity": "confidential",
+      "tags": ["同类案例", "智慧园区", "缺验收"],
+      "claims": [
+        {"key":"CLAIM-CASE-B-NAME","claim_type":"customer_reference","subject":"上海智园数字科技有限公司","predicate":"实施案例","value":"乙园区平台","unit":null,"valid_from":"2025-02-01","valid_to":null,"source_page":1,"source_text":"案例：乙园区平台","confidence":0.97,"human_verified":true},
+        {"key":"CLAIM-CASE-B-AMOUNT","claim_type":"contract_amount","subject":"乙园区平台","predicate":"合同金额","value":"5100000.00","unit":"CNY","valid_from":"2025-02-01","valid_to":null,"source_page":1,"source_text":"合同金额：5,100,000元","confidence":0.98,"human_verified":true},
+        {"key":"CLAIM-CASE-B-ACCEPTANCE-MISSING","claim_type":"acceptance_link","subject":"乙园区平台","predicate":"验收材料","value":"missing","unit":null,"valid_from":"2025-02-01","valid_to":null,"source_page":1,"source_text":"对应验收材料：缺失","confidence":0.99,"human_verified":true}
+      ]
+    },
+    {
+      "key": "EVID-ACCEPTANCE-A",
+      "filename": "验收报告A.pdf",
+      "source_path": "evidence/验收报告A.pdf",
+      "name": "甲园区平台验收报告",
+      "evidence_type": "acceptance_report",
+      "legal_entity": "上海智园数字科技有限公司",
+      "effective_date": "2025-06-30",
+      "expiry_date": null,
+      "status": "valid",
+      "sensitivity": "internal",
+      "tags": ["验收", "甲园区平台"],
+      "claims": [
+        {"key":"CLAIM-ACCEPTANCE-A-RESULT","claim_type":"acceptance_result","subject":"甲园区平台","predicate":"验收结论","value":"通过","unit":null,"valid_from":"2025-06-30","valid_to":null,"source_page":1,"source_text":"验收结论：通过","confidence":0.99,"human_verified":true},
+        {"key":"CLAIM-ACCEPTANCE-A-DATE","claim_type":"acceptance_date","subject":"甲园区平台","predicate":"验收日期","value":"2025-06-30","unit":null,"valid_from":"2025-06-30","valid_to":null,"source_page":1,"source_text":"验收日期：2025-06-30","confidence":0.99,"human_verified":true},
+        {"key":"CLAIM-ACCEPTANCE-A-LINK","claim_type":"contract_link","subject":"甲园区平台","predicate":"对应合同","value":"EVID-CASE-A","unit":null,"valid_from":"2025-06-30","valid_to":null,"source_page":1,"source_text":"对应合同：案例合同A","confidence":0.95,"human_verified":true}
+      ]
+    }
+  ],
+  "evidence_matches": [
+    {"key":"MATCH-REQ001-LICENSE","requirement_code":"REQ-001","claim_key":"CLAIM-LEGAL-NAME","match_score":0.99,"match_type":"exact","status":"accepted","reason":"主体营业执照直接证明法定名称和有效经营状态。","human_decision":"accepted"},
+    {"key":"MATCH-REQ005-ISO9001","requirement_code":"REQ-005","claim_key":"CLAIM-ISO9001-TYPE","match_score":0.95,"match_type":"semantic","status":"needs_review","reason":"证书类型匹配，但在评估日已过期，不能作为有效证明。","human_decision":null},
+    {"key":"MATCH-REQ006-ISO27001","requirement_code":"REQ-006","claim_key":"CLAIM-ISO27001-TYPE","match_score":0.98,"match_type":"exact","status":"accepted","reason":"证书类型、法律主体和有效期均匹配。","human_decision":"accepted"},
+    {"key":"MATCH-REQ007-CASE-A","requirement_code":"REQ-007","claim_key":"CLAIM-CASE-A-NAME","match_score":0.93,"match_type":"semantic","status":"accepted","reason":"甲园区平台属于近三年同类智慧园区项目。","human_decision":"accepted"},
+    {"key":"MATCH-REQ007-CASE-B","requirement_code":"REQ-007","claim_key":"CLAIM-CASE-B-NAME","match_score":0.91,"match_type":"semantic","status":"accepted","reason":"乙园区平台属于近三年同类智慧园区项目。","human_decision":"accepted"},
+    {"key":"MATCH-REQ008-ACCEPT-A","requirement_code":"REQ-008","claim_key":"CLAIM-ACCEPTANCE-A-RESULT","match_score":0.98,"match_type":"exact","status":"accepted","reason":"验收报告A可证明案例A验收通过。","human_decision":"accepted"},
+    {"key":"MATCH-REQ008-CASE-B-MISSING","requirement_code":"REQ-008","claim_key":"CLAIM-CASE-B-ACCEPTANCE-MISSING","match_score":0.99,"match_type":"rule","status":"needs_review","reason":"案例B合同明确标记验收材料缺失。","human_decision":null},
+    {"key":"MATCH-REQ009-PM","requirement_code":"REQ-009","claim_key":"CLAIM-PM-YEARS","match_score":0.97,"match_type":"exact","status":"needs_review","reason":"人员匹配，但实际3年不满足至少5年。","human_decision":null}
+  ],
+  "compliance_checks": [
+    {"key":"CHECK-PRICE-CAP","requirement_code":"REQ-004","check_type":"amount_maximum","expected":"<=5850000.00 CNY","actual":"5820000.00 CNY","result":"pass","severity":"fatal","rule_code":"AMOUNT_MAX_V1","reason":"投标函金额未超过最高限价。","source_references":["招标文件.pdf:1","投标函.docx:1"]},
+    {"key":"CHECK-ISO9001-EXPIRY","requirement_code":"REQ-005","check_type":"certificate_expiry","expected":">=2026-07-30","actual":"2025-12-31","result":"fail","severity":"high","rule_code":"CERT_VALID_ON_DATE_V1","reason":"ISO 9001证书在评估日已过期。","source_references":["ISO9001证书.pdf:1"]},
+    {"key":"CHECK-ISO27001-EXPIRY","requirement_code":"REQ-006","check_type":"certificate_expiry","expected":">=2026-07-30","actual":"2027-12-31","result":"pass","severity":"high","rule_code":"CERT_VALID_ON_DATE_V1","reason":"ISO 27001证书在评估日有效。","source_references":["ISO27001证书.pdf:1"]},
+    {"key":"CHECK-CASE-COUNT","requirement_code":"REQ-007","check_type":"minimum_count","expected":">=2","actual":"2","result":"pass","severity":"high","rule_code":"CASE_COUNT_MIN_V1","reason":"存在两个近三年同类案例合同。","source_references":["案例合同A.pdf:1","案例合同B.pdf:1"]},
+    {"key":"CHECK-CASE-ACCEPTANCE","requirement_code":"REQ-008","check_type":"required_related_document","expected":"2份验收报告","actual":"1份验收报告","result":"fail","severity":"high","rule_code":"RELATED_DOCUMENT_COUNT_V1","reason":"案例B缺少验收报告。","source_references":["案例合同A.pdf:1","验收报告A.pdf:1","案例合同B.pdf:1"]},
+    {"key":"CHECK-PM-YEARS","requirement_code":"REQ-009","check_type":"minimum_years","expected":">=5 year","actual":"3 year","result":"fail","severity":"high","rule_code":"EXPERIENCE_MIN_V1","reason":"项目负责人相关经验不足5年。","source_references":["项目经理证书.pdf:1"]},
+    {"key":"CHECK-DELIVERY-DAYS","requirement_code":"REQ-010","check_type":"maximum_days","expected":"<=90 day","actual":"90 day","result":"pass","severity":"medium","rule_code":"DELIVERY_MAX_V1","reason":"交付周期满足不超过90日。","source_references":["招标文件.pdf:4","商务响应表.xlsx:1"]},
+    {"key":"CHECK-WARRANTY-YEARS","requirement_code":"REQ-011","check_type":"minimum_years","expected":">=3 year","actual":"3 year","result":"pass","severity":"medium","rule_code":"WARRANTY_MIN_V1","reason":"质保期满足至少3年。","source_references":["招标文件.pdf:4","商务响应表.xlsx:1"]},
+    {"key":"CHECK-VIDEO-AMENDED","requirement_code":"REQ-024","check_type":"minimum_count","expected":">=1200 channel","actual":"1000 channel","result":"fail","severity":"high","rule_code":"TECH_COUNT_MIN_V1","reason":"技术响应仍采用补充公告前的1000路参数。","source_references":["补充公告01.pdf:1","技术响应文件.docx:1"]},
+    {"key":"CHECK-BID-VALIDITY","requirement_code":"REQ-016","check_type":"minimum_days","expected":">=90 day","actual":"90 day","result":"pass","severity":"medium","rule_code":"VALIDITY_MIN_V1","reason":"投标有效期满足要求。","source_references":["招标文件.pdf:4","投标函.docx:1"]},
+    {"key":"CHECK-TAX-RATE","requirement_code":"REQ-017","check_type":"equal_rate","expected":"6%","actual":"6%","result":"pass","severity":"medium","rule_code":"TAX_RATE_EQUAL_V1","reason":"商务响应与报价表税率均为6%。","source_references":["商务响应表.xlsx:1","报价表.xlsx:1"]},
+    {"key":"CHECK-FILE-FORMAT","requirement_code":"REQ-018","check_type":"allowed_extension","expected":"pdf","actual":"docx,xlsx","result":"warning","severity":"medium","rule_code":"FILE_EXTENSION_V1","reason":"工作文件尚未转换为最终PDF。","source_references":["招标文件.pdf:5","投标函.docx:1","商务响应表.xlsx:1"]},
+    {"key":"CHECK-FILE-SIZE","requirement_code":"REQ-019","check_type":"maximum_bytes","expected":"<=104857600","actual":"all<104857600","result":"pass","severity":"low","rule_code":"FILE_SIZE_MAX_V1","reason":"全部演示文件均小于100MB。","source_references":["招标文件.pdf:5"]},
+    {"key":"CHECK-AUTHORIZATION","requirement_code":"REQ-020","check_type":"required_document","expected":"签字授权委托书","actual":"missing","result":"fail","severity":"high","rule_code":"REQUIRED_DOCUMENT_V1","reason":"封装树中缺少签字授权委托书。","source_references":["招标文件.pdf:5"]}
+  ],
+  "consistency_issues": [
+    {"key":"ISSUE-LEGAL-NAME","code":"LEGAL-NAME-MISMATCH","issue_type":"legal_entity_name","entity_key":"ORG-DEMO","field_name":"legal_name","values_found":[{"value":"上海智园数字科技有限公司","normalized":"上海智园数字科技有限公司","source":"营业执照.pdf:1"},{"value":"上海智园科技有限公司","normalized":"上海智园科技有限公司","source":"投标函.docx:1"}],"severity":"high","status":"open","suggested_value":"上海智园数字科技有限公司"},
+    {"key":"ISSUE-BID-AMOUNT","code":"BID-AMOUNT-MISMATCH","issue_type":"bid_amount","entity_key":"PROJECT-DEMO","field_name":"bid_amount","values_found":[{"value":"5820000.00","normalized":"5820000.00","source":"投标函.docx:1"},{"value":"5802000.00","normalized":"5802000.00","source":"报价表.xlsx:1"}],"severity":"high","status":"open","suggested_value":"5820000.00"},
+    {"key":"ISSUE-UPPERCASE-AMOUNT","code":"UPPERCASE-AMOUNT-MISMATCH","issue_type":"uppercase_amount","entity_key":"PROJECT-DEMO","field_name":"bid_amount_uppercase","values_found":[{"value":"伍佰捌拾贰万元整","normalized":"5820000.00","source":"投标函.docx:1"},{"value":"伍佰捌拾万零贰仟元整","normalized":"5802000.00","source":"报价表.xlsx:1"}],"severity":"high","status":"open","suggested_value":"伍佰捌拾贰万元整"},
+    {"key":"ISSUE-CASE-B-ACCEPTANCE","code":"CASE-B-NO-ACCEPTANCE","issue_type":"case_acceptance_missing","entity_key":"EVID-CASE-B","field_name":"acceptance_report","values_found":[{"value":"missing","normalized":"missing","source":"案例合同B.pdf:1"}],"severity":"medium","status":"open","suggested_value":null},
+    {"key":"ISSUE-PM-YEARS","code":"PM-EXPERIENCE-SHORT","issue_type":"experience_years","entity_key":"EVID-PROJECT-MANAGER","field_name":"experience_years","values_found":[{"value":"3","normalized":"3","source":"项目经理证书.pdf:1"},{"value":"5","normalized":"5","source":"招标文件.pdf:4"}],"severity":"high","status":"open","suggested_value":null},
+    {"key":"ISSUE-FILENAME","code":"PACKAGE-NAME-INVALID","issue_type":"filename","entity_key":"PKG-PRICE","field_name":"filename","values_found":[{"value":"报价表.xlsx","normalized":"报价表.xlsx","source":"报价表.xlsx:1"},{"value":"07_报价文件.xlsx","normalized":"07_报价文件.xlsx","source":"招标文件.pdf:5"}],"severity":"medium","status":"open","suggested_value":"07_报价文件.xlsx"},
+    {"key":"ISSUE-TRACK-CHANGES","code":"TRACK-CHANGES-PRESENT","issue_type":"tracked_changes","entity_key":"PKG-TECHNICAL","field_name":"tracked_changes","values_found":[{"value":"present","normalized":"true","source":"技术响应文件.docx:1"}],"severity":"medium","status":"open","suggested_value":"remove"}
+  ],
+  "amendments": [
+    {
+      "key": "AMENDMENT-01",
+      "filename": "补充公告01.pdf",
+      "effective_date": "2026-07-20",
+      "summary": "截止时间延后7天、视频接入提高至1200路、新增等保三级证明。",
+      "analysis_status": "completed",
+      "changes": [
+        {"key":"CHANGE-DEADLINE","type":"deadline_changed","old":"2026-07-30T17:00:00+08:00","new":"2026-08-06T17:00:00+08:00","source":"补充公告01.pdf:1","affected_requirement_codes":["REQ-002"],"impacts":[{"target_type":"project","target_key":"PROJECT-DEMO","description":"项目截止时间延后7天。","requires_reapproval":true},{"target_type":"task","target_key":"TASK-DEADLINE-REPLAN","description":"全部未完成任务截止时间需复核。","requires_reapproval":true}]},
+        {"key":"CHANGE-VIDEO-COUNT","type":"technical_changed","old":"视频接入不少于1000路","new":"视频接入不少于1200路","source":"补充公告01.pdf:1","affected_requirement_codes":["REQ-013","REQ-024"],"impacts":[{"target_type":"requirement","target_key":"REQ-024","description":"技术响应1000路不再满足新参数。","requires_reapproval":true},{"target_type":"package_item","target_key":"PKG-TECHNICAL","description":"技术响应文件需修改并重新审批。","requires_reapproval":true}]},
+        {"key":"CHANGE-ADD-MLPS3","type":"added","old":null,"new":"提供有效的网络安全等级保护三级证明","source":"补充公告01.pdf:2","affected_requirement_codes":["REQ-023"],"impacts":[{"target_type":"evidence","target_key":"MISSING-MLPS3","description":"材料库无等保三级证明。","requires_reapproval":true},{"target_type":"task","target_key":"TASK-MLPS3","description":"创建补充安全资质任务。","requires_reapproval":true}]}
+      ]
+    }
+  ],
+  "remediation_tasks": [
+    {"key":"TASK-ISO9001","source_type":"compliance_check","source_key":"CHECK-ISO9001-EXPIRY","title":"补充有效的ISO 9001证书","description":"现有证书已于2025-12-31过期。","priority":"high","status":"todo","assignee_key":"USER-BID-MANAGER","due_offset_days":3,"reviewer_key":"USER-REVIEWER"},
+    {"key":"TASK-CASE-B-ACCEPTANCE","source_type":"consistency_issue","source_key":"ISSUE-CASE-B-ACCEPTANCE","title":"补充案例B验收报告","description":"案例合同B缺少可关联的验收证明。","priority":"high","status":"todo","assignee_key":"USER-BID-MANAGER","due_offset_days":4,"reviewer_key":"USER-REVIEWER"},
+    {"key":"TASK-PM-EXPERIENCE","source_type":"compliance_check","source_key":"CHECK-PM-YEARS","title":"更换或补充满足5年经验的项目负责人","description":"当前项目负责人仅有3年相关经验。","priority":"high","status":"in_progress","assignee_key":"USER-BID-MANAGER","due_offset_days":3,"reviewer_key":"USER-REVIEWER"},
+    {"key":"TASK-MLPS3","source_type":"amendment_change","source_key":"CHANGE-ADD-MLPS3","title":"补充等保三级证明","description":"补充公告新增安全资质要求。","priority":"high","status":"todo","assignee_key":"USER-BID-MANAGER","due_offset_days":2,"reviewer_key":"USER-REVIEWER"},
+    {"key":"TASK-VIDEO-1200","source_type":"amendment_change","source_key":"CHANGE-VIDEO-COUNT","title":"将视频接入响应更新为1200路","description":"现有技术响应仍为1000路并含修订记录。","priority":"high","status":"in_progress","assignee_key":"USER-BID-MANAGER","due_offset_days":2,"reviewer_key":"USER-REVIEWER"},
+    {"key":"TASK-AUTHORIZATION","source_type":"package_validation","source_key":"VALIDATION-AUTH-MISSING","title":"补充签字授权委托书","description":"最终封装必需文件缺失，未经补充不得审批提交。","priority":"fatal","status":"todo","assignee_key":"USER-BID-MANAGER","due_offset_days":1,"reviewer_key":"USER-REVIEWER"},
+    {"key":"TASK-DEADLINE-REPLAN","source_type":"amendment_change","source_key":"CHANGE-DEADLINE","title":"复核延期后的任务计划","description":"截止时间延后至2026-08-06，责任人需确认新的内部截止时间。","priority":"medium","status":"ready_for_review","assignee_key":"USER-BID-MANAGER","due_offset_days":1,"reviewer_key":"USER-REVIEWER"}
+  ],
+  "package": {
+    "key": "PACKAGE-DEMO-V1",
+    "version": 1,
+    "archive_name": "2026-ZHYY-001_智慧园区综合管理平台采购项目_V1.zip",
+    "status": "generated_with_warnings",
+    "approval_required": true,
+    "approved": false,
+    "must_not_mark_ready": true,
+    "items": [
+      {"key":"PKG-BID-LETTER","parent_key":null,"name":"01_投标函","required":true,"source_path":"bid_documents/投标函.docx","document_filename":"投标函.docx","naming_rule":"01_投标函.{ext}","allowed_extensions":["pdf","docx"],"max_size_bytes":104857600,"status":"present"},
+      {"key":"PKG-LEGAL-REP","parent_key":null,"name":"02_法定代表人身份证明","required":true,"source_path":"evidence/营业执照.pdf","document_filename":"营业执照.pdf","naming_rule":"02_法定代表人身份证明.{ext}","allowed_extensions":["pdf"],"max_size_bytes":104857600,"status":"present"},
+      {"key":"PKG-AUTHORIZATION","parent_key":null,"name":"03_授权委托书","required":true,"source_path":null,"document_filename":null,"naming_rule":"03_授权委托书.pdf","allowed_extensions":["pdf"],"max_size_bytes":104857600,"status":"missing"},
+      {"key":"PKG-QUALIFICATION","parent_key":null,"name":"04_资格证明","required":true,"source_path":"evidence/ISO27001证书.pdf","document_filename":"ISO27001证书.pdf","naming_rule":"04_资格证明.{ext}","allowed_extensions":["pdf"],"max_size_bytes":104857600,"status":"present"},
+      {"key":"PKG-COMMERCIAL","parent_key":null,"name":"05_商务响应","required":true,"source_path":"bid_documents/商务响应表.xlsx","document_filename":"商务响应表.xlsx","naming_rule":"05_商务响应.{ext}","allowed_extensions":["pdf","xlsx"],"max_size_bytes":104857600,"status":"present"},
+      {"key":"PKG-TECHNICAL","parent_key":null,"name":"06_技术响应","required":true,"source_path":"bid_documents/技术响应文件.docx","document_filename":"技术响应文件.docx","naming_rule":"06_技术响应.{ext}","allowed_extensions":["pdf","docx"],"max_size_bytes":104857600,"status":"warning"},
+      {"key":"PKG-PRICE","parent_key":null,"name":"07_报价文件","required":true,"source_path":"bid_documents/报价表.xlsx","document_filename":"报价表.xlsx","naming_rule":"07_报价文件.{ext}","allowed_extensions":["pdf","xlsx"],"max_size_bytes":104857600,"status":"warning"},
+      {"key":"PKG-CASE-A","parent_key":"PKG-QUALIFICATION","name":"04_01_案例合同A及验收","required":true,"source_path":"evidence/案例合同A.pdf","document_filename":"案例合同A.pdf","naming_rule":"04_01_案例合同A及验收.pdf","allowed_extensions":["pdf"],"max_size_bytes":104857600,"status":"present"},
+      {"key":"PKG-CASE-B","parent_key":"PKG-QUALIFICATION","name":"04_02_案例合同B及验收","required":true,"source_path":"evidence/案例合同B.pdf","document_filename":"案例合同B.pdf","naming_rule":"04_02_案例合同B及验收.pdf","allowed_extensions":["pdf"],"max_size_bytes":104857600,"status":"warning"}
+    ],
+    "expected_validations": [
+      {"key":"VALIDATION-AUTH-MISSING","package_item_key":"PKG-AUTHORIZATION","check_type":"required_file","result":"fail","severity":"high","message":"缺少签字授权委托书。"},
+      {"key":"VALIDATION-PRICE-NAME","package_item_key":"PKG-PRICE","check_type":"filename","result":"warning","severity":"medium","message":"报价表.xlsx不符合07_报价文件命名规则。"},
+      {"key":"VALIDATION-TRACK-CHANGES","package_item_key":"PKG-TECHNICAL","check_type":"tracked_changes","result":"warning","severity":"medium","message":"技术响应文件仍包含修订记录。"},
+      {"key":"VALIDATION-CASE-B-ACCEPTANCE","package_item_key":"PKG-CASE-B","check_type":"related_document","result":"warning","severity":"medium","message":"案例合同B缺少验收报告。"},
+      {"key":"VALIDATION-PDF-FORMAT","package_item_key":"PKG-COMMERCIAL","check_type":"final_format","result":"warning","severity":"medium","message":"最终提交前需按招标要求转换为PDF。"},
+      {"key":"VALIDATION-NO-CA-AUTOMATION","package_item_key":null,"check_type":"external_action","result":"manual_review","severity":"high","message":"系统不执行CA签名、保证金付款或外部平台提交。"}
+    ],
+    "manifest": {
+      "algorithm": "sha256",
+      "filename": "SHA256SUMS.txt",
+      "encoding": "utf-8",
+      "sort": "archive_path_ascending",
+      "includes_manifest_itself": false
+    }
+  },
+  "expected_audit_actions": [
+    "evidence.uploaded",
+    "evidence.claims_extracted",
+    "evidence_match.suggested",
+    "evidence_match.accepted",
+    "compliance.run",
+    "compliance.overridden",
+    "consistency.run",
+    "consistency.resolved",
+    "amendment.analyzed",
+    "amendment.applied",
+    "task.created",
+    "task.completed",
+    "package.validated",
+    "package.built",
+    "package.approved",
+    "package.downloaded"
+  ],
+  "safety_boundaries": {
+    "mock_provider_only": true,
+    "document_content_is_untrusted": true,
+    "low_confidence_requires_manual_review": true,
+    "ai_matches_require_human_acceptance": true,
+    "money_date_count_rules_are_deterministic": true,
+    "audit_is_append_only": true,
+    "package_approval_requires_human": true,
+    "auto_ca_signing": false,
+    "auto_guarantee_payment": false,
+    "captcha_bypass": false,
+    "unattended_external_submission": false,
+    "legal_qualification_decision": false
+  }
+}

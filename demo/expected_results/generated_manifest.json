@@ -1,0 +1,62 @@
+{
+  "schema_version": "2.0.0",
+  "generator": "scripts/generate_demo_assets.py",
+  "files": [
+    {
+      "path": "amendments/补充公告01.pdf",
+      "sha256": "516dd947d6c66a09b97693b3907718637e6ee0e451f1f6626d76b643cc06c83f"
+    },
+    {
+      "path": "bid_documents/商务响应表.xlsx",
+      "sha256": "85c5794af7587a7ad5ff7ca60b75c774e8ee99241e2e82837c91b6202e0b1085"
+    },
+    {
+      "path": "bid_documents/技术响应文件.docx",
+      "sha256": "d945f234e2e42c6273cf34cdab577bd21da4a392ee4f15a4d92716bb3e1f5176"
+    },
+    {
+      "path": "bid_documents/投标函.docx",
+      "sha256": "f3b9d8fcd94d06f58696f9ca3f3006090ee61cf381b01bdb9b62686a9cecab9e"
+    },
+    {
+      "path": "bid_documents/报价表.xlsx",
+      "sha256": "6ee04ff74743eb20cddb13b8b92ca1211b90cfaf516ca0c2378f2d1da56e46c1"
+    },
+    {
+      "path": "evidence/ISO27001证书.pdf",
+      "sha256": "a360af1d1e79ec294d5187c322f066b8c35e82786f9ac02237168607c7d1d6c6"
+    },
+    {
+      "path": "evidence/ISO9001证书.pdf",
+      "sha256": "fd2d0560b8bbc94f03a07f47adbc0c0300474c0a2ef2bd7171f7636fcfa58f0e"
+    },
+    {
+      "path": "evidence/案例合同A.pdf",
+      "sha256": "64867da7caec93339e46e09f9ec43f9490b10de92aa1da8c6fc3825420936397"
+    },
+    {
+      "path": "evidence/案例合同B.pdf",
+      "sha256": "e52883854547b08678b6acc300c069c6be7859c2f48b8875f34080db812729d6"
+    },
+    {
+      "path": "evidence/营业执照.pdf",
+      "sha256": "a98983837eab3674b9ac2b520b4ab66c8dbea6ebf4887ae5036a23e3ec5fb539"
+    },
+    {
+      "path": "evidence/项目经理证书.pdf",
+      "sha256": "faf171927e3a0911ef4fc8e7a5e2751fb5289385fd3fe48c97bd8506f0ccb40f"
+    },
+    {
+      "path": "evidence/验收报告A.pdf",
+      "sha256": "30e878d9a02dc18886fc7073a74b035ffb595d8d28a88efc2d51fcc63e740f87"
+    },
+    {
+      "path": "tender/技术需求附件.docx",
+      "sha256": "a6ad546e3a291f7548ec0e01cca2de3c34e029a62c1a2c461fc31f9894212a6b"
+    },
+    {
+      "path": "tender/招标文件.pdf",
+      "sha256": "4424995aebdd790f6f31d07bc28fe066bcc44db1b569d1d562cc0d088bd79c8f"
+    }
+  ]
+}
