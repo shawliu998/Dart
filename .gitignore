@@ -24,6 +24,7 @@ out/
 coverage/
 playwright-report/
 test-results/
+artifacts/ui-v2/
 *.tsbuildinfo
 
 # Local runtime data and uploads

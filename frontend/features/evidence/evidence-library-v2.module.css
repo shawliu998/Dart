@@ -1,0 +1,28 @@
+.queue {
+  margin-bottom: 12px;
+  padding: 14px;
+}
+.queue article {
+  display: grid;
+  grid-template-columns: minmax(180px, 1fr) 90px 2fr auto;
+  gap: 12px;
+  align-items: center;
+  padding: 9px 0;
+  border-top: 1px solid #edf0f4;
+}
+.queue article > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+.queue progress {
+  width: 100%;
+}
+@media (max-width: 860px) {
+  .queue article {
+    grid-template-columns: 1fr auto;
+  }
+  .queue article > div {
+    grid-column: 1 / -1;
+  }
+}

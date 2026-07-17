@@ -6,6 +6,7 @@ import { AlertOctagon, CalendarDays, CheckSquare2, Clock3, Grid2X2, List, Plus, 
 import { ProgressBar } from "@/components/ui/progress";
 import { RiskBadge } from "@/components/ui/badges";
 import type { Project } from "@/lib/types";
+import { DEMO_NOW } from "@/lib/product-context";
 
 export function ProjectList({ initialProjects }: { initialProjects: Project[] }) {
   const [query, setQuery] = useState("");
@@ -17,6 +18,10 @@ export function ProjectList({ initialProjects }: { initialProjects: Project[] })
     const textMatch = `${project.name}${project.buyerName}${project.projectCode}`.toLowerCase().includes(query.toLowerCase());
     return textMatch && (stage === "all" || project.stage === stage) && (risk === "all" || project.risk === risk);
   }), [initialProjects, query, risk, stage]);
+  const dueWithinSevenDays = initialProjects.filter((project) => { const due = new Date(project.deadline.replace(" ", "T") + "+08:00").getTime(); return due >= DEMO_NOW.getTime() && due <= DEMO_NOW.getTime() + 7 * 86_400_000; }).length;
+  const fatalRisks = initialProjects.reduce((total, project) => total + (project.risk === "fatal" ? project.highRiskCount : 0), 0);
+  const taskCount = initialProjects.reduce((total, project) => total + project.taskCount, 0);
+  const stageCount = new Set(initialProjects.map((project) => project.stage)).size;
 
   return (
     <div className="page">
@@ -26,11 +31,11 @@ export function ProjectList({ initialProjects }: { initialProjects: Project[] })
       </header>
 
       <section className="stats-grid" aria-label="项目统计">
-        <Stat icon={<CheckSquare2 size={15} />} label="进行中项目" value="3" note="较上周新增 1 个" />
-        <Stat icon={<CalendarDays size={15} />} label="7 天内截止" value="1" note="需优先处理" />
-        <Stat fatal icon={<AlertOctagon size={15} />} label="致命风险" value="3" note="集中于 1 个项目" />
-        <Stat icon={<Clock3 size={15} />} label="待我处理" value="7" note="2 项今天到期" />
-        <Stat icon={<CheckSquare2 size={15} />} label="待审批封装包" value="1" note="等待负责人审批" />
+        <Stat icon={<CheckSquare2 size={15} />} label="进行中项目" value={String(initialProjects.length)} note={`覆盖 ${stageCount} 个当前阶段`} />
+        <Stat icon={<CalendarDays size={15} />} label="7 天内截止" value={String(dueWithinSevenDays)} note="基于确定性演示时点计算" />
+        <Stat fatal icon={<AlertOctagon size={15} />} label="致命风险" value={String(fatalRisks)} note="按项目风险字段汇总" />
+        <Stat icon={<Clock3 size={15} />} label="项目任务" value={String(taskCount)} note="来自项目清单快照" />
+        <Stat icon={<CheckSquare2 size={15} />} label="数据来源" value="Demo" note="确定性演示项目清单" />
       </section>
 
       <section className="panel" aria-label="项目列表">

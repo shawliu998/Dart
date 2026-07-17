@@ -9,7 +9,7 @@ describe("Phase 3-5 workbenches", () => {
     const user = userEvent.setup();
     render(<ConsistencyWorkbench projectId="p-1" initialIssues={consistencyIssues.slice(0, 1)} source="demo" />);
     await user.click(screen.getByRole("button", { name: /采用标准值/ }));
-    expect(screen.getByRole("status")).toHaveTextContent("请先填写处理原因");
+    expect(screen.getByRole("alert")).toHaveTextContent("请先填写处理原因");
     await user.type(screen.getByPlaceholderText(/说明采用该值/), "已由商务负责人复核报价表原件");
     await user.click(screen.getByRole("button", { name: /采用标准值/ }));
     expect(screen.getByText("已解决")).toBeInTheDocument();

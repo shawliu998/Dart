@@ -168,6 +168,8 @@ cd frontend; npm test; npm run lint; npm run typecheck; npm run test:e2e; npm ru
 - [产品需求](docs/PRD.md)
 - [系统架构](docs/ARCHITECTURE.md)
 - [UI 规范](docs/UI_SPEC.md)
+- [产品体验 V2](docs/PRODUCT_UX_V2.md)
+- [Agent 体验规范](docs/AGENT_EXPERIENCE_SPEC.md)
 - [数据模型](docs/DATA_MODEL.md)
 - [AI 设计](docs/AI_DESIGN.md)
 - [测试与评测](docs/EVALS.md)

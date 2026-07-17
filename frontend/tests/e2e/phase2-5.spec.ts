@@ -28,8 +28,8 @@ test("consistency and amendment actions create an auditable demo flow", async ({
   await expect(page.getByText("已解决")).toBeVisible();
   await page.goto(`/projects/${projectId}/amendments`);
   await page.getByRole("button", { name: /6.3.4 数据采集性能/ }).click();
-  page.once("dialog", (dialog) => dialog.accept());
   await page.getByRole("button", { name: /接受并应用变更/ }).click();
+  await page.getByRole("button", { name: "接受并应用", exact: true }).click();
   await expect(page.getByRole("status")).toContainText("本地演示已应用整份公告");
 });
 

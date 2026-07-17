@@ -1,0 +1,221 @@
+.viewer {
+  display: flex;
+  min-height: 360px;
+  flex-direction: column;
+  overflow: hidden;
+  border: 1px solid #d9e0e8;
+  border-radius: 10px;
+  background: #f3f6f9;
+  color: #17202a;
+}
+.header {
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  justify-content: space-between;
+  gap: 8px;
+  padding: 10px 12px;
+  border-bottom: 1px solid #d9e0e8;
+  background: #fff;
+}
+.header > div:first-child {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+.header strong {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 13px;
+}
+.header small,
+.footer {
+  color: #687587;
+  font-size: 11px;
+}
+.controls {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 5px;
+}
+.controls button {
+  display: inline-grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  border: 1px solid #d9e0e8;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+.controls button:disabled {
+  cursor: not-allowed;
+  opacity: 0.42;
+}
+.controls input {
+  width: 42px;
+  height: 27px;
+  border: 1px solid #d9e0e8;
+  border-radius: 5px;
+  text-align: center;
+}
+.controls i {
+  width: 1px;
+  height: 18px;
+  margin: 0 3px;
+  background: #d9e0e8;
+}
+.viewport {
+  position: relative;
+  display: grid;
+  min-height: 310px;
+  flex: 1;
+  place-items: center;
+  overflow: auto;
+  padding: 18px;
+}
+.viewport iframe {
+  width: 100%;
+  min-height: 520px;
+  border: 0;
+  background: #fff;
+}
+.demoPage {
+  box-sizing: border-box;
+  max-width: 720px;
+  min-height: 270px;
+  padding: 34px 42px;
+  border: 1px solid #dde2e8;
+  box-shadow: 0 8px 24px #20304018;
+  background: #fff;
+  transition: width 0.16s ease;
+}
+.demoPage > div {
+  display: flex;
+  justify-content: space-between;
+  color: #748195;
+  font-size: 11px;
+}
+.demoPage h3 {
+  margin: 52px 0 16px;
+  font-size: 18px;
+}
+.demoPage p {
+  line-height: 1.8;
+}
+.demoPage mark {
+  display: block;
+  margin-top: 18px;
+  padding: 12px;
+  border-left: 3px solid #2878e5;
+  background: #e9f3ff;
+  color: inherit;
+}
+.demoPage > small {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  margin-top: 42px;
+  color: #748195;
+}
+.state {
+  display: grid;
+  max-width: 440px;
+  justify-items: center;
+  gap: 9px;
+  text-align: center;
+}
+.state svg {
+  width: 30px;
+  height: 30px;
+  color: #687587;
+}
+.state p {
+  margin: 0;
+  color: #687587;
+}
+.overlay {
+  position: absolute;
+  z-index: 1;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  border-radius: 7px;
+  background: #fff;
+  box-shadow: 0 6px 18px #10203022;
+  font-size: 12px;
+}
+.spin {
+  animation: document-spin 0.85s linear infinite;
+}
+.footer {
+  display: flex;
+  gap: 14px;
+  padding: 8px 12px;
+  border-top: 1px solid #d9e0e8;
+  background: #fff;
+}
+.footer span:last-child {
+  margin-left: auto;
+}
+.backdrop {
+  position: fixed;
+  z-index: 90;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: #0a1420aa;
+}
+.dialog {
+  width: min(1000px, 94vw);
+  max-height: 92vh;
+  overflow: auto;
+  border-radius: 12px;
+  background: #fff;
+  box-shadow: 0 24px 80px #0005;
+}
+.dialogTitle {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px;
+  border-bottom: 1px solid #d9e0e8;
+}
+.dialogTitle h2 {
+  margin: 0;
+  font-size: 16px;
+}
+.dialogTitle button {
+  padding: 7px 11px;
+  border: 1px solid #d9e0e8;
+  border-radius: 6px;
+  background: #fff;
+  cursor: pointer;
+}
+.dialog .viewer {
+  margin: 16px;
+}
+@keyframes document-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+@media (max-width: 760px) {
+  .header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+  .controls {
+    flex-wrap: wrap;
+  }
+  .demoPage {
+    padding: 24px;
+  }
+  .footer span:last-child {
+    display: none;
+  }
+}
