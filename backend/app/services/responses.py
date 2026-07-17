@@ -18,7 +18,12 @@ from app.db.base import utcnow
 from app.models.entities import EvidenceClaim, EvidenceMatch, Requirement, ResponseEvidenceLink, ResponseItem
 
 
-def _accepted_claims(db: Session, requirement_id: UUID, tenant_id: UUID) -> list[EvidenceClaim]:
+def _usable_claims(
+    db: Session, requirement_id: UUID, tenant_id: UUID, *, allow_provisional: bool
+) -> list[EvidenceClaim]:
+    statuses = ["accepted"]
+    if allow_provisional:
+        statuses.append("provisional_match")
     return list(
         db.scalars(
             select(EvidenceClaim)
@@ -26,25 +31,31 @@ def _accepted_claims(db: Session, requirement_id: UUID, tenant_id: UUID) -> list
             .where(
                 EvidenceMatch.requirement_id == requirement_id,
                 EvidenceMatch.tenant_id == tenant_id,
-                EvidenceMatch.status == "accepted",
+                EvidenceMatch.status.in_(statuses),
             )
         )
     )
 
 
-def generate_project_responses(db: Session, principal: Principal, project_id: UUID) -> list[ResponseItem]:
+def generate_project_responses(
+    db: Session, principal: Principal, project_id: UUID, *, allow_provisional: bool = False
+) -> list[ResponseItem]:
     """Create or refresh one draft per human-confirmed requirement.
 
     Existing human edits and approved entries are never overwritten.  Claims are re-linked only
     from accepted evidence matches, so candidate/rejected evidence cannot leak into a draft.
     """
+    requirement_filters = [
+        Requirement.project_id == project_id,
+        Requirement.tenant_id == principal.tenant_id,
+    ]
+    if allow_provisional:
+        requirement_filters.append(Requirement.review_status.in_(("provisional", "verified")))
+    else:
+        requirement_filters.append(Requirement.human_verified.is_(True))
     requirements = list(
         db.scalars(
-            select(Requirement).where(
-                Requirement.project_id == project_id,
-                Requirement.tenant_id == principal.tenant_id,
-                Requirement.human_verified.is_(True),
-            )
+            select(Requirement).where(*requirement_filters)
         )
     )
     generated = 0
@@ -58,7 +69,9 @@ def generate_project_responses(db: Session, principal: Principal, project_id: UU
         )
         if item is not None and (item.edited_text or item.status == "approved"):
             continue
-        claims = _accepted_claims(db, requirement.id, principal.tenant_id)
+        claims = _usable_claims(
+            db, requirement.id, principal.tenant_id, allow_provisional=allow_provisional
+        )
         if item is None:
             item = ResponseItem(
                 tenant_id=principal.tenant_id,
@@ -83,10 +96,14 @@ def generate_project_responses(db: Session, principal: Principal, project_id: UU
         if claims:
             references = "；".join(f"{claim.subject}：{claim.value}" for claim in claims[:3])
             item.status = "drafted"
-            item.response_strategy = "基于人工接受的材料逐条响应"
+            item.response_strategy = (
+                "基于人工接受的材料逐条响应"
+                if not allow_provisional
+                else "内部草稿：基于待人工复核的要求和证据候选"
+            )
             item.draft_text = f"我方响应“{requirement.title}”。已提供并引用以下材料：{references}。"
             item.missing_information = []
-            item.risk_notes = []
+            item.risk_notes = (["内部草稿，未经最终人工确认。"] if allow_provisional else [])
             item.confidence = Decimal("0.820")
         else:
             item.status = "missing_evidence"
@@ -106,7 +123,10 @@ def generate_project_responses(db: Session, principal: Principal, project_id: UU
         entity_type="project",
         entity_id=project_id,
         project_id=project_id,
-        after={"generated": generated, "source": "accepted_evidence_only"},
+        after={
+            "generated": generated,
+            "source": "accepted_or_provisional" if allow_provisional else "accepted_evidence_only",
+        },
     )
     db.commit()
     return list(

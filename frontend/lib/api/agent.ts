@@ -1,6 +1,6 @@
 import { apiRequest, isDemoMode } from "./client";
 import { createAgentRunBundle } from "@/lib/agent/demo";
-import type { AgentApproval, AgentDataResult, AgentOutput, AgentRun, AgentRunBundle, AgentSourceRef, AgentStep } from "@/lib/agent/types";
+import type { AgentApproval, AgentDataResult, AgentOutput, AgentRun, AgentRunBundle, AgentRunCreateInput, AgentSourceRef, AgentStep } from "@/lib/agent/types";
 
 type JsonObject = Record<string, unknown>;
 export type AgentRequest = <T>(path: string, init?: RequestInit) => Promise<T>;
@@ -21,6 +21,7 @@ const number = (value: unknown, fallback = 0): number => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 const nullableText = (value: unknown): string | null => typeof value === "string" ? value : null;
+const boundedInteger = (value: unknown, fallback: number, minimum: number, maximum: number): number => Math.min(maximum, Math.max(minimum, Math.floor(number(value, fallback))));
 const oneOf = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T => allowed.includes(value as T) ? value as T : fallback;
 const source = (value: unknown): AgentSourceRef => {
   const item = object(value);
@@ -70,22 +71,24 @@ function mapStep(value: unknown, runId: string, index: number): AgentStep {
   };
 }
 
-function mapApproval(value: unknown, runId: string): AgentApproval {
+function mapApproval(value: unknown, runId: string, projectId: string): AgentApproval {
   const item = object(value);
-  const approvalType = oneOf(item.approval_type ?? item.type, ["review_requirements", "review_evidence_matches", "review_responses", "evidence_match", "compliance_override", "consistency_resolution", "amendment_apply", "package_warning", "package_build", "unknown"] as const, "unknown");
+  const approvalType = oneOf(item.approval_type ?? item.type, ["review_requirements", "review_evidence_matches", "review_responses", "evidence_match", "compliance_override", "consistency_resolution", "amendment_apply", "package_warning", "package_build", "final_work_package_review", "unknown"] as const, "unknown");
   const impactSummary = text(item.impact_summary ?? item.impactSummary);
   const destinations: Partial<Record<AgentApproval["type"], string>> = {
     review_requirements: "打开要求工作台",
     review_evidence_matches: "打开证据匹配工作台",
     review_responses: "打开响应工作台",
+    final_work_package_review: "打开最终工作包复核",
   };
   const destination = destinations[approvalType] ?? "打开审批工作台";
+  const defaultHref = approvalType === "final_work_package_review" ? `/projects/${projectId}/review` : "/agent";
   return {
     id: text(item.id), runId: text(item.run_id ?? item.runId, runId), stepId: text(item.step_run_id ?? item.stepRunId ?? item.step_id ?? item.stepId),
     type: approvalType,
     title: text(item.title), description: text(item.description), impactSummary, reversible: Boolean(item.reversible), reason: text(item.decision_reason ?? item.decisionReason),
     risk: oneOf(item.risk, ["fatal", "high", "medium", "low"] as const, "medium"), status: oneOf(item.status, ["pending", "approved", "rejected"] as const, "pending"),
-    requiredRole: text(item.requested_role ?? item.required_role ?? item.requiredRole, "项目负责人"), destinationLabel: text(item.destination_label ?? item.destinationLabel, destination), href: text(item.href, impactSummary.startsWith("/projects/") ? impactSummary : "/agent"), sourceReferences: sourceRows(item),
+    requiredRole: text(item.requested_role ?? item.required_role ?? item.requiredRole, "项目负责人"), destinationLabel: text(item.destination_label ?? item.destinationLabel, destination), href: text(item.href, impactSummary.startsWith("/projects/") ? impactSummary : defaultHref), sourceReferences: sourceRows(item),
   };
 }
 
@@ -129,16 +132,23 @@ export function agentRunBundleFromApiPayload(payload: unknown, projectId: string
   const runId = text(runValue.id);
   if (!runId) throw new Error("invalid_agent_payload");
   const steps = rows(root.steps ?? runValue.steps, ["items", "step_runs", "stepRuns"]).map((item, index) => mapStep(item, runId, index));
-  const approvals = rows(root.approvals ?? runValue.approvals, ["items", "approval_requests", "approvalRequests"]).map((item) => mapApproval(item, runId));
+  const approvals = rows(root.approvals ?? runValue.approvals, ["items", "approval_requests", "approvalRequests"]).map((item) => mapApproval(item, runId, projectId));
   const outputs = rows(root.outputs ?? root.artifacts ?? runValue.outputs ?? runValue.artifacts, ["items", "artifacts"]).map((item) => mapOutput(item, runId, projectId));
   const run: AgentRun = {
     id: runId, projectId: text(runValue.project_id ?? runValue.projectId, projectId), projectName: text(runValue.project_name ?? runValue.projectName, "本地项目"),
-    title: text(runValue.title ?? runValue.workflow_type ?? runValue.workflowType, "投标分析运行"), goal: text(runValue.goal),
+    title: text(runValue.title ?? runValue.workflow_type ?? runValue.workflowType, "投标分析运行"), goal: text(runValue.goal ?? runValue.objective, "完成投标分析与响应草稿工作包。"),
+    mode: oneOf(runValue.mode ?? runValue.run_mode ?? runValue.runMode, ["autonomous_draft", "supervised"] as const, "supervised"),
+    maxIterations: boundedInteger(runValue.max_iterations ?? runValue.maxIterations, 20, 1, 100),
+    iteration: boundedInteger(runValue.iteration ?? runValue.current_iteration ?? runValue.currentIteration, 0, 0, 100),
+    currentAction: text(runValue.current_action ?? runValue.currentAction ?? runValue.action) || undefined,
+    nextAction: text(runValue.next_action ?? runValue.nextAction) || undefined,
+    observation: text(runValue.last_observation ?? runValue.lastObservation ?? runValue.observation ?? runValue.current_observation ?? runValue.currentObservation ?? runValue.findings_summary ?? runValue.findingsSummary) || undefined,
+    completionReason: text(runValue.completion_reason ?? runValue.completionReason) || undefined,
     status: oneOf(runValue.status, ["queued", "planning", "running", "waiting_approval", "completed", "failed", "cancelled"] as const, "queued"),
     trigger: oneOf(runValue.trigger, ["project_opened", "document_updated", "amendment_received", "manual_rerun"] as const, "manual_rerun"),
     startedAt: text(runValue.started_at ?? runValue.startedAt ?? runValue.created_at ?? runValue.createdAt), updatedAt: text(runValue.updated_at ?? runValue.updatedAt ?? runValue.created_at ?? runValue.createdAt), completedAt: text(runValue.completed_at ?? runValue.completedAt) || undefined,
     progress: progressFromSteps(steps), currentStepId: text(runValue.current_step_id ?? runValue.currentStepId ?? runValue.current_step ?? runValue.currentStep) || undefined, initiatedBy: text(runValue.created_by ?? runValue.createdBy, "本地工作区"),
-    promptVersion: text(runValue.prompt_version ?? runValue.promptVersion), policyVersion: text(runValue.policy_version ?? runValue.policyVersion), summary: summaryFromSteps(steps, approvals, oneOf(runValue.status, ["queued", "planning", "running", "waiting_approval", "completed", "failed", "cancelled"] as const, "queued")), steps, approvals, outputs,
+    promptVersion: text(runValue.prompt_version ?? runValue.promptVersion), policyVersion: text(runValue.policy_version ?? runValue.policyVersion), summary: text(runValue.agent_summary ?? runValue.agentSummary) || summaryFromSteps(steps, approvals, oneOf(runValue.status, ["queued", "planning", "running", "waiting_approval", "completed", "failed", "cancelled"] as const, "queued")), steps, approvals, outputs,
   };
   return { run, steps, approvals, outputs };
 }
@@ -158,8 +168,13 @@ export async function getLatestAgentRun(projectId: string, request: AgentRequest
   } catch (error) { return failure(error); }
 }
 
-export async function createAgentRun(projectId: string, request: AgentRequest = apiRequest): Promise<AgentDataResult<AgentRunBundle>> {
-  try { return { source: "api", data: agentRunBundleFromApiPayload(await request(`/api/projects/${projectId}/agent-runs`, { method: "POST", body: JSON.stringify({}) }), projectId), error: null }; } catch (error) { return failure(error); }
+export async function createAgentRun(projectId: string, input: AgentRunCreateInput = {}, request: AgentRequest = apiRequest): Promise<AgentDataResult<AgentRunBundle>> {
+  const payload = {
+    goal: input.goal?.trim() || undefined,
+    mode: input.mode ?? "autonomous_draft",
+    max_iterations: boundedInteger(input.maxIterations, 20, 1, 100),
+  };
+  try { return { source: "api", data: agentRunBundleFromApiPayload(await request(`/api/projects/${projectId}/agent-runs`, { method: "POST", body: JSON.stringify(payload) }), projectId), error: null }; } catch (error) { return failure(error); }
 }
 
 export async function getAgentRun(runId: string, projectId: string, request: AgentRequest = apiRequest): Promise<AgentDataResult<AgentRunBundle>> {

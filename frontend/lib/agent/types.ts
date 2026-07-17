@@ -1,4 +1,5 @@
 export type AgentDataSource = "api" | "demo" | "failure";
+export type AgentMode = "autonomous_draft" | "supervised";
 
 export type AgentRunStatus = "queued" | "planning" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled";
 export type AgentStepStatus = "pending" | "running" | "waiting_approval" | "completed" | "failed" | "blocked" | "cancelled";
@@ -21,6 +22,13 @@ export interface AgentRun {
   projectName: string;
   title: string;
   goal: string;
+  mode: AgentMode;
+  maxIterations: number;
+  iteration: number;
+  currentAction?: string;
+  nextAction?: string;
+  observation?: string;
+  completionReason?: string;
   status: AgentRunStatus;
   trigger: "project_opened" | "document_updated" | "amendment_received" | "manual_rerun";
   startedAt: string;
@@ -35,6 +43,12 @@ export interface AgentRun {
   steps: AgentStep[];
   approvals: ApprovalRequest[];
   outputs: AgentOutput[];
+}
+
+export interface AgentRunCreateInput {
+  goal?: string;
+  mode?: AgentMode;
+  maxIterations?: number;
 }
 
 export interface AgentStep {
@@ -64,7 +78,7 @@ export interface ApprovalRequest {
    * server value must not be presented as a compliance override, because that
    * changes the meaning of a human decision in the workbench.
    */
-  type: "review_requirements" | "review_evidence_matches" | "review_responses" | "evidence_match" | "compliance_override" | "consistency_resolution" | "amendment_apply" | "package_warning" | "package_build" | "unknown";
+  type: "review_requirements" | "review_evidence_matches" | "review_responses" | "evidence_match" | "compliance_override" | "consistency_resolution" | "amendment_apply" | "package_warning" | "package_build" | "final_work_package_review" | "unknown";
   title: string;
   description: string;
   impactSummary: string;

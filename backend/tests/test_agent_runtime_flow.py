@@ -3,6 +3,9 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
+from app.services import agent_runtime
+from app.services.demo_seed import stable_id
+
 WORKFLOW_STEP_KEYS = [
     "ingest_documents",
     "parse_documents",
@@ -47,7 +50,7 @@ def _create_run_waiting_for_approval(client, demo) -> tuple[dict, str]:
     created = client.post(
         f"/api/projects/{project_id}/agent-runs",
         headers=headers,
-        json={"goal": "解析招标文件，抽取要求并等待人工复核"},
+        json={"goal": "解析招标文件，抽取要求并等待人工复核", "mode": "supervised"},
     )
     assert created.status_code == 201, created.text
     run_id = created.json()["run"]["id"]
@@ -70,6 +73,137 @@ def _assert_strictly_increasing_event_sequences(client, headers: dict[str, str],
     sequences = [event["sequence"] for event in events]
     assert sequences == list(range(1, len(events) + 1))
     return events
+
+
+def test_autonomous_draft_runs_to_single_final_work_package_review(client, demo) -> None:
+    """The default local mode creates provisional work, then requires one final review."""
+    headers = demo["auth_headers"]
+    project = client.post(
+        "/api/projects",
+        headers=headers,
+        json={
+            "name": "自主草稿运行测试",
+            "project_code": f"AUTO-{uuid4().hex[:8]}",
+            "buyer_name": "测试采购人",
+        },
+    )
+    assert project.status_code == 201, project.text
+    project_id = project.json()["id"]
+    pdf_path = Path(__file__).resolve().parents[2] / "demo" / "tender" / "招标文件.pdf"
+    with pdf_path.open("rb") as pdf:
+        uploaded = client.post(
+            f"/api/projects/{project_id}/documents",
+            headers=headers,
+            data={"document_type": "tender_main"},
+            files={"file": (pdf_path.name, pdf, "application/pdf")},
+        )
+    assert uploaded.status_code == 201, uploaded.text
+
+    created = client.post(
+        f"/api/projects/{project_id}/agent-runs",
+        headers=headers,
+        json={"goal": "生成内部草稿工作包"},
+    )
+    assert created.status_code == 201, created.text
+    run_id = created.json()["run"]["id"]
+    data = client.get(f"/api/agent-runs/{run_id}", headers=headers).json()
+    assert data["run"]["mode"] == "autonomous_draft"
+    assert data["run"]["status"] == "waiting_approval"
+    assert data["run"]["current_action"] == "finish_run"
+    assert data["run"]["iteration"] <= data["run"]["max_iterations"]
+    stages = data["run"]["plan_json"]["stages"]
+    assert [stage["key"] for stage in stages] == ["understand", "evidence", "draft", "deliver", "review"]
+    assert stages[0]["status"] == stages[1]["status"] == stages[2]["status"] == "completed"
+    assert stages[3]["status"] == "completed"
+    assert stages[4]["status"] == "waiting_approval"
+    assert [item["step_key"] for item in data["steps"]] == WORKFLOW_STEP_KEYS
+    assert data["steps"][4]["status"] == "completed"
+    assert data["steps"][6]["status"] == "completed"
+    assert data["steps"][9]["status"] == "completed"
+    final_approval = next(item for item in data["approvals"] if item["status"] == "pending")
+    assert final_approval["approval_type"] == "final_work_package_review"
+    assert final_approval["impact_summary"] == f"/projects/{project_id}/review"
+    requirements = client.get(f"/api/projects/{project_id}/requirements", headers=headers).json()
+    assert requirements
+    eligible = [
+        item
+        for item in requirements
+        if float(item["extraction_confidence"]) >= 0.80
+        and item["source_document_id"]
+        and item["source_page"]
+        and item["original_text"]
+        and not item["disqualification_if_failed"]
+    ]
+    ineligible = [item for item in requirements if item not in eligible]
+    assert eligible and all(item["review_status"] == "provisional" for item in eligible)
+    assert ineligible and all(item["review_status"] != "provisional" for item in ineligible)
+    low_confidence = [item for item in requirements if float(item["extraction_confidence"]) < 0.80]
+    disqualification = [item for item in requirements if item["disqualification_if_failed"]]
+    assert low_confidence and all(item["review_status"] != "provisional" for item in low_confidence)
+    assert disqualification and all(item["review_status"] != "provisional" for item in disqualification)
+    assert all(item["human_verified"] is False for item in requirements)
+    events = _assert_strictly_increasing_event_sequences(client, headers, run_id)
+    assert {event["event_type"] for event in events} >= {"agent.decision", "tool.completed", "review.deferred"}
+
+    completed = client.post(
+        f"/api/approvals/{final_approval['id']}/approve",
+        headers=headers,
+        json={"reason": "已在统一复核页完成内部工作包确认"},
+    )
+    assert completed.status_code == 200, completed.text
+    final = completed.json()["run"]
+    assert final["status"] == "completed"
+    assert final["completion_reason"] == "final_work_package_approved"
+    assert next(stage for stage in final["plan_json"]["stages"] if stage["key"] == "review")["status"] == "completed"
+
+
+def test_autonomous_background_run_uses_persisted_creator_role(
+    client, demo, monkeypatch
+) -> None:
+    """A queued bid-manager run must not be reconstructed as an administrator."""
+    observed_roles: list[str] = []
+    original_suggest_matches = agent_runtime.suggest_matches
+
+    def recording_suggest_matches(db, principal, project_id, *, provisional=False):
+        observed_roles.append(principal.role)
+        return original_suggest_matches(
+            db, principal, project_id, provisional=provisional
+        )
+
+    monkeypatch.setattr(agent_runtime, "suggest_matches", recording_suggest_matches)
+    headers = {
+        "X-Tenant-ID": demo["tenant_id"],
+        "X-User-ID": str(stable_id("USER-BID-MANAGER")),
+        "X-Role": "bid_manager",
+    }
+    project = client.post(
+        "/api/projects",
+        headers=headers,
+        json={
+            "name": "后台角色保持测试",
+            "project_code": f"ROLE-{uuid4().hex[:8]}",
+            "buyer_name": "测试采购人",
+        },
+    )
+    assert project.status_code == 201, project.text
+    project_id = project.json()["id"]
+    pdf_path = Path(__file__).resolve().parents[2] / "demo" / "tender" / "招标文件.pdf"
+    with pdf_path.open("rb") as pdf:
+        uploaded = client.post(
+            f"/api/projects/{project_id}/documents",
+            headers=headers,
+            data={"document_type": "tender_main"},
+            files={"file": (pdf_path.name, pdf, "application/pdf")},
+        )
+    assert uploaded.status_code == 201, uploaded.text
+    created = client.post(
+        f"/api/projects/{project_id}/agent-runs",
+        headers=headers,
+        json={"goal": "按投标经理权限生成内部草稿"},
+    )
+    assert created.status_code == 201, created.text
+    assert observed_roles
+    assert set(observed_roles) == {"bid_manager"}
 
 
 def test_agent_run_persists_three_review_gates_and_exports_after_resuming(client, demo) -> None:

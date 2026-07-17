@@ -167,6 +167,18 @@ class AgentRun(UUIDAuditMixin, Base):
     project_id: Mapped[UUID] = mapped_column(ForeignKey("tender_projects.id"), index=True)
     workflow_type: Mapped[str] = mapped_column(String(100))
     goal: Mapped[str] = mapped_column(Text)
+    # `supervised` preserves the original three review gates.  The default is
+    # deliberately the local, draft-only agent mode; it never represents a
+    # human approval or a final compliance decision.
+    mode: Mapped[str] = mapped_column(String(30), default="autonomous_draft")
+    plan_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    iteration: Mapped[int] = mapped_column(Integer, default=0)
+    max_iterations: Mapped[int] = mapped_column(Integer, default=20)
+    current_action: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_observation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    next_action: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    agent_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    completion_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="queued")
     current_step: Mapped[str | None] = mapped_column(String(100), nullable=True)
     input_revision: Mapped[int] = mapped_column(Integer, default=1)

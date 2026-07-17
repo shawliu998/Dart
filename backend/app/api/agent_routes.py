@@ -29,7 +29,15 @@ def serialize_bundle(bundle: dict) -> dict:
 @router.post("/projects/{project_id}/agent-runs", status_code=201)
 def create_agent_run(project_id: UUID, data: AgentRunCreate, background: BackgroundTasks, db: Session = Depends(get_db), principal: Principal = Depends(get_principal)) -> dict:
     require_write(principal)
-    bundle = agent_runtime.create_run(db, principal, project_id, goal=data.goal, input_revision=data.input_revision)
+    bundle = agent_runtime.create_run(
+        db,
+        principal,
+        project_id,
+        goal=data.goal,
+        input_revision=data.input_revision,
+        mode=data.mode,
+        max_iterations=data.max_iterations,
+    )
     background.add_task(process_next_job)
     return serialize_bundle(bundle)
 
@@ -96,7 +104,7 @@ def decide(approval_id: UUID, data: ApprovalDecision, approved: bool, background
         bundle = agent_runtime.decide_approval(db, principal, approval_id, approved=approved, reason=data.reason)
     except LookupError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
-    if approved:
+    if approved and bundle["run"].status == "queued":
         background.add_task(process_next_job)
     return serialize_bundle(bundle)
 

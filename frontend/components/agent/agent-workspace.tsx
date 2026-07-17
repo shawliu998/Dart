@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import {
   AlertOctagon,
   ArrowRight,
@@ -100,6 +100,9 @@ function RunSummary({ bundle, source }: { bundle: AgentRunBundle; source: "api" 
             <span className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-semibold text-amber-900">
               {runLabels[run.status]}
             </span>
+            <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${run.mode === "autonomous_draft" ? "border-teal-200 bg-teal-50 text-teal-900" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
+              {run.mode === "autonomous_draft" ? "自主草稿" : "监督执行"}
+            </span>
             <span className="text-xs text-slate-500">运行 ID：{run.id}</span>
           </div>
           <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{run.title}</h1>
@@ -110,6 +113,7 @@ function RunSummary({ bundle, source }: { bundle: AgentRunBundle; source: "api" 
           <div><dt className="text-slate-500">发起人</dt><dd className="mt-1 font-medium text-slate-900">{run.initiatedBy}</dd></div>
           <div><dt className="text-slate-500">触发原因</dt><dd className="mt-1 font-medium text-slate-900">{triggerLabels[run.trigger]}</dd></div>
           <div><dt className="text-slate-500">最后更新</dt><dd className="mt-1 font-medium text-slate-900">{run.updatedAt}</dd></div>
+          <div><dt className="text-slate-500">迭代</dt><dd className="mt-1 font-medium text-slate-900">{run.iteration} / {run.maxIterations}</dd></div>
         </dl>
       </div>
       <div className="mt-5 grid gap-4 border-t border-slate-100 pt-4 lg:grid-cols-[1fr_auto] lg:items-end">
@@ -124,6 +128,49 @@ function RunSummary({ bundle, source }: { bundle: AgentRunBundle; source: "api" 
         </div>
       </div>
     </header>
+  );
+}
+
+const autonomousPhases = [
+  { title: "文档理解", detail: "解析文件与提取项目摘要", keys: ["ingest", "parse", "profile"] },
+  { title: "要求与证据", detail: "抽取要求并匹配可追溯证据", keys: ["requirement", "evidence", "match"] },
+  { title: "合规与响应", detail: "运行规则并生成分类响应草稿", keys: ["compliance", "response", "draft"] },
+  { title: "交付物生成", detail: "汇总内部草稿并生成工作包", keys: ["export", "package"] },
+  { title: "统一复核", detail: "集中呈现结果并提交最终人工复核", keys: ["review"] },
+];
+
+function phaseState(bundle: AgentRunBundle, phaseIndex: number): "completed" | "running" | "pending" {
+  const { run, steps } = bundle;
+  const phase = autonomousPhases[phaseIndex];
+  const matching = steps.filter((step) => `${step.title} ${step.tool ?? ""}`.toLowerCase().split(/[^a-z]+/).some((word) => phase.keys.some((key) => word.includes(key))));
+  if (matching.some((step) => step.status === "running" || step.status === "waiting_approval" || step.status === "blocked")) return "running";
+  if (matching.length && matching.every((step) => step.status === "completed")) return "completed";
+  const progressPhase = Math.min(4, Math.floor((run.progress / 100) * autonomousPhases.length));
+  if (phaseIndex < progressPhase || run.status === "completed") return "completed";
+  return phaseIndex === progressPhase && ["queued", "planning", "running"].includes(run.status) ? "running" : "pending";
+}
+
+function AutonomousCommandCenter({ bundle }: { bundle: AgentRunBundle }) {
+  const { run } = bundle;
+  return (
+    <section className="rounded-xl border border-teal-200 bg-teal-50/60 p-5 shadow-sm" aria-labelledby="autonomous-plan-title">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><h2 id="autonomous-plan-title" className="text-base font-semibold text-slate-950">自主执行计划</h2><p className="mt-1 text-xs text-slate-600">有限循环只调用受控工具；当前产物均为内部草稿，须经最终人工复核。</p></div>
+        <span className="rounded-full border border-teal-200 bg-white px-2.5 py-1 text-xs font-semibold text-teal-900">第 {run.iteration} / {run.maxIterations} 次迭代</span>
+      </div>
+      <ol className="mt-4 grid gap-2 md:grid-cols-5" aria-label="五阶段执行计划">
+        {autonomousPhases.map((phase, index) => {
+          const status = phaseState(bundle, index);
+          const style = status === "completed" ? "border-emerald-300 bg-emerald-50 text-emerald-900" : status === "running" ? "border-blue-300 bg-blue-50 text-blue-900" : "border-slate-200 bg-white text-slate-600";
+          return <li key={phase.title} className={`rounded-lg border p-3 ${style}`}><span className="text-[11px] font-bold">{String(index + 1).padStart(2, "0")}</span><h3 className="mt-1 text-sm font-semibold">{phase.title}</h3><p className="mt-1 text-[11px] leading-4">{phase.detail}</p><span className="mt-2 block text-[11px] font-medium">{status === "completed" ? "已完成" : status === "running" ? "进行中" : "待执行"}</span></li>;
+        })}
+      </ol>
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <article className="rounded-lg border border-teal-100 bg-white p-3"><h3 className="text-xs font-semibold text-slate-700">当前动作</h3><p className="mt-1 text-sm text-slate-900">{run.currentAction ?? "正在根据项目状态选择下一项受控工具。"}</p></article>
+        <article className="rounded-lg border border-teal-100 bg-white p-3"><h3 className="text-xs font-semibold text-slate-700">下一步</h3><p className="mt-1 text-sm text-slate-900">{run.nextAction ?? "完成当前动作后继续执行计划。"}</p></article>
+        <article className="rounded-lg border border-teal-100 bg-white p-3"><h3 className="text-xs font-semibold text-slate-700">当前发现</h3><p className="mt-1 text-sm text-slate-900">{run.observation ?? run.summary}</p></article>
+      </div>
+    </section>
   );
 }
 
@@ -203,7 +250,7 @@ function ApprovalQueue({ approvals, source }: { approvals: AgentApproval[]; sour
               <div className="flex gap-4"><div><dt className="font-medium text-slate-800">所需角色</dt><dd className="mt-0.5 text-slate-600">{approval.requiredRole}</dd></div><div><dt className="font-medium text-slate-800">可逆性</dt><dd className="mt-0.5 text-slate-600">{approval.reversible ? "可撤销并保留审计" : "不可在运行中心撤销"}</dd></div></div>
             </dl>
             <div className="mt-3"><SourceReference source={approval.sourceReferences[0]} /></div>
-            {source === "api" && approval.status === "pending" && (
+            {source === "api" && approval.status === "pending" && approval.type !== "final_work_package_review" && (
               <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <label className="block text-xs font-semibold text-slate-900" htmlFor={`approval-reason-${approval.id}`}>审批理由</label>
                 <textarea
@@ -266,11 +313,25 @@ function FailureState({ result }: { result: Extract<AgentDataResult<AgentRunBund
 }
 
 export function AgentWorkspace({ initialResult }: { initialResult: AgentDataResult<AgentRunBundle> }) {
-  const result = initialResult;
+  const [result, setResult] = useState(initialResult);
+  const activeRun = result.source !== "failure" && result.source === "api" && ["queued", "planning", "running"].includes(result.data.run.status);
+
+  useEffect(() => {
+    if (!activeRun) return;
+    let disposed = false;
+    const refresh = async () => {
+      const next = await agentApi.getRunById(result.data.run.id, result.data.run.projectId);
+      if (!disposed && next.source !== "failure") setResult(next);
+    };
+    const timer = window.setInterval(() => { void refresh(); }, 1000);
+    return () => { disposed = true; window.clearInterval(timer); };
+  }, [activeRun, result]);
+
   if (result.source === "failure") return <FailureState result={result} />;
   return (
     <div className="page space-y-4 pb-8">
       <RunSummary bundle={result.data} source={result.source} />
+      {result.data.run.mode === "autonomous_draft" && <AutonomousCommandCenter bundle={result.data} />}
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" aria-labelledby="agent-run-list-title">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div><h2 id="agent-run-list-title" className="text-sm font-semibold text-slate-950">运行记录</h2><p className="mt-1 text-xs text-slate-500">当前项目：{result.data.run.projectName}</p></div>

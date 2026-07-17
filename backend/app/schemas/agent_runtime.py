@@ -19,6 +19,7 @@ AgentRunStatus = Literal[
     "failed",
     "cancelled",
 ]
+AgentRunMode = Literal["autonomous_draft", "supervised"]
 AgentStepStatus = Literal[
     "pending",
     "running",
@@ -34,9 +35,11 @@ DEFAULT_WORKFLOW_TYPE = "bid_analysis_and_response_v1"
 
 
 class AgentRunCreate(BaseModel):
-    goal: str = Field(default="分析项目文档并进入人工要求复核", min_length=3, max_length=4000)
+    goal: str = Field(default="分析项目文档并生成内部投标草稿", min_length=3, max_length=4000)
     workflow_type: str = Field(default=DEFAULT_WORKFLOW_TYPE, min_length=3, max_length=100)
     input_revision: int = Field(default=1, ge=1)
+    mode: AgentRunMode = "autonomous_draft"
+    max_iterations: int = Field(default=20, ge=1, le=100)
 
 
 class ApprovalDecision(BaseModel):
@@ -53,6 +56,15 @@ class AgentRunRead(ORMModel):
     project_id: UUID
     workflow_type: str
     goal: str
+    mode: AgentRunMode
+    plan_json: dict
+    iteration: int
+    max_iterations: int
+    current_action: str | None
+    last_observation: str | None
+    next_action: str | None
+    agent_summary: str | None
+    completion_reason: str | None
     status: AgentRunStatus
     current_step: str | None
     input_revision: int

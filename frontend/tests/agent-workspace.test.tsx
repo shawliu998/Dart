@@ -20,6 +20,19 @@ describe("AgentWorkspace", () => {
     expect(screen.getByText(/不执行法律资格裁决/)).toBeInTheDocument();
   });
 
+  it("shows the five-phase autonomous command center from API run fields", () => {
+    const bundle = createAgentRunBundle("project-autonomous");
+    bundle.run = { ...bundle.run, mode: "autonomous_draft", iteration: 4, maxIterations: 12, currentAction: "生成投标响应草稿", nextAction: "检查证据覆盖", observation: "发现 3 项待补充材料" };
+    render(<AgentWorkspace initialResult={{ source: "api", data: bundle, error: null }} />);
+    expect(screen.getByRole("heading", { name: "自主执行计划" })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "五阶段执行计划" })).toBeInTheDocument();
+    expect(screen.getByText("生成投标响应草稿")).toBeInTheDocument();
+    expect(screen.getByText("检查证据覆盖")).toBeInTheDocument();
+    expect(screen.getByText("发现 3 项待补充材料")).toBeInTheDocument();
+    expect(screen.getByText("第 4 / 12 次迭代")).toBeInTheDocument();
+    expect(screen.getByText(/当前产物均为内部草稿/)).toBeInTheDocument();
+  });
+
   it("opens the reusable status drawer with plan, tool calls, approvals and findings", async () => {
     const user = userEvent.setup();
     const bundle = createAgentRunBundle("project-drawer");
@@ -68,6 +81,21 @@ describe("AgentWorkspace", () => {
     render(<AgentWorkspace initialResult={result} />);
     expect(screen.queryByLabelText("审批理由")).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "批准" })).not.toBeInTheDocument();
+  });
+
+  it("routes the final work-package approval through the unified review page", () => {
+    const bundle = createAgentRunBundle("project-final-review");
+    bundle.approvals = [{
+      ...bundle.approvals[0],
+      type: "final_work_package_review",
+      status: "pending",
+      destinationLabel: "打开最终工作包复核",
+      href: "/projects/project-final-review/review",
+    }];
+    render(<AgentWorkspace initialResult={{ source: "api", data: bundle, error: null }} />);
+    expect(screen.queryByLabelText("审批理由")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "批准" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /打开最终工作包复核/ })).toHaveAttribute("href", "/projects/project-final-review/review");
   });
 
   it("sends a rejection reason to the persisted approval endpoint", async () => {

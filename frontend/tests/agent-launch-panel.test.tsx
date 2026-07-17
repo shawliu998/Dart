@@ -23,9 +23,28 @@ describe("AgentLaunchPanel", () => {
 
     await user.click(screen.getByRole("button", { name: "发起项目分析" }));
 
-    await waitFor(() => expect(createRun).toHaveBeenCalledWith("project-1"));
+    await waitFor(() => expect(createRun).toHaveBeenCalledWith("project-1", {
+      goal: "完成投标文件分析、证据匹配与响应草稿，提交最终统一复核。",
+      mode: "autonomous_draft",
+      maxIterations: 20,
+    }));
     expect(refresh).toHaveBeenCalledOnce();
     expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+  });
+
+  it("sends the selected autonomous objective and iteration limit", async () => {
+    const user = userEvent.setup();
+    const createRun = vi.spyOn(agentApi, "createRun").mockResolvedValue({ source: "api", data: null, error: null } as never);
+    render(<AgentLaunchPanel projectId="project-1" />);
+
+    await user.clear(screen.getByLabelText("目标"));
+    await user.type(screen.getByLabelText("目标"), "优先完成资格材料草稿");
+    await user.selectOptions(screen.getByLabelText("运行模式"), "supervised");
+    await user.clear(screen.getByLabelText("最大迭代次数"));
+    await user.type(screen.getByLabelText("最大迭代次数"), "8");
+    await user.click(screen.getByRole("button", { name: "发起项目分析" }));
+
+    await waitFor(() => expect(createRun).toHaveBeenCalledWith("project-1", { goal: "优先完成资格材料草稿", mode: "supervised", maxIterations: 8 }));
   });
 
   it("shows the API error without refreshing when creating a run fails", async () => {

@@ -182,6 +182,10 @@ def test_agent_run_defaults(session) -> None:
 
     assert isinstance(run.id, UUID)
     assert run.status == "queued"
+    assert run.mode == "autonomous_draft"
+    assert run.plan_json == {}
+    assert run.iteration == 0 and run.max_iterations == 20
+    assert run.current_action is None and run.next_action is None
     assert run.input_revision == 1
     assert run.cancel_requested is False
     assert run.current_step is None
@@ -408,6 +412,8 @@ def test_agent_run_create_defaults() -> None:
     assert request.workflow_type == "bid_analysis_and_response_v1"
     assert request.workflow_type == DEFAULT_WORKFLOW_TYPE
     assert request.input_revision == 1
+    assert request.mode == "autonomous_draft"
+    assert request.max_iterations == 20
 
 
 def test_approval_decision_validation() -> None:
@@ -450,7 +456,8 @@ def test_migration_revision_linkage() -> None:
     assert revisions["0003_agent_runtime"].down_revision == "0002_phase2_to_5"
     assert revisions["0004_model_run_provenance"].down_revision == "0003_agent_runtime"
     assert revisions["0005_response_workbench"].down_revision == "0004_model_run_provenance"
-    assert tuple(script.get_heads()) == ("0005_response_workbench",)
+    assert revisions["0006_autonomous_draft_agent"].down_revision == "0005_response_workbench"
+    assert tuple(script.get_heads()) == ("0006_autonomous_draft_agent",)
 
 
 def _load_migration_module() -> ModuleType:

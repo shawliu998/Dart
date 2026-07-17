@@ -181,7 +181,9 @@ def _expected_types(requirement: Requirement) -> set[str]:
     return set()
 
 
-def suggest_matches(db: Session, principal: Principal, project_id: UUID) -> list[EvidenceMatch]:
+def suggest_matches(
+    db: Session, principal: Principal, project_id: UUID, *, provisional: bool = False
+) -> list[EvidenceMatch]:
     requirements = list(
         db.scalars(
             select(Requirement).where(
@@ -233,7 +235,11 @@ def suggest_matches(db: Session, principal: Principal, project_id: UUID) -> list
                     evidence_claim_id=claim.id,
                     match_score=score,
                     match_type="deterministic",
-                    status="suggested" if entity_ok and valid else "needs_review",
+                    status=(
+                        "provisional_match"
+                        if provisional and score >= 0.85 and type_ok and entity_ok and valid
+                        else "suggested" if entity_ok and valid else "needs_review"
+                    ),
                     reason="；".join(reasons) + "；系统仅建议，须人工接受",
                     created_by_ai=False,
                 )
@@ -256,7 +262,11 @@ def suggest_matches(db: Session, principal: Principal, project_id: UUID) -> list
         entity_type="project",
         entity_id=project_id,
         project_id=project_id,
-        after={"count": len(matches), "auto_accepted": 0},
+        after={
+            "count": len(matches),
+            "auto_accepted": 0,
+            "provisional_count": sum(item.status == "provisional_match" for item in matches),
+        },
     )
     db.commit()
     return matches
