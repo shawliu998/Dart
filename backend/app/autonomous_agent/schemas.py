@@ -55,6 +55,7 @@ class AgentContext(BaseModel):
     disqualification_candidate_count: int = 0
     evidence_asset_count: int = 0
     evidence_claim_count: int = 0
+    unclaimed_evidence_asset_count: int = 0
     evidence_match_count: int = 0
     provisional_match_count: int = 0
     missing_evidence_requirement_count: int = 0

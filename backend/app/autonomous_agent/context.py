@@ -120,16 +120,21 @@ def build_agent_context(db: Session, run: AgentRun) -> AgentContext:
         EvidenceAsset.tenant_id == run.tenant_id,
         EvidenceAsset.deleted_at.is_(None),
     )
-    evidence_asset_count = _count(
-        db, select(func.count()).select_from(EvidenceAsset).where(*asset_filter)
+    assets = list(db.scalars(select(EvidenceAsset).where(*asset_filter)))
+    asset_ids = [item.id for item in assets]
+    claim_asset_ids = (
+        list(
+            db.scalars(
+                select(EvidenceClaim.evidence_asset_id).where(
+                    EvidenceClaim.tenant_id == run.tenant_id,
+                    EvidenceClaim.evidence_asset_id.in_(asset_ids),
+                )
+            )
+        )
+        if asset_ids
+        else []
     )
-    evidence_claim_count = _count(
-        db,
-        select(func.count())
-        .select_from(EvidenceClaim)
-        .join(EvidenceAsset, EvidenceAsset.id == EvidenceClaim.evidence_asset_id)
-        .where(EvidenceClaim.tenant_id == run.tenant_id, *asset_filter),
-    )
+    claimed_asset_ids = set(claim_asset_ids)
     checks = list(
         db.scalars(
             select(ComplianceCheck).where(
@@ -162,8 +167,11 @@ def build_agent_context(db: Session, run: AgentRun) -> AgentContext:
         provisional_requirement_count=sum(item.review_status == "provisional" for item in requirements),
         manual_review_requirement_count=sum(not item.human_verified for item in requirements),
         disqualification_candidate_count=sum(item.disqualification_if_failed for item in requirements),
-        evidence_asset_count=evidence_asset_count,
-        evidence_claim_count=evidence_claim_count,
+        evidence_asset_count=len(assets),
+        evidence_claim_count=len(claim_asset_ids),
+        unclaimed_evidence_asset_count=sum(
+            item.id not in claimed_asset_ids for item in assets
+        ),
         evidence_match_count=len(matches),
         provisional_match_count=sum(item.status == "provisional_match" for item in matches),
         missing_evidence_requirement_count=sum(

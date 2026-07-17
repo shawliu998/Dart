@@ -6,6 +6,7 @@ rewrite the draft later, but the persisted links are always limited to human-acc
 
 from __future__ import annotations
 
+from dataclasses import dataclass
 from decimal import Decimal
 from uuid import UUID
 
@@ -16,6 +17,149 @@ from app.audit.service import append_event
 from app.auth.dependencies import Principal
 from app.db.base import utcnow
 from app.models.entities import DisqualificationRule, EvidenceClaim, EvidenceMatch, Requirement, ResponseEvidenceLink, ResponseItem
+
+
+@dataclass(frozen=True)
+class DeterministicDraft:
+    status: str
+    strategy: str
+    text: str
+    missing_information: list[str]
+    risk_notes: list[str]
+    confidence: Decimal
+
+
+_CATEGORY_GROUPS = {
+    "qualification": "qualification",
+    "technical": "technical",
+    "security": "technical",
+    "service": "technical",
+    "commercial": "commercial",
+    "pricing": "commercial",
+    "legal": "commercial",
+    "personnel": "personnel",
+    "case": "case",
+    "delivery": "delivery",
+    "format": "delivery",
+    "submission": "delivery",
+    "signature": "delivery",
+}
+
+
+def _category_group(requirement: Requirement) -> str:
+    return _CATEGORY_GROUPS.get(requirement.category, "technical")
+
+
+def _claim_summary(claims: list[EvidenceClaim]) -> str:
+    if not claims:
+        return "当前无可引用的已接受或暂定证据"
+    return "；".join(
+        f"{claim.subject}—{claim.predicate}：{claim.value}（第{claim.source_page}页）"
+        for claim in claims[:4]
+    )
+
+
+def _deterministic_category_draft(
+    requirement: Requirement,
+    claims: list[EvidenceClaim],
+    *,
+    allow_provisional: bool,
+) -> DeterministicDraft:
+    """Build a category-specific internal draft without inventing bidder facts."""
+    group = _category_group(requirement)
+    references = _claim_summary(claims)
+    requirement_text = requirement.normalized_requirement.strip() or requirement.title
+    risk_notes = []
+    if allow_provisional:
+        risk_notes.append("内部草稿，未经最终人工确认。")
+        if claims:
+            risk_notes.append("引用包含暂定证据匹配，尚未人工接受。")
+
+    if group == "qualification":
+        strategy = "资格资质型响应"
+        text = "\n".join(
+            [
+                "响应结论：已按本条资格要求检索企业材料，结论待人工复核。",
+                f"投标主体：{claims[0].subject if claims else '待核实'}",
+                f"资质或证书：{'；'.join(claim.value for claim in claims[:3]) if claims else '待补充'}",
+                f"证书有效期：{'；'.join(str(claim.valid_to) for claim in claims if claim.valid_to) or '待核实'}",
+                f"引用材料：{references}",
+            ]
+        )
+    elif group == "commercial":
+        strategy = "商务条件型响应"
+        text = "\n".join(
+            [
+                "商务承诺：当前为内部草稿，尚未形成对外最终承诺。",
+                f"服务范围：围绕“{requirement_text}”进行商务确认。",
+                "合同条件：待商务、法务及授权人员复核。",
+                "履约安排：待确认费用、责任边界与时间要求后补充。",
+                f"引用材料：{references}",
+            ]
+        )
+    elif group == "personnel":
+        strategy = "人员配置型响应"
+        text = "\n".join(
+            [
+                f"拟投入人员：{'；'.join(claim.subject for claim in claims[:3]) if claims else '待补充'}",
+                f"人员角色：按“{requirement.title}”要求待确认。",
+                f"证书与经验：{'；'.join(f'{claim.predicate}：{claim.value}' for claim in claims[:4]) if claims else '待补充'}",
+                "职责说明：待人员简历与项目分工复核后补充。",
+                f"引用材料：{references}",
+            ]
+        )
+    elif group == "case":
+        strategy = "案例业绩型响应"
+        text = "\n".join(
+            [
+                f"案例名称：{'；'.join(claim.value for claim in claims if claim.claim_type == 'customer_reference') or '待补充'}",
+                "客户：以合同或验收材料记载为准，待复核。",
+                f"项目内容：针对“{requirement_text}”评估案例相关性。",
+                f"合同或验收材料：{references}",
+                "与当前项目的相关性：待人工根据工作范围确认。",
+            ]
+        )
+    elif group == "delivery":
+        strategy = "交付计划型响应"
+        text = "\n".join(
+            [
+                "交付周期：以招标文件及补充公告的经复核时间要求为准。",
+                "实施阶段：建议按准备、实施、测试、验收编制内部计划。",
+                f"关键节点：围绕“{requirement_text}”待项目负责人确认。",
+                "验收安排：验收标准、责任人与交付物清单待补充。",
+                f"引用材料：{references}",
+            ]
+        )
+    else:
+        strategy = "技术实施型响应"
+        text = "\n".join(
+            [
+                "响应结论：已识别本条技术要求，当前结论待人工复核。",
+                f"拟采用的技术方案：围绕“{requirement_text}”编制设计与实施说明。",
+                "关键参数：以来源条款中的参数为准，禁止在草稿中自行推导。",
+                "实施方法：待技术负责人补充具体架构、步骤与责任人。",
+                "验证方式：待补充可测试的验收方法与判定标准。",
+                f"引用材料：{references}",
+                "待补信息：技术参数、实施细节、测试与验收标准。",
+            ]
+        )
+
+    evidence_required = group in {"qualification", "personnel", "case"}
+    if claims:
+        status = "drafted"
+        missing = []
+        confidence = Decimal("0.820")
+    elif evidence_required:
+        status = "missing_evidence"
+        missing = [f"补充{strategy}所需的可核实材料"]
+        confidence = Decimal("0.000")
+        risk_notes.append("当前无可用证据，未作满足性声明。")
+    else:
+        status = "needs_review"
+        missing = [f"补充并复核{strategy}的具体内容"]
+        confidence = Decimal("0.350")
+        risk_notes.append("当前仅为类别化框架，未作满足性声明。")
+    return DeterministicDraft(status, strategy, text, missing, risk_notes, confidence)
 
 
 def _usable_claims(
@@ -141,25 +285,17 @@ def generate_project_responses(
                         evidence_claim_id=claim.id,
                     )
                 )
-            if claims:
-                references = "；".join(f"{claim.subject}：{claim.value}" for claim in claims[:3])
-                item.status = "drafted"
-                item.response_strategy = (
-                    "基于人工接受的材料逐条响应"
-                    if not allow_provisional
-                    else "内部草稿：基于待人工复核的要求和证据候选"
-                )
-                item.draft_text = f"我方响应“{requirement.title}”。已提供并引用以下材料：{references}。"
-                item.missing_information = []
-                item.risk_notes = ["内部草稿，未经最终人工确认。"] if allow_provisional else []
-                item.confidence = Decimal("0.820")
-            else:
-                item.status = "missing_evidence"
-                item.response_strategy = "需要补充已确认的证明材料"
-                item.draft_text = f"【待补充：证明“{requirement.title}”所需的企业材料】"
-                item.missing_information = [requirement.title]
-                item.risk_notes = ["没有人工接受的证据，草稿未作满足性声明。"]
-                item.confidence = Decimal("0.000")
+            draft = _deterministic_category_draft(
+                requirement,
+                claims,
+                allow_provisional=allow_provisional,
+            )
+            item.status = draft.status
+            item.response_strategy = draft.strategy
+            item.draft_text = draft.text
+            item.missing_information = draft.missing_information
+            item.risk_notes = draft.risk_notes
+            item.confidence = draft.confidence
         if not is_new:
             item.generation_version += 1
         item.version += 1

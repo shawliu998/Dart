@@ -45,7 +45,7 @@ TOOL_REGISTRY: dict[ToolName, RegisteredTool] = {
     "extract_project_profile": _tool("extract_project_profile", "Create a source-bound project profile artifact.", "extract_project_profile", frozenset({"full_bid_draft", "risk_review", "amendment_reanalysis"})),
     "extract_requirements": _tool("extract_requirements", "Run requirement extraction.", "extract_requirements", frozenset({"full_bid_draft", "risk_review", "material_gap_analysis", "amendment_reanalysis"})),
     "classify_bid_risks": _tool("classify_bid_risks", "Classify deterministic risk candidates.", None, frozenset({"risk_review", "full_bid_draft"})),
-    "extract_evidence_claims": _tool("extract_evidence_claims", "Extract source-bound evidence claims.", None, frozenset({"full_bid_draft", "material_gap_analysis", "amendment_reanalysis"})),
+    "extract_evidence_claims": _tool("extract_evidence_claims", "Extract source-bound evidence claims.", "extract_evidence_claims", frozenset({"full_bid_draft", "material_gap_analysis", "amendment_reanalysis"})),
     "match_evidence": _tool("match_evidence", "Run the existing deterministic evidence matcher.", "match_evidence", frozenset({"full_bid_draft", "material_gap_analysis", "amendment_reanalysis"})),
     "run_compliance_checks": _tool("run_compliance_checks", "Run deterministic compliance services.", "run_compliance_rules", frozenset({"full_bid_draft", "risk_review", "material_gap_analysis", "amendment_reanalysis", "work_package_check"})),
     "generate_responses": _tool("generate_responses", "Generate internal response drafts.", "draft_responses", frozenset({"full_bid_draft", "response_improvement", "amendment_reanalysis"})),

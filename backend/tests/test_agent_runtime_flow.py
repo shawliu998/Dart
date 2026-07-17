@@ -17,6 +17,7 @@ WORKFLOW_STEP_KEYS = [
     "extract_project_profile",
     "extract_requirements",
     "review_requirements",
+    "extract_evidence_claims",
     "match_evidence",
     "review_evidence_matches",
     "run_compliance_rules",
@@ -66,7 +67,7 @@ def _create_run_waiting_for_approval(client, demo) -> tuple[dict, str]:
     assert [step["step_key"] for step in paused_data["steps"]] == WORKFLOW_STEP_KEYS
     assert [step["status"] for step in paused_data["steps"][:4]] == ["completed"] * 4
     assert paused_data["steps"][4]["status"] == "waiting_approval"
-    assert [step["status"] for step in paused_data["steps"][5:]] == ["pending"] * 6
+    assert [step["status"] for step in paused_data["steps"][5:]] == ["pending"] * 7
     assert len(paused_data["approvals"]) == 1
     return paused_data, paused_data["approvals"][0]["id"]
 
@@ -472,7 +473,8 @@ def test_agent_run_persists_three_review_gates_and_exports_after_resuming(client
     evidence_gate = client.get(f"/api/agent-runs/{run_id}", headers=headers).json()
     assert evidence_gate["run"]["status"] == "waiting_approval"
     assert evidence_gate["steps"][5]["status"] == "completed"
-    assert evidence_gate["steps"][6]["status"] == "waiting_approval"
+    assert evidence_gate["steps"][6]["status"] == "completed"
+    assert evidence_gate["steps"][7]["status"] == "waiting_approval"
     candidates = [item for item in evidence_gate["artifacts"] if item["artifact_type"] == "evidence_match_candidates"]
     assert len(candidates) == 1
     assert candidates[0]["metadata_json"]["href"] == f"/projects/{project_id}/evidence-matching"
@@ -487,7 +489,8 @@ def test_agent_run_persists_three_review_gates_and_exports_after_resuming(client
     response_gate = client.get(f"/api/agent-runs/{run_id}", headers=headers).json()
     assert response_gate["run"]["status"] == "waiting_approval"
     assert response_gate["steps"][8]["status"] == "completed"
-    assert response_gate["steps"][9]["status"] == "waiting_approval"
+    assert response_gate["steps"][9]["status"] == "completed"
+    assert response_gate["steps"][10]["status"] == "waiting_approval"
     response_approval = next(item for item in response_gate["approvals"] if item["status"] == "pending")
     completed = client.post(
         f"/api/approvals/{response_approval['id']}/approve",

@@ -29,12 +29,13 @@ from app.models.entities import (
     AsyncJob,
     Document,
     DocumentPage,
+    EvidenceClaim,
     Requirement,
     User,
 )
 from app.services.documents import create_job, run_parse_job
 from app.services.extraction import run_extraction_job
-from app.services.evidence import suggest_matches
+from app.services.evidence import extract_claims, list_assets, suggest_matches
 from app.services.exports import export_project_artifacts
 from app.services.project_profile import build_project_profile_candidates
 from app.services.projects import get_project
@@ -62,6 +63,7 @@ BID_WORKFLOW_STEPS: tuple[tuple[str, str], ...] = (
     ("extract_project_profile", "提取项目摘要候选"),
     ("extract_requirements", "抽取招标要求候选"),
     ("review_requirements", "人工复核招标要求"),
+    ("extract_evidence_claims", "抽取企业材料 Claim"),
     ("match_evidence", "生成企业证据候选"),
     ("review_evidence_matches", "人工复核证据匹配"),
     ("run_compliance_rules", "运行确定性合规检查"),
@@ -75,6 +77,7 @@ _ACTION_BY_STEP: dict[str, ToolName] = {
     "parse_documents": "parse_pending_documents",
     "extract_project_profile": "extract_project_profile",
     "extract_requirements": "extract_requirements",
+    "extract_evidence_claims": "extract_evidence_claims",
     "match_evidence": "match_evidence",
     "run_compliance_rules": "run_compliance_checks",
     "draft_responses": "generate_responses",
@@ -88,7 +91,7 @@ _REVIEW_DEPENDENCY_BY_STEP: dict[str, ToolName] = {
 
 _AUTONOMOUS_PLAN: tuple[tuple[str, str, set[str]], ...] = (
     ("understand", "理解项目与招标文件", {"ingest_documents", "parse_documents", "extract_project_profile", "extract_requirements"}),
-    ("evidence", "匹配证据并运行检查", {"review_requirements", "match_evidence", "review_evidence_matches", "run_compliance_rules"}),
+    ("evidence", "匹配证据并运行检查", {"review_requirements", "extract_evidence_claims", "match_evidence", "review_evidence_matches", "run_compliance_rules"}),
     ("draft", "生成内部响应草稿", {"draft_responses", "review_responses"}),
     ("deliver", "生成交付工作包", {"export_artifacts"}),
     ("review", "统一人工复核", set()),
@@ -740,6 +743,35 @@ def process_agent_run(run_id: UUID) -> bool:
                     if commit_boundary():
                         return run.status == "cancelled"
                     return True
+                elif step.step_key == "extract_evidence_claims":
+                    assets = list_assets(db, principal)
+                    before_count = db.scalar(
+                        select(func.count())
+                        .select_from(EvidenceClaim)
+                        .where(EvidenceClaim.tenant_id == run.tenant_id)
+                    ) or 0
+                    failed_assets: list[str] = []
+                    for asset in assets:
+                        try:
+                            extract_claims(db, principal, asset)
+                        except Exception:
+                            # A malformed company material is isolated and
+                            # reported instead of blocking the entire run.
+                            db.rollback()
+                            failed_assets.append(asset.name)
+                    after_count = db.scalar(
+                        select(func.count())
+                        .select_from(EvidenceClaim)
+                        .where(EvidenceClaim.tenant_id == run.tenant_id)
+                    ) or 0
+                    summary = {
+                        "asset_count": len(assets),
+                        "new_claim_count": max(0, after_count - before_count),
+                        "failed_assets": failed_assets,
+                        "review_state": "manual_review",
+                    }
+                    db.add(AgentArtifact(tenant_id=run.tenant_id, run_id=run.id, step_run_id=step.id, artifact_type="evidence_claims", title="企业材料 Claim", storage_key=f"runtime://{run.id}/evidence-claims", content_hash=stable_hash(summary), metadata_json=summary, created_by=principal.user_id))
+                    _complete(db, run, step, summary)
                 elif step.step_key == "match_evidence":
                     matches = suggest_matches(db, principal, run.project_id, provisional=autonomous)
                     pending_count = sum(match.status in {"suggested", "needs_review"} for match in matches)

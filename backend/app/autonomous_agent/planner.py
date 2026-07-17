@@ -14,6 +14,7 @@ def _needed(context: AgentContext) -> list[tuple[ToolName, Callable[[AgentContex
         ("parse_pending_documents", lambda value: value.unparsed_document_count > 0, "存在未完成解析的文件"),
         ("extract_project_profile", lambda value: value.project_profile_artifact_count == 0, "尚未生成有来源的项目摘要"),
         ("extract_requirements", lambda value: value.requirement_count == 0, "尚未抽取招标要求"),
+        ("extract_evidence_claims", lambda value: value.unclaimed_evidence_asset_count > 0, "存在尚未抽取结构化 Claim 的企业材料"),
         ("match_evidence", lambda value: value.requirement_count > 0 and "match_evidence" not in value.completed_tools, "要求尚未完成本次证据匹配"),
         ("run_compliance_checks", lambda value: value.compliance_check_count == 0 or "run_compliance_checks" not in value.completed_tools, "需要根据当前证据重算合规检查"),
         ("generate_responses", lambda value: value.requirement_count > 0 and (value.missing_response_count > 0 or "generate_responses" not in value.completed_tools), "存在未生成内部草稿的要求"),
