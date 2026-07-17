@@ -65,7 +65,9 @@ class AgentContext(BaseModel):
     response_count: int = 0
     missing_response_count: int = 0
     missing_evidence_response_count: int = 0
+    review_response_count: int = 0
     response_quality_issue_count: int = 0
+    response_quality_artifact_count: int = 0
     remediation_task_count: int = 0
     project_profile_artifact_count: int = 0
     export_artifact_count: int = 0

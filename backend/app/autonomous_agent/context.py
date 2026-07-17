@@ -183,8 +183,12 @@ def build_agent_context(db: Session, run: AgentRun) -> AgentContext:
         response_count=len(responses),
         missing_response_count=sum(item.id not in response_requirement_ids for item in requirements),
         missing_evidence_response_count=sum(item.status == "missing_evidence" for item in responses),
+        review_response_count=sum(item.status == "needs_review" for item in responses),
         response_quality_issue_count=int(
             (quality_artifact.metadata_json if quality_artifact else {}).get("issue_count", 0)
+        ),
+        response_quality_artifact_count=sum(
+            item.artifact_type == "response_quality_check" for item in artifacts
         ),
         remediation_task_count=_count(
             db,

@@ -54,6 +54,7 @@ def test_planner_skips_satisfied_actions_and_finishes() -> None:
             evidence_match_count=1,
             compliance_check_count=1,
             response_count=1,
+            response_quality_artifact_count=1,
             project_profile_artifact_count=1,
             export_artifact_count=3,
             completed_tools={

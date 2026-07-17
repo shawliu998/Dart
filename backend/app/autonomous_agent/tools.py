@@ -49,9 +49,9 @@ TOOL_REGISTRY: dict[ToolName, RegisteredTool] = {
     "match_evidence": _tool("match_evidence", "Run the existing deterministic evidence matcher.", "match_evidence", frozenset({"full_bid_draft", "material_gap_analysis", "amendment_reanalysis"})),
     "run_compliance_checks": _tool("run_compliance_checks", "Run deterministic compliance services.", "run_compliance_rules", frozenset({"full_bid_draft", "risk_review", "material_gap_analysis", "amendment_reanalysis", "work_package_check"})),
     "generate_responses": _tool("generate_responses", "Generate internal response drafts.", "draft_responses", frozenset({"full_bid_draft", "response_improvement", "amendment_reanalysis"})),
-    "check_response_quality": _tool("check_response_quality", "Run deterministic response quality checks.", None, frozenset({"full_bid_draft", "response_improvement", "amendment_reanalysis", "work_package_check"})),
+    "check_response_quality": _tool("check_response_quality", "Run deterministic response quality checks.", "check_response_quality", frozenset({"full_bid_draft", "response_improvement", "amendment_reanalysis", "work_package_check"})),
     "revise_responses": _tool("revise_responses", "Apply safe draft-only response repairs.", None, frozenset({"full_bid_draft", "response_improvement", "amendment_reanalysis"})),
-    "create_remediation_tasks": _tool("create_remediation_tasks", "Create project remediation tasks.", None, frozenset({"risk_review", "material_gap_analysis"})),
+    "create_remediation_tasks": _tool("create_remediation_tasks", "Create project remediation tasks.", "create_remediation_tasks", frozenset({"full_bid_draft", "risk_review", "material_gap_analysis", "amendment_reanalysis"})),
     "assemble_work_package": _tool("assemble_work_package", "Export the existing project artifact package.", "export_artifacts", frozenset({"full_bid_draft", "response_improvement", "amendment_reanalysis", "work_package_check"})),
     "finish_run": _tool("finish_run", "Finish or request the final work-package review.", None),
 }

@@ -39,6 +39,7 @@ from app.services.evidence import extract_claims, list_assets, suggest_matches
 from app.services.exports import export_project_artifacts
 from app.services.project_profile import build_project_profile_candidates
 from app.services.projects import get_project
+from app.services.remediation import create_agent_remediation_tasks
 from app.services.response_quality import run_response_quality_checks
 from app.services.responses import generate_project_responses
 from app.services.review_workflows import run_compliance
@@ -68,6 +69,8 @@ BID_WORKFLOW_STEPS: tuple[tuple[str, str], ...] = (
     ("review_evidence_matches", "人工复核证据匹配"),
     ("run_compliance_rules", "运行确定性合规检查"),
     ("draft_responses", "生成投标响应草稿"),
+    ("check_response_quality", "检查并修补响应草稿"),
+    ("create_remediation_tasks", "生成缺口补救任务"),
     ("review_responses", "人工复核投标响应"),
     ("export_artifacts", "导出交付物"),
 )
@@ -81,6 +84,8 @@ _ACTION_BY_STEP: dict[str, ToolName] = {
     "match_evidence": "match_evidence",
     "run_compliance_rules": "run_compliance_checks",
     "draft_responses": "generate_responses",
+    "check_response_quality": "check_response_quality",
+    "create_remediation_tasks": "create_remediation_tasks",
     "export_artifacts": "assemble_work_package",
 }
 _REVIEW_DEPENDENCY_BY_STEP: dict[str, ToolName] = {
@@ -92,7 +97,7 @@ _REVIEW_DEPENDENCY_BY_STEP: dict[str, ToolName] = {
 _AUTONOMOUS_PLAN: tuple[tuple[str, str, set[str]], ...] = (
     ("understand", "理解项目与招标文件", {"ingest_documents", "parse_documents", "extract_project_profile", "extract_requirements"}),
     ("evidence", "匹配证据并运行检查", {"review_requirements", "extract_evidence_claims", "match_evidence", "review_evidence_matches", "run_compliance_rules"}),
-    ("draft", "生成内部响应草稿", {"draft_responses", "review_responses"}),
+    ("draft", "生成内部响应草稿", {"draft_responses", "check_response_quality", "create_remediation_tasks", "review_responses"}),
     ("deliver", "生成交付工作包", {"export_artifacts"}),
     ("review", "统一人工复核", set()),
 )
@@ -819,14 +824,33 @@ def process_agent_run(run_id: UUID) -> bool:
                     )
                     summary = {"count": len(responses), "missing_evidence_count": sum(item.status == "missing_evidence" for item in responses), "href": f"/projects/{run.project_id}/responses"}
                     db.add(AgentArtifact(tenant_id=run.tenant_id, run_id=run.id, step_run_id=step.id, artifact_type="response_drafts", title="投标响应草稿", storage_key=f"runtime://{run.id}/response-drafts", content_hash=stable_hash(summary), metadata_json=summary, created_by=principal.user_id))
-                    if autonomous:
-                        quality = run_response_quality_checks(db, principal, run.project_id)
-                        quality_metadata = quality.model_dump(mode="json")
-                        db.add(AgentArtifact(tenant_id=run.tenant_id, run_id=run.id, step_run_id=step.id, artifact_type="response_quality_check", title="响应草稿质量自查", storage_key=f"runtime://{run.id}/response-quality", content_hash=stable_hash(quality_metadata), metadata_json=quality_metadata, created_by=principal.user_id))
-                        for quality_pass in quality.passes:
-                            _event(db, run, "response_quality.pass_completed", {"pass_number": quality_pass.pass_number, "issue_count": len(quality_pass.issues), "repaired_count": quality_pass.repaired_count}, step)
-                        summary["quality_issue_count"] = quality.issue_count
-                        summary["quality_repaired_count"] = quality.repaired_count
+                    _complete(db, run, step, summary)
+                elif step.step_key == "check_response_quality":
+                    quality = run_response_quality_checks(db, principal, run.project_id)
+                    quality_metadata = quality.model_dump(mode="json")
+                    db.add(AgentArtifact(tenant_id=run.tenant_id, run_id=run.id, step_run_id=step.id, artifact_type="response_quality_check", title="响应草稿质量自查", storage_key=f"runtime://{run.id}/response-quality", content_hash=stable_hash(quality_metadata), metadata_json=quality_metadata, created_by=principal.user_id))
+                    for quality_pass in quality.passes:
+                        _event(db, run, "response_quality.pass_completed", {"pass_number": quality_pass.pass_number, "issue_count": len(quality_pass.issues), "repaired_count": quality_pass.repaired_count}, step)
+                    _complete(
+                        db,
+                        run,
+                        step,
+                        {
+                            "quality_issue_count": quality.issue_count,
+                            "quality_repaired_count": quality.repaired_count,
+                            "manual_review_required": quality.manual_review_required,
+                        },
+                    )
+                elif step.step_key == "create_remediation_tasks":
+                    created_tasks = create_agent_remediation_tasks(
+                        db, principal, run.project_id
+                    )
+                    summary = {
+                        "created_count": len(created_tasks),
+                        "task_ids": [str(item.id) for item in created_tasks],
+                        "href": f"/projects/{run.project_id}/tasks",
+                    }
+                    db.add(AgentArtifact(tenant_id=run.tenant_id, run_id=run.id, step_run_id=step.id, artifact_type="remediation_tasks", title="缺口补救任务", storage_key=f"runtime://{run.id}/remediation-tasks", content_hash=stable_hash(summary), metadata_json=summary, created_by=principal.user_id))
                     _complete(db, run, step, summary)
                 elif step.step_key == "review_responses":
                     if autonomous:

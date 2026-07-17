@@ -22,6 +22,8 @@ WORKFLOW_STEP_KEYS = [
     "review_evidence_matches",
     "run_compliance_rules",
     "draft_responses",
+    "check_response_quality",
+    "create_remediation_tasks",
     "review_responses",
     "export_artifacts",
 ]
@@ -67,7 +69,7 @@ def _create_run_waiting_for_approval(client, demo) -> tuple[dict, str]:
     assert [step["step_key"] for step in paused_data["steps"]] == WORKFLOW_STEP_KEYS
     assert [step["status"] for step in paused_data["steps"][:4]] == ["completed"] * 4
     assert paused_data["steps"][4]["status"] == "waiting_approval"
-    assert [step["status"] for step in paused_data["steps"][5:]] == ["pending"] * 7
+    assert [step["status"] for step in paused_data["steps"][5:]] == ["pending"] * 9
     assert len(paused_data["approvals"]) == 1
     return paused_data, paused_data["approvals"][0]["id"]
 
@@ -490,7 +492,9 @@ def test_agent_run_persists_three_review_gates_and_exports_after_resuming(client
     assert response_gate["run"]["status"] == "waiting_approval"
     assert response_gate["steps"][8]["status"] == "completed"
     assert response_gate["steps"][9]["status"] == "completed"
-    assert response_gate["steps"][10]["status"] == "waiting_approval"
+    assert response_gate["steps"][10]["status"] == "completed"
+    assert response_gate["steps"][11]["status"] == "completed"
+    assert response_gate["steps"][12]["status"] == "waiting_approval"
     response_approval = next(item for item in response_gate["approvals"] if item["status"] == "pending")
     completed = client.post(
         f"/api/approvals/{response_approval['id']}/approve",

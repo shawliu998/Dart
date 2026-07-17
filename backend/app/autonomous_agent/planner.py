@@ -18,6 +18,8 @@ def _needed(context: AgentContext) -> list[tuple[ToolName, Callable[[AgentContex
         ("match_evidence", lambda value: value.requirement_count > 0 and "match_evidence" not in value.completed_tools, "要求尚未完成本次证据匹配"),
         ("run_compliance_checks", lambda value: value.compliance_check_count == 0 or "run_compliance_checks" not in value.completed_tools, "需要根据当前证据重算合规检查"),
         ("generate_responses", lambda value: value.requirement_count > 0 and (value.missing_response_count > 0 or "generate_responses" not in value.completed_tools), "存在未生成内部草稿的要求"),
+        ("check_response_quality", lambda value: value.response_count > 0 and value.response_quality_artifact_count == 0, "响应草稿尚未完成质量自查"),
+        ("create_remediation_tasks", lambda value: (value.compliance_fail_count + value.compliance_review_count + value.missing_evidence_response_count + value.review_response_count) > 0 and "create_remediation_tasks" not in value.completed_tools, "存在需要跟进的合规或响应缺口"),
         ("assemble_work_package", lambda value: value.export_artifact_count == 0, "尚未生成本次交付工作包"),
     ]
 
