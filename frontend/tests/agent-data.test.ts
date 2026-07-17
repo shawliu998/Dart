@@ -66,16 +66,71 @@ describe("Agent run API adapter", () => {
     expect(bundle.outputs[0].href).toBe("/api/agent-artifacts/artifact-export-1/download");
   });
 
-  it("maps response-quality results to the final review workbench", () => {
+  it("maps response-quality results to the response workbench with issue and repaired counts", () => {
     const bundle = agentRunBundleFromApiPayload({
       ...persistedRun,
       artifacts: [{
         id: "artifact-quality-1", step_run_id: "step-1", artifact_type: "response_quality_check", created_at: "2026-07-17T09:02:00Z",
-        metadata_json: { issue_count: 3, manual_review_required: true, after_summary: "仍有 3 项需要人工复核。", review_href: "/projects/project-1/review" },
+        metadata_json: { issue_count: 3, repaired_count: 1, manual_review_required: true, after_summary: "仍有 3 项需要人工复核。" },
       }],
     }, "project-1");
 
-    expect(bundle.outputs[0]).toMatchObject({ title: "响应草稿质量自查", kind: "audit", count: 3, summary: "仍有 3 项需要人工复核。", severity: "high", href: "/projects/project-1/review" });
+    expect(bundle.outputs[0]).toMatchObject({
+      title: "响应草稿质量自查", kind: "audit", count: 3, severity: "high", href: "/projects/project-1/responses", artifactType: "response_quality_check",
+      metrics: { qualityIssueCount: 3, qualityRepairedCount: 1 },
+    });
+    expect(bundle.outputs[0].summary).toContain("剩余 3 项质量问题");
+    expect(bundle.outputs[0].summary).toContain("已自动修补 1 项安全标注");
+  });
+
+  it("maps evidence-claims artifact into the evidence workbench with manual-review state", () => {
+    const bundle = agentRunBundleFromApiPayload({
+      ...persistedRun,
+      artifacts: [{
+        id: "artifact-claims-1", step_run_id: "step-1", artifact_type: "evidence_claims", created_at: "2026-07-17T09:02:00Z",
+        metadata_json: { asset_count: 5, new_claim_count: 12, failed_assets: ["过期证书.pdf"], review_state: "manual_review" },
+      }],
+    }, "project-1");
+
+    expect(bundle.outputs[0]).toMatchObject({
+      title: "企业材料 Claim", type: "evidence", kind: "evidence", count: 12, severity: "high", href: "/projects/project-1/evidence-matching", artifactType: "evidence_claims",
+      metrics: { assetCount: 5, newClaimCount: 12, failedAssetCount: 1 },
+    });
+    expect(bundle.outputs[0].summary).toContain("已处理 5 份企业材料");
+    expect(bundle.outputs[0].summary).toContain("1 份材料抽取失败");
+  });
+
+  it("maps response-drafts artifact into the response workbench", () => {
+    const bundle = agentRunBundleFromApiPayload({
+      ...persistedRun,
+      artifacts: [{
+        id: "artifact-responses-1", step_run_id: "step-1", artifact_type: "response_drafts", created_at: "2026-07-17T09:02:00Z",
+        metadata_json: { count: 8, missing_evidence_count: 2, href: "/projects/project-1/responses" },
+      }],
+    }, "project-1");
+
+    expect(bundle.outputs[0]).toMatchObject({
+      title: "投标响应草稿", type: "report", kind: "audit", count: 8, severity: "medium", href: "/projects/project-1/responses", artifactType: "response_drafts",
+      metrics: { responseCount: 8, missingEvidenceCount: 2 },
+    });
+    expect(bundle.outputs[0].summary).toContain("共生成 8 条响应草稿");
+    expect(bundle.outputs[0].summary).toContain("2 条缺少证据链接");
+  });
+
+  it("maps remediation-tasks artifact into the project tasks workbench", () => {
+    const bundle = agentRunBundleFromApiPayload({
+      ...persistedRun,
+      artifacts: [{
+        id: "artifact-tasks-1", step_run_id: "step-1", artifact_type: "remediation_tasks", created_at: "2026-07-17T09:02:00Z",
+        metadata_json: { created_count: 4, task_ids: ["task-1", "task-2"], href: "/projects/project-1/tasks" },
+      }],
+    }, "project-1");
+
+    expect(bundle.outputs[0]).toMatchObject({
+      title: "缺口补救任务", type: "task", kind: "task", count: 4, severity: "medium", href: "/projects/project-1/tasks", artifactType: "remediation_tasks",
+      metrics: { remediationTaskCount: 4 },
+    });
+    expect(bundle.outputs[0].summary).toContain("本次运行创建 4 项整改任务");
   });
 
   it("preserves the explicit evidence and response review approval types", () => {

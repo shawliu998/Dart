@@ -28,7 +28,7 @@ import type {
   AgentStepStatus,
   AgentPlanStageStatus,
 } from "@/lib/agent";
-import { agentApi } from "@/lib/api/agent";
+import { agentApi, bidStepPresentation, toolLabels } from "@/lib/api/agent";
 import { SourceReference } from "./source-reference";
 
 const runLabels: Record<AgentRunStatus, string> = {
@@ -81,6 +81,13 @@ const severityStyles: Record<AgentOutput["severity"], string> = {
   medium: "border-blue-200 bg-blue-50 text-blue-800",
   low: "border-emerald-200 bg-emerald-50 text-emerald-800",
   info: "border-slate-200 bg-slate-50 text-slate-700",
+};
+const severityLabels: Record<AgentOutput["severity"], string> = {
+  fatal: "致命阻塞",
+  high: "高风险",
+  medium: "需跟进",
+  low: "低风险",
+  info: "信息",
 };
 
 const riskLabel = { fatal: "致命", high: "高", medium: "中", low: "低" };
@@ -182,8 +189,35 @@ const eventLabels: Record<string, string> = {
   "response_quality.pass_completed": "响应草稿自查完成",
 };
 
+function toolNameFromEvent(event: AgentEvent): string | null {
+  const payload = event.payload;
+  if (typeof payload.tool === "string" && payload.tool) return payload.tool;
+  const result = typeof payload.result === "object" && payload.result !== null && !Array.isArray(payload.result) ? payload.result as Record<string, unknown> : {};
+  if (typeof result.tool === "string" && result.tool) return result.tool;
+  return null;
+}
+
+function stepKeyFromEvent(event: AgentEvent): string | null {
+  const stepKey = event.payload.step_key ?? event.payload.stepKey;
+  return typeof stepKey === "string" && stepKey ? stepKey : null;
+}
+
+function eventTitle(event: AgentEvent): string {
+  const toolName = toolNameFromEvent(event);
+  const stepKey = stepKeyFromEvent(event);
+  const toolLabel = toolName && toolLabels[toolName];
+  const base = eventLabels[event.eventType] ?? "运行事件";
+  if (toolLabel && event.eventType.startsWith("tool.")) {
+    const suffix = base.replace(/^受控工具/, "").trim();
+    return suffix ? `${toolLabel} ${suffix}` : toolLabel;
+  }
+  if (toolLabel && (event.eventType.startsWith("step.") || event.eventType === "agent.decision")) return `${toolLabel} · ${base}`;
+  if (stepKey && event.eventType.startsWith("step.")) return `${bidStepPresentation[stepKey]?.title ?? "运行步骤"} · ${base}`;
+  return base;
+}
+
 function eventDetail(event: AgentEvent): string | null {
-  for (const key of ["summary", "message", "reason", "action", "next_action", "error_message"]) {
+  for (const key of ["summary", "message", "reason", "action", "next_action", "error_message", "observation"]) {
     const value = event.payload[key];
     if (typeof value === "string" && value) return value;
   }
@@ -196,6 +230,8 @@ function eventBadges(event: AgentEvent): string[] {
   if (typeof iteration === "number" && Number.isFinite(iteration)) badges.push(`第 ${iteration} 次迭代`);
   const pass = event.payload.pass ?? event.payload.pass_number;
   if (typeof pass === "number" && Number.isFinite(pass)) badges.push(`第 ${pass} 轮自查`);
+  const toolName = toolNameFromEvent(event);
+  if (toolName && toolLabels[toolName] && !event.eventType.startsWith("tool.")) badges.push(toolLabels[toolName]);
   if (event.eventType.includes("response_quality")) badges.push("响应自查");
   if (event.eventType.includes("blocked") || event.payload.blocked === true) badges.push("已阻塞");
   if (event.eventType.startsWith("review.") || event.eventType.startsWith("approval.")) badges.push("人工审批");
@@ -206,7 +242,7 @@ function EventTimeline({ events, error }: { events: AgentEvent[]; error: string 
   return <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="agent-events-title">
     <div className="mb-4 flex items-center justify-between"><div><h2 id="agent-events-title" className="text-base font-semibold text-slate-950">最近运行事件</h2><p className="mt-1 text-xs text-slate-500">来自后端追加式事件流；按持久化序号展示。</p></div><GitBranch aria-hidden="true" className="text-slate-400" size={19} /></div>
     {error && <p className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800" role="alert">事件流刷新失败：{error}。运行状态仍会继续刷新。</p>}
-    {events.length ? <ol className="space-y-3" aria-label="最近运行事件列表">{events.slice(-8).reverse().map((event) => <li key={`${event.sequence}-${event.timestamp}`} className="rounded-lg border border-slate-200 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-medium text-slate-900"><span className="mr-2 text-xs text-slate-400">#{event.sequence}</span>{eventLabels[event.eventType] ?? "运行事件"}</h3><time className="text-[11px] text-slate-500" dateTime={event.timestamp}>{event.timestamp}</time></div>{eventDetail(event) && <p className="mt-1 text-xs leading-5 text-slate-600">{eventDetail(event)}</p>}<div className="mt-2 flex flex-wrap gap-1">{eventBadges(event).map((badge) => <span key={badge} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700">{badge}</span>)}</div></li>)}</ol> : <p className="text-sm text-slate-600">暂未收到可展示的持久化事件。</p>}
+    {events.length ? <ol className="space-y-3" aria-label="最近运行事件列表">{events.slice(-8).reverse().map((event) => <li key={`${event.sequence}-${event.timestamp}`} className="rounded-lg border border-slate-200 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-medium text-slate-900"><span className="mr-2 text-xs text-slate-400">#{event.sequence}</span>{eventTitle(event)}</h3><time className="text-[11px] text-slate-500" dateTime={event.timestamp}>{event.timestamp}</time></div>{eventDetail(event) && <p className="mt-1 text-xs leading-5 text-slate-600">{eventDetail(event)}</p>}<div className="mt-2 flex flex-wrap gap-1">{eventBadges(event).map((badge) => <span key={badge} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700">{badge}</span>)}</div></li>)}</ol> : <p className="text-sm text-slate-600">暂未收到可展示的持久化事件。</p>}
   </section>;
 }
 
@@ -313,22 +349,45 @@ function ApprovalQueue({ approvals, source }: { approvals: AgentApproval[]; sour
   );
 }
 
+function metricChips(output: AgentOutput): { label: string; value: string | number }[] {
+  const metrics = output.metrics;
+  if (!metrics) return [];
+  const chips: { label: string; value: string | number }[] = [];
+  if (metrics.assetCount !== undefined) chips.push({ label: "企业材料", value: metrics.assetCount });
+  if (metrics.newClaimCount !== undefined) chips.push({ label: "新增 Claim", value: metrics.newClaimCount });
+  if (metrics.failedAssetCount !== undefined && metrics.failedAssetCount > 0) chips.push({ label: "抽取失败", value: metrics.failedAssetCount });
+  if (metrics.responseCount !== undefined) chips.push({ label: "响应草稿", value: metrics.responseCount });
+  if (metrics.missingEvidenceCount !== undefined && metrics.missingEvidenceCount > 0) chips.push({ label: "缺证据", value: metrics.missingEvidenceCount });
+  if (metrics.qualityIssueCount !== undefined) chips.push({ label: "剩余问题", value: metrics.qualityIssueCount });
+  if (metrics.qualityRepairedCount !== undefined && metrics.qualityRepairedCount > 0) chips.push({ label: "已修补", value: metrics.qualityRepairedCount });
+  if (metrics.remediationTaskCount !== undefined) chips.push({ label: "新建任务", value: metrics.remediationTaskCount });
+  return chips;
+}
+
 function OutputGrid({ outputs }: { outputs: AgentOutput[] }) {
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="agent-outputs-title">
       <div className="mb-4 flex items-center justify-between"><div><h2 id="agent-outputs-title" className="text-base font-semibold text-slate-950">运行输出</h2><p className="mt-1 text-xs text-slate-500">摘要用于定位；正式复核仍回到原文和业务工作台。</p></div><FileCheck2 aria-hidden="true" className="text-slate-400" size={19} /></div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-        {outputs.map((output) => (
-          <article key={output.id} className="flex min-h-52 flex-col rounded-lg border border-slate-200 p-4">
-            <div className="flex items-start justify-between gap-3">
-              <div><span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${severityStyles[output.severity]}`}>{output.severity === "fatal" ? "致命阻塞" : output.severity === "high" ? "高风险" : "信息"}</span><h3 className="mt-2 font-semibold text-slate-950">{output.title}</h3></div>
-              <strong className="text-2xl text-slate-900" aria-label={`${output.count} 项`}>{output.count}</strong>
-            </div>
-            <p className="mt-2 flex-1 text-xs leading-5 text-slate-600">{output.summary}</p>
-            <SourceReference source={output.provenance?.[0]} compact />
-            <Link className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-teal-800 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500" href={output.href}>查看业务结果<ArrowRight aria-hidden="true" size={13} /></Link>
-          </article>
-        ))}
+        {outputs.map((output) => {
+          const chips = metricChips(output);
+          return (
+            <article key={output.id} className="flex min-h-52 flex-col rounded-lg border border-slate-200 p-4">
+              <div className="flex items-start justify-between gap-3">
+                <div><span className={`inline-flex rounded-full border px-2 py-0.5 text-[11px] font-semibold ${severityStyles[output.severity]}`}>{severityLabels[output.severity]}</span><h3 className="mt-2 font-semibold text-slate-950">{output.title}</h3></div>
+                <strong className="text-2xl text-slate-900" aria-label={`${output.count} 项`}>{output.count}</strong>
+              </div>
+              <p className="mt-2 flex-1 text-xs leading-5 text-slate-600">{output.summary}</p>
+              {chips.length > 0 && (
+                <div className="mt-2 flex flex-wrap gap-2" aria-label={`${output.title} 指标`}>
+                  {chips.map((chip) => <span key={chip.label} className="inline-flex items-center gap-1 rounded-md border border-slate-200 bg-slate-50 px-2 py-1 text-[11px] text-slate-700"><span className="text-slate-500">{chip.label}</span><span className="font-semibold text-slate-900">{chip.value}</span></span>)}
+                </div>
+              )}
+              <SourceReference source={output.provenance?.[0]} compact />
+              <Link className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-teal-800 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500" href={output.href}>查看业务结果<ArrowRight aria-hidden="true" size={13} /></Link>
+            </article>
+          );
+        })}
       </div>
     </section>
   );

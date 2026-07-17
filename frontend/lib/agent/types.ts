@@ -117,12 +117,27 @@ export interface ApprovalRequest {
 
 export type AgentApproval = ApprovalRequest;
 
+export interface AgentOutputMetrics {
+  assetCount?: number;
+  newClaimCount?: number;
+  failedAssetCount?: number;
+  responseCount?: number;
+  missingEvidenceCount?: number;
+  qualityIssueCount?: number;
+  qualityRepairedCount?: number;
+  remediationTaskCount?: number;
+}
+
 export interface AgentOutput {
   id: string;
   runId: string;
   stepId: string;
   type: AgentOutputType;
   kind: AgentOutputKind;
+  /** Original backend artifact_type when this output was derived from an AgentArtifact. */
+  artifactType?: string;
+  /** Structured counts surfaced as metric chips in the workbench. */
+  metrics?: AgentOutputMetrics;
   title: string;
   description: string;
   summary: string;
@@ -164,4 +179,12 @@ export interface AgentSnapshot {
   auditEventCount: number;
   primarySource: AgentSourceRef;
   updatedAt: string;
+  evidenceAssetCount?: number;
+  evidenceClaimCount?: number;
+  evidenceClaimFailedAssetCount?: number;
+  responseCount?: number;
+  missingEvidenceResponseCount?: number;
+  responseQualityIssueCount?: number;
+  responseQualityRepairedCount?: number;
+  remediationTaskCreatedCount?: number;
 }

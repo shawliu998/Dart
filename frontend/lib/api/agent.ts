@@ -87,7 +87,28 @@ export const bidStepPresentation: Record<string, StepPresentation> = {
   run_compliance_rules: { title: "运行确定性合规检查", description: "基于已确认要求和证据计算合规状态。", actor: "deterministic_rule", tool: "ComplianceRuleEngine" },
   draft_responses: { title: "生成投标响应草稿", description: "根据已接受证据生成可编辑的响应草稿。", actor: "mock_model", tool: "ResponseDraftService" },
   review_responses: { title: "人工复核投标响应", description: "在响应工作台编辑并确认响应草稿。", actor: "human_gate", tool: "ResponsesWorkbench" },
+  extract_evidence_claims: { title: "抽取企业材料 Claim", description: "从企业材料抽取可回溯的证据 Claim；失败的材料单独隔离。", actor: "deterministic_rule", tool: "企业材料 Claim 抽取器" },
+  check_response_quality: { title: "检查并修补响应草稿", description: "对内部响应草稿运行确定性质量检查并应用安全标注修补。", actor: "deterministic_rule", tool: "响应质量检查器" },
+  create_remediation_tasks: { title: "生成缺口补救任务", description: "把未解决的合规与响应缺口映射为项目整改任务。", actor: "deterministic_rule", tool: "补救任务服务" },
   export_artifacts: { title: "导出交付物", description: "生成可下载的合规矩阵、响应初稿和风险待办。", actor: "deterministic_rule", tool: "ProjectExportService" },
+};
+
+/** Chinese product labels for autonomous tool names persisted in events and step payloads. */
+export const toolLabels: Record<string, string> = {
+  inspect_project: "检查项目",
+  parse_pending_documents: "解析待处理文档",
+  extract_project_profile: "提取项目摘要",
+  extract_requirements: "抽取招标要求",
+  classify_bid_risks: "分类招标风险",
+  extract_evidence_claims: "抽取企业材料 Claim",
+  match_evidence: "匹配证据",
+  run_compliance_checks: "运行合规检查",
+  generate_responses: "生成响应草稿",
+  check_response_quality: "检查响应草稿质量",
+  revise_responses: "修补响应草稿",
+  create_remediation_tasks: "创建整改任务",
+  assemble_work_package: "组装交付工作包",
+  finish_run: "结束运行",
 };
 
 const stepKey = (item: JsonObject) => text(item.step_key ?? item.stepKey);
@@ -127,25 +148,117 @@ function mapApproval(value: unknown, runId: string, projectId: string): AgentApp
   };
 }
 
+/** Build a human-readable summary for artifact types that expose structured runtime counts. */
+function artifactSummary(artifactType: string, metadata: JsonObject): string {
+  if (artifactType === "evidence_claims") {
+    const assetCount = number(metadata.asset_count, 0);
+    const newClaimCount = number(metadata.new_claim_count, 0);
+    const failedAssets = strings(metadata.failed_assets);
+    const failedCount = failedAssets.length;
+    const reviewState = text(metadata.review_state);
+    const parts: string[] = [`已处理 ${assetCount} 份企业材料，新增 ${newClaimCount} 条 Claim。`];
+    if (failedCount) parts.push(`${failedCount} 份材料抽取失败，已隔离待人工处理。`);
+    if (reviewState === "manual_review") parts.push("全部 Claim 处于待人工复核状态，不会自动进入合规结论。");
+    return parts.join(" ");
+  }
+  if (artifactType === "response_drafts") {
+    const count = number(metadata.count, 0);
+    const missingEvidenceCount = number(metadata.missing_evidence_count, 0);
+    return `共生成 ${count} 条响应草稿，其中 ${missingEvidenceCount} 条缺少证据链接。`;
+  }
+  if (artifactType === "response_quality_check") {
+    const issueCount = number(metadata.issue_count, 0);
+    const repairedCount = number(metadata.repaired_count, 0);
+    const manualReviewRequired = Boolean(metadata.manual_review_required);
+    const parts: string[] = [`剩余 ${issueCount} 项质量问题。`];
+    if (repairedCount) parts.push(`已自动修补 ${repairedCount} 项安全标注。`);
+    if (manualReviewRequired) parts.push("其余问题需人工复核，不会自动形成最终响应。");
+    return parts.join(" ");
+  }
+  if (artifactType === "remediation_tasks") {
+    const createdCount = number(metadata.created_count, 0);
+    return `本次运行创建 ${createdCount} 项整改任务，已加入项目任务工作台。`;
+  }
+  return text(metadata.summary, "");
+}
+
 function mapOutput(value: unknown, runId: string, projectId: string): AgentOutput {
   const item = object(value);
   const metadata = object(item.metadata_json ?? item.metadata);
-  const artifactType = item.artifact_type ?? item.artifactType;
+  const artifactType = text(item.artifact_type ?? item.artifactType);
   const isEvidenceMatchCandidates = artifactType === "evidence_match_candidates";
   const isResponseQualityCheck = artifactType === "response_quality_check";
+  const isEvidenceClaims = artifactType === "evidence_claims";
+  const isResponseDrafts = artifactType === "response_drafts";
+  const isRemediationTasks = artifactType === "remediation_tasks";
   const storageKey = text(item.storage_key ?? item.storageKey);
   const downloadHref = text(item.download_url ?? item.downloadUrl ?? metadata.download_url ?? metadata.downloadUrl);
   const isDownloadable = typeof artifactType === "string" && (artifactType.endsWith("_xlsx") || artifactType === "response_draft_docx") || storageKey.startsWith("exports/");
+
+  const defaultHref = (() => {
+    if (isEvidenceClaims) return `/projects/${projectId}/evidence-matching`;
+    if (isResponseDrafts || isResponseQualityCheck) return `/projects/${projectId}/responses`;
+    if (isRemediationTasks) return `/projects/${projectId}/tasks`;
+    if (artifactType === "compliance_summary") return `/projects/${projectId}/evidence-matching`;
+    return "/agent";
+  })();
+
+  const derivedSummary = artifactSummary(artifactType, metadata) || text(item.summary ?? metadata.summary ?? (isResponseQualityCheck ? metadata.after_summary : undefined), "");
+  const derivedCount = number(
+    item.count ?? metadata.count ?? (isResponseQualityCheck ? metadata.issue_count : isEvidenceClaims ? metadata.new_claim_count : isRemediationTasks ? metadata.created_count : undefined),
+    0,
+  );
+  const derivedSeverity = oneOf(
+    item.severity ?? metadata.severity,
+    ["fatal", "high", "medium", "low", "info"] as const,
+    (() => {
+      if (isResponseQualityCheck && Boolean(metadata.manual_review_required)) return "high";
+      if (isEvidenceClaims && (strings(metadata.failed_assets).length > 0 || text(metadata.review_state) === "manual_review")) return "high";
+      if (isResponseDrafts && number(metadata.missing_evidence_count, 0) > 0) return "medium";
+      if (isRemediationTasks && number(metadata.created_count, 0) > 0) return "medium";
+      return "info";
+    })(),
+  );
+  const metrics = ((): AgentOutput["metrics"] => {
+    if (isEvidenceClaims) {
+      return {
+        assetCount: number(metadata.asset_count, 0),
+        newClaimCount: number(metadata.new_claim_count, 0),
+        failedAssetCount: strings(metadata.failed_assets).length,
+      };
+    }
+    if (isResponseDrafts) {
+      return {
+        responseCount: number(metadata.count, 0),
+        missingEvidenceCount: number(metadata.missing_evidence_count, 0),
+      };
+    }
+    if (isResponseQualityCheck) {
+      return {
+        qualityIssueCount: number(metadata.issue_count, 0),
+        qualityRepairedCount: number(metadata.repaired_count, 0),
+      };
+    }
+    if (isRemediationTasks) {
+      return {
+        remediationTaskCount: number(metadata.created_count, 0),
+      };
+    }
+    return undefined;
+  })();
+
   return {
     id: text(item.id), runId: text(item.run_id ?? item.runId, runId), stepId: text(item.step_run_id ?? item.stepRunId ?? item.step_id ?? item.stepId),
-    type: oneOf(isEvidenceMatchCandidates ? "evidence" : item.type ?? artifactType, ["requirement", "risk", "evidence", "task", "report", "package"] as const, "report"),
-    kind: oneOf(isEvidenceMatchCandidates ? "evidence" : item.kind ?? artifactType, ["requirements", "risk", "evidence", "consistency", "amendment", "task", "package", "audit"] as const, "audit"),
-    title: text(item.title, isEvidenceMatchCandidates ? "候选匹配" : isResponseQualityCheck ? "响应草稿质量自查" : ""),
+    type: oneOf(isEvidenceMatchCandidates || isEvidenceClaims ? "evidence" : isRemediationTasks ? "task" : item.type ?? artifactType, ["requirement", "risk", "evidence", "task", "report", "package"] as const, "report"),
+    kind: oneOf(isEvidenceMatchCandidates || isEvidenceClaims ? "evidence" : isRemediationTasks ? "task" : isResponseDrafts || isResponseQualityCheck ? "audit" : item.kind ?? artifactType, ["requirements", "risk", "evidence", "consistency", "amendment", "task", "package", "audit"] as const, "audit"),
+    artifactType,
+    metrics,
+    title: text(item.title, isEvidenceMatchCandidates ? "候选匹配" : isResponseQualityCheck ? "响应草稿质量自查" : isEvidenceClaims ? "企业材料 Claim" : isResponseDrafts ? "投标响应草稿" : isRemediationTasks ? "缺口补救任务" : ""),
     description: text(item.description),
-    summary: text(item.summary ?? metadata.summary ?? (isResponseQualityCheck ? metadata.after_summary : undefined)),
-    count: number(item.count ?? metadata.count ?? (isResponseQualityCheck ? metadata.issue_count : undefined)),
-    severity: oneOf(item.severity ?? metadata.severity, ["fatal", "high", "medium", "low", "info"] as const, isResponseQualityCheck && Boolean(metadata.manual_review_required) ? "high" : "info"),
-    href: downloadHref || (isDownloadable ? `/api/agent-artifacts/${text(item.id)}/download` : text(item.href ?? metadata.href ?? (isResponseQualityCheck ? metadata.review_href : undefined), artifactType === "response_drafts" ? `/projects/${projectId}/responses` : artifactType === "compliance_summary" ? `/projects/${projectId}/evidence-matching` : "/agent")),
+    summary: derivedSummary,
+    count: derivedCount,
+    severity: derivedSeverity,
+    href: downloadHref || (isDownloadable ? `/api/agent-artifacts/${text(item.id)}/download` : text(item.href ?? metadata.href ?? (isResponseQualityCheck ? metadata.review_href : undefined), defaultHref)),
     createdAt: text(item.created_at ?? item.createdAt), provenance: sourceRows(item.provenance ?? metadata.provenance),
   };
 }

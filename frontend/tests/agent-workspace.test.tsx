@@ -22,12 +22,12 @@ describe("AgentWorkspace", () => {
 
   it("shows the five-phase autonomous command center from API run fields", () => {
     const bundle = createAgentRunBundle("project-autonomous");
-    bundle.run = { ...bundle.run, mode: "autonomous_draft", iteration: 4, maxIterations: 12, currentAction: "生成投标响应草稿", nextAction: "检查证据覆盖", observation: "发现 3 项待补充材料", planStages: [{ key: "understand", title: "服务端计划：文件理解", status: "completed" }, { key: "evidence", title: "服务端计划：证据处理", status: "waiting_approval" }] };
+    bundle.run = { ...bundle.run, mode: "autonomous_draft", iteration: 4, maxIterations: 12, currentAction: "整理响应草稿段落", nextAction: "核对证据覆盖缺口", observation: "发现 3 项待补充材料", planStages: [{ key: "understand", title: "服务端计划：文件理解", status: "completed" }, { key: "evidence", title: "服务端计划：证据处理", status: "waiting_approval" }] };
     render(<AgentWorkspace initialResult={{ source: "api", data: bundle, error: null }} />);
     expect(screen.getByRole("heading", { name: "自主执行计划" })).toBeInTheDocument();
     expect(screen.getByRole("list", { name: "五阶段执行计划" })).toBeInTheDocument();
-    expect(screen.getByText("生成投标响应草稿")).toBeInTheDocument();
-    expect(screen.getByText("检查证据覆盖")).toBeInTheDocument();
+    expect(screen.getByText("整理响应草稿段落")).toBeInTheDocument();
+    expect(screen.getByText("核对证据覆盖缺口")).toBeInTheDocument();
     expect(screen.getByText("发现 3 项待补充材料")).toBeInTheDocument();
     expect(screen.getByText("第 4 / 12 次迭代")).toBeInTheDocument();
     expect(screen.getByText(/当前产物均为内部草稿/)).toBeInTheDocument();
@@ -179,5 +179,32 @@ describe("AgentWorkspace", () => {
     expect(reject).toHaveBeenCalledWith(bundle.approvals[0].id, { reason: "来源页码不足，退回补充证据" });
     reject.mockRestore();
     consoleError.mockRestore();
+  });
+
+  it("surfaces new artifact cards with structured metrics and real workbench links", () => {
+    const bundle = createAgentRunBundle("project-artifacts");
+    render(<AgentWorkspace initialResult={{ source: "demo", data: bundle, error: null }} />);
+    expect(screen.getByRole("heading", { name: "企业材料 Claim" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "投标响应草稿" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "响应草稿质量自查" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "缺口补救任务" })).toBeInTheDocument();
+    expect(screen.getAllByText("需跟进").length).toBeGreaterThan(0);
+    const links = screen.getAllByRole("link", { name: /查看业务结果/ });
+    expect(links.some((link) => link.getAttribute("href") === "/projects/project-artifacts/evidence-matching")).toBe(true);
+    expect(links.some((link) => link.getAttribute("href") === "/projects/project-artifacts/responses")).toBe(true);
+    expect(links.some((link) => link.getAttribute("href") === "/projects/project-artifacts/tasks")).toBe(true);
+  });
+
+  it("shows clear Chinese labels for new autonomous tool events", () => {
+    const bundle = createAgentRunBundle("project-events");
+    bundle.events = [
+      { sequence: 1, eventType: "tool.completed", payload: { tool: "extract_evidence_claims", summary: "已抽取 Claim" }, timestamp: "2026-07-17T09:01:00Z" },
+      { sequence: 2, eventType: "step.completed", payload: { step_key: "check_response_quality", summary: "质量检查完成" }, timestamp: "2026-07-17T09:02:00Z" },
+      { sequence: 3, eventType: "tool.completed", payload: { tool: "create_remediation_tasks", summary: "已创建任务" }, timestamp: "2026-07-17T09:03:00Z" },
+    ];
+    render(<AgentWorkspace initialResult={{ source: "demo", data: bundle, error: null }} />);
+    expect(screen.getByText("抽取企业材料 Claim 已完成")).toBeInTheDocument();
+    expect(screen.getByText("检查并修补响应草稿 · 步骤已完成")).toBeInTheDocument();
+    expect(screen.getByText("创建整改任务 已完成")).toBeInTheDocument();
   });
 });
