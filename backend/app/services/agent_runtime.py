@@ -28,6 +28,7 @@ from app.models.entities import (
     ApprovalRequest,
     AsyncJob,
     Document,
+    DocumentPage,
     Requirement,
     User,
 )
@@ -43,9 +44,18 @@ from app.services.review_workflows import run_compliance
 
 WORKFLOW_TYPE = "bid_analysis_and_response_v1"
 _ACTIVE_AGENT_JOB_STATUSES = ("queued", "running", "retrying")
+_ACTIVE_AGENT_RUN_STATUSES = ("queued", "planning", "running", "waiting_approval")
 _agent_heartbeat: ContextVar[Callable[[], bool] | None] = ContextVar(
     "agent_run_heartbeat", default=None
 )
+
+
+class ActiveAgentRunExists(Exception):
+    """Raised when the tenant/project already has an active agent run."""
+
+    message = "当前项目已有活动运行，请继续现有运行或取消后重新启动。"
+
+
 BID_WORKFLOW_STEPS: tuple[tuple[str, str], ...] = (
     ("ingest_documents", "接收与校验招标文件"),
     ("parse_documents", "解析文档并建立来源索引"),
@@ -260,21 +270,45 @@ def create_run(
     input_revision: int,
     mode: str = "autonomous_draft",
     max_iterations: int = 20,
+    scope: str = "full_bid_draft",
 ) -> dict:
     get_project(db, principal, project_id)
+    active = db.scalar(
+        select(AgentRun).where(
+            AgentRun.tenant_id == principal.tenant_id,
+            AgentRun.project_id == project_id,
+            AgentRun.status.in_(_ACTIVE_AGENT_RUN_STATUSES),
+        )
+    )
+    if active is not None:
+        raise ActiveAgentRunExists()
     run = AgentRun(
         tenant_id=principal.tenant_id,
         project_id=project_id,
         workflow_type=WORKFLOW_TYPE,
         goal=goal,
         mode=mode,
+        scope=scope,
         plan_json=_initial_autonomous_plan() if mode == "autonomous_draft" else {},
         max_iterations=max_iterations,
         input_revision=input_revision,
         created_by=principal.user_id,
     )
     db.add(run)
-    db.flush()
+    try:
+        db.flush()
+    except IntegrityError as exc:
+        db.rollback()
+        active_id = db.scalar(
+            select(AgentRun.id).where(
+                AgentRun.tenant_id == principal.tenant_id,
+                AgentRun.project_id == project_id,
+                AgentRun.status.in_(_ACTIVE_AGENT_RUN_STATUSES),
+            )
+        )
+        if active_id is not None:
+            raise ActiveAgentRunExists() from exc
+        raise
     for sequence, (key, _title) in enumerate(BID_WORKFLOW_STEPS, start=1):
         db.add(AgentStepRun(tenant_id=principal.tenant_id, run_id=run.id, step_key=key, sequence=sequence, created_by=principal.user_id))
     db.flush()
@@ -286,6 +320,7 @@ def create_run(
             "workflow_type": WORKFLOW_TYPE,
             "input_revision": input_revision,
             "mode": mode,
+            "scope": scope,
             "max_iterations": max_iterations,
         },
     )
@@ -440,7 +475,7 @@ def process_agent_run(run_id: UUID) -> bool:
             db.commit()
             return False
 
-        run.status, run.started_at = "planning", run.started_at or utcnow()
+        run.status, run.outcome, run.started_at = "planning", None, run.started_at or utcnow()
         run.completed_at, run.error_code, run.error_message = None, None, None
         _event(db, run, "run.started", {})
         if commit_boundary():
@@ -468,6 +503,7 @@ def process_agent_run(run_id: UUID) -> bool:
                     if run.iteration >= run.max_iterations:
                         step.status = "blocked"
                         run.status, run.completed_at = "completed", utcnow()
+                        run.outcome = "partial"
                         run.completion_reason = "max_iterations_reached"
                         run.agent_summary = "已达到自主草稿最大执行次数，保留已完成的内部草稿。"
                         _event(
@@ -502,6 +538,7 @@ def process_agent_run(run_id: UUID) -> bool:
                         if autonomous:
                             step.status, step.completed_at = "blocked", utcnow()
                             run.status, run.completed_at = "completed", utcnow()
+                            run.outcome = "blocked"
                             run.completion_reason = "blocked_no_tender_main"
                             run.agent_summary = "未找到招标主文件，无法生成工作包。"
                             _event(
@@ -546,6 +583,7 @@ def process_agent_run(run_id: UUID) -> bool:
                         if autonomous:
                             step.status, step.completed_at = "blocked", utcnow()
                             run.status, run.completed_at = "completed", utcnow()
+                            run.outcome = "blocked"
                             run.completion_reason = "blocked_tender_parse_failed"
                             run.agent_summary = "招标主文件解析失败，保留已完成的内部草稿。"
                             _event(
@@ -568,7 +606,32 @@ def process_agent_run(run_id: UUID) -> bool:
                         if commit_boundary():
                             return run.status == "cancelled"
                         return False
-                    parse_summary = {"parsed_document_count": len(parsed), "total_page_count": sum(item.page_count for item in parsed), "ocr_required_count": 0, "failed_files": failures, "warning": "部分附件未解析，已跳过" if failures else None}
+                    parsed_document_ids = [item.id for item in parsed]
+                    pages = list(
+                        db.scalars(
+                            select(DocumentPage).where(
+                                DocumentPage.document_id.in_(parsed_document_ids),
+                                DocumentPage.tenant_id == run.tenant_id,
+                            )
+                        )
+                    )
+                    ocr_required_count = sum(
+                        1 for page in pages if page.layout_json.get("ocr_required") is True
+                    )
+                    ocr_document_ids = {
+                        page.document_id
+                        for page in pages
+                        if page.layout_json.get("ocr_required") is True
+                    }
+                    ocr_files = [item.filename for item in parsed if item.id in ocr_document_ids]
+                    parse_summary = {
+                        "parsed_document_count": len(parsed),
+                        "total_page_count": sum(item.page_count for item in parsed),
+                        "ocr_required_count": ocr_required_count,
+                        "ocr_files": ocr_files,
+                        "failed_files": failures,
+                        "warning": "部分附件未解析，已跳过" if failures else None,
+                    }
                     db.add(AgentArtifact(tenant_id=run.tenant_id, run_id=run.id, step_run_id=step.id, artifact_type="parse_summary", title="文件解析结果", storage_key=f"runtime://{run.id}/parse-summary", content_hash=stable_hash(parse_summary), metadata_json=parse_summary, created_by=principal.user_id))
                     _complete(db, run, step, parse_summary)
                 elif step.step_key == "extract_project_profile":
@@ -583,6 +646,15 @@ def process_agent_run(run_id: UUID) -> bool:
                     count = db.scalar(select(func.count()).select_from(Requirement).where(Requirement.project_id == run.project_id, Requirement.tenant_id == run.tenant_id)) or 0
                     db.add(AgentArtifact(tenant_id=run.tenant_id, run_id=run.id, step_run_id=step.id, artifact_type="requirements", title="要求候选清单", storage_key=f"runtime://{run.id}/requirements", content_hash=stable_hash({"count": count}), metadata_json={"count": count, "review_state": "manual_review"}, created_by=principal.user_id))
                     _complete(db, run, step, {"requirement_count": count})
+                    if autonomous and count == 0:
+                        run.status, run.completed_at = "completed", utcnow()
+                        run.outcome = "no_result"
+                        run.completion_reason = "no_requirements_found"
+                        run.agent_summary = "未识别到可用于生成响应的招标要求。"
+                        _event(db, run, "run.no_result", {"requirement_count": 0}, step)
+                        if commit_boundary():
+                            return run.status == "cancelled"
+                        return True
                 elif step.step_key == "review_requirements":
                     if autonomous:
                         eligible = list(
@@ -645,7 +717,13 @@ def process_agent_run(run_id: UUID) -> bool:
                         return run.status == "cancelled"
                     return True
                 elif step.step_key == "run_compliance_rules":
-                    checks = run_compliance(db, principal, run.project_id)
+                    checks = run_compliance(
+                        db,
+                        principal,
+                        run.project_id,
+                        evidence_mode="accepted_and_provisional" if autonomous else "accepted_only",
+                        force_recompute=autonomous,
+                    )
                     summary = {result: sum(check.result == result for check in checks) for result in ("pass", "warning", "fail", "manual_review")}
                     summary["href"] = f"/projects/{run.project_id}/evidence-matching"
                     db.add(AgentArtifact(tenant_id=run.tenant_id, run_id=run.id, step_run_id=step.id, artifact_type="compliance_summary", title="合规检查摘要", storage_key=f"runtime://{run.id}/compliance-summary", content_hash=stable_hash(summary), metadata_json=summary, created_by=principal.user_id))
@@ -689,6 +767,7 @@ def process_agent_run(run_id: UUID) -> bool:
                     if autonomous:
                         if run.iteration >= run.max_iterations:
                             run.status, run.completed_at = "completed", utcnow()
+                            run.outcome = "partial"
                             run.completion_reason = "max_iterations_reached"
                             run.agent_summary = "交付物已生成，但未达到最终人工复核。"
                             _event(db, run, "run.partial", {"reason": run.completion_reason}, step)
@@ -709,6 +788,7 @@ def process_agent_run(run_id: UUID) -> bool:
                             impact_summary=f"/projects/{run.project_id}/review",
                         )
                         _update_plan(run, _steps(db, run.id), final_review=True)
+                        run.outcome = "success"
                         run.agent_summary = "内部草稿工作包已生成，等待最终人工复核。"
                         if commit_boundary():
                             return run.status == "cancelled"
@@ -716,6 +796,7 @@ def process_agent_run(run_id: UUID) -> bool:
                 if commit_boundary():
                     return run.status == "cancelled"
             run.status, run.completed_at = "completed", utcnow()
+            run.outcome = run.outcome or "success"
             _event(db, run, "run.completed", {"workflow_type": WORKFLOW_TYPE})
             if commit_boundary():
                 return run.status == "cancelled"
@@ -744,6 +825,7 @@ def decide_approval(db: Session, principal: Principal, approval_id: UUID, *, app
         _complete(db, run, step, {"approved": True, "reason": reason})
         if run.mode == "autonomous_draft" and approval.approval_type == "final_work_package_review":
             run.status, run.completed_at = "completed", utcnow()
+            run.outcome = "success"
             run.next_action = None
             run.completion_reason = "final_work_package_approved"
             run.agent_summary = "最终工作包已由人工复核确认。"
@@ -760,6 +842,7 @@ def decide_approval(db: Session, principal: Principal, approval_id: UUID, *, app
             _event(db, run, "run.resumed", {"approval_type": approval.approval_type, "reason": reason}, step)
     else:
         step.status, run.status, run.completed_at = "cancelled", "cancelled", utcnow()
+        run.outcome = None
         run.cancel_requested = True
         _cancel_agent_jobs_for_run(db, run)
         _event(db, run, "run.cancelled", {"reason": reason}, step)
@@ -771,6 +854,7 @@ def cancel_run(db: Session, principal: Principal, run_id: UUID) -> dict:
     data = get_run(db, principal, run_id)
     run: AgentRun = data["run"]
     run.cancel_requested = True
+    run.outcome = None
     _cancel_agent_jobs_for_run(db, run)
     if run.status in {"queued", "planning", "waiting_approval"}:
         run.status, run.completed_at = "cancelled", utcnow()
@@ -785,6 +869,7 @@ def retry_run(db: Session, principal: Principal, run_id: UUID) -> dict:
     if run.status != "failed":
         raise ValueError("only failed runs may be retried")
     run.status, run.cancel_requested, run.error_code, run.error_message = "queued", False, None, None
+    run.outcome = None
     run.completed_at = None
     enqueue_agent_run_job(db, run, created_by=principal.user_id, immediate=True)
     _event(db, run, "run.retry_requested", {})

@@ -177,7 +177,28 @@ class AgentRun(UUIDAuditMixin, Base):
             "'failed', 'cancelled')",
             name="ck_agent_runs_status",
         ),
+        CheckConstraint(
+            "outcome IS NULL OR outcome IN ('success', 'partial', 'blocked', 'no_result')",
+            name="ck_agent_runs_outcome",
+        ),
+        CheckConstraint(
+            "scope IN ('full_bid_draft', 'risk_review', 'material_gap_analysis', "
+            "'response_improvement', 'amendment_reanalysis', 'work_package_check')",
+            name="ck_agent_runs_scope",
+        ),
         Index("ix_agent_runs_tenant_project", "tenant_id", "project_id"),
+        Index(
+            "uq_agent_runs_active_project",
+            "tenant_id",
+            "project_id",
+            unique=True,
+            sqlite_where=text(
+                "status IN ('queued', 'planning', 'running', 'waiting_approval')"
+            ),
+            postgresql_where=text(
+                "status IN ('queued', 'planning', 'running', 'waiting_approval')"
+            ),
+        ),
     )
 
     project_id: Mapped[UUID] = mapped_column(ForeignKey("tender_projects.id"), index=True)
@@ -187,6 +208,8 @@ class AgentRun(UUIDAuditMixin, Base):
     # deliberately the local, draft-only agent mode; it never represents a
     # human approval or a final compliance decision.
     mode: Mapped[str] = mapped_column(String(30), default="autonomous_draft")
+    scope: Mapped[str] = mapped_column(String(60), default="full_bid_draft")
+    outcome: Mapped[str | None] = mapped_column(String(30), nullable=True)
     plan_json: Mapped[dict] = mapped_column(JSON, default=dict)
     iteration: Mapped[int] = mapped_column(Integer, default=0)
     max_iterations: Mapped[int] = mapped_column(Integer, default=20)
@@ -437,6 +460,7 @@ class ComplianceCheck(UUIDAuditMixin, Base):
     model_run_id: Mapped[UUID | None] = mapped_column(nullable=True)
     reviewed_by: Mapped[UUID | None] = mapped_column(nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
 
 
 class ConsistencyIssue(UUIDAuditMixin, Base):

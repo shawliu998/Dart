@@ -29,15 +29,19 @@ def serialize_bundle(bundle: dict) -> dict:
 @router.post("/projects/{project_id}/agent-runs", status_code=201)
 def create_agent_run(project_id: UUID, data: AgentRunCreate, background: BackgroundTasks, db: Session = Depends(get_db), principal: Principal = Depends(get_principal)) -> dict:
     require_write(principal)
-    bundle = agent_runtime.create_run(
-        db,
-        principal,
-        project_id,
-        goal=data.goal,
-        input_revision=data.input_revision,
-        mode=data.mode,
-        max_iterations=data.max_iterations,
-    )
+    try:
+        bundle = agent_runtime.create_run(
+            db,
+            principal,
+            project_id,
+            goal=data.goal,
+            input_revision=data.input_revision,
+            mode=data.mode,
+            max_iterations=data.max_iterations,
+            scope=data.scope,
+        )
+    except agent_runtime.ActiveAgentRunExists as exc:
+        raise HTTPException(status_code=409, detail=exc.message) from exc
     background.add_task(process_next_job)
     return serialize_bundle(bundle)
 

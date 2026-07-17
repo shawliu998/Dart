@@ -129,6 +129,7 @@ export function createAgentRunBundle(projectId: string, snapshot: AgentSnapshot 
       title: "投标合规与交付编排",
       goal: "在保留来源、人工审批和审计轨迹的前提下，把招标文件转化为可交付、可复核的合规工作包。",
       mode: "supervised",
+      scope: "full_bid_draft",
       maxIterations: 20,
       iteration: 6,
       currentAction: "等待人工处理整改任务与封装阻塞项",

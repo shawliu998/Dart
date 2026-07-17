@@ -36,6 +36,23 @@ describe("AgentWorkspace", () => {
     expect(screen.queryByText("交付物生成")).not.toBeInTheDocument();
   });
 
+  it("shows a business outcome separately from the technical run status", () => {
+    const bundle = createAgentRunBundle("project-outcome");
+    bundle.run = { ...bundle.run, mode: "autonomous_draft", status: "completed", outcome: "partial" };
+    render(<AgentWorkspace initialResult={{ source: "api", data: bundle, error: null }} />);
+    expect(screen.getAllByText("已完成").length).toBeGreaterThan(0);
+    expect(screen.getByText("已生成部分结果")).toBeInTheDocument();
+  });
+
+  it("shows an explicit fallback instead of crashing when source arrays are empty", () => {
+    const bundle = createAgentRunBundle("project-no-source");
+    bundle.steps[0] = { ...bundle.steps[0], sources: [] };
+    bundle.approvals[0] = { ...bundle.approvals[0], sourceReferences: [] };
+    bundle.outputs[0] = { ...bundle.outputs[0], provenance: [] };
+    render(<AgentWorkspace initialResult={{ source: "api", data: bundle, error: null }} />);
+    expect(screen.getAllByText("当前输出暂未绑定可展示来源").length).toBeGreaterThanOrEqual(3);
+  });
+
   it("keeps run polling available and shows the real event error when event refresh fails", async () => {
     const bundle = createAgentRunBundle("project-events");
     bundle.run = { ...bundle.run, mode: "autonomous_draft", status: "running", planStages: [{ key: "understand", title: "理解文件", status: "in_progress" }] };

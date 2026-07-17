@@ -1,5 +1,7 @@
 export type AgentDataSource = "api" | "demo" | "failure";
 export type AgentMode = "autonomous_draft" | "supervised";
+export type AgentScope = "full_bid_draft" | "risk_review" | "material_gap_analysis" | "response_improvement" | "amendment_reanalysis" | "work_package_check";
+export type AgentOutcome = "success" | "partial" | "blocked" | "no_result";
 
 export type AgentRunStatus = "queued" | "planning" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled";
 export type AgentStepStatus = "pending" | "running" | "waiting_approval" | "completed" | "failed" | "blocked" | "cancelled";
@@ -40,6 +42,8 @@ export interface AgentRun {
   title: string;
   goal: string;
   mode: AgentMode;
+  scope: AgentScope;
+  outcome?: AgentOutcome;
   maxIterations: number;
   iteration: number;
   currentAction?: string;
@@ -66,6 +70,7 @@ export interface AgentRun {
 export interface AgentRunCreateInput {
   goal?: string;
   mode?: AgentMode;
+  scope?: AgentScope;
   maxIterations?: number;
 }
 

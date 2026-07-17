@@ -11,7 +11,7 @@ const persistedRun = {
 describe("Agent run API adapter", () => {
   it("maps persisted snake_case runtime data without synthesizing a run", () => {
     const bundle = agentRunBundleFromApiPayload(persistedRun, "project-1");
-    expect(bundle.run).toMatchObject({ id: "run-1", projectId: "project-1", status: "waiting_approval", currentStepId: "review_requirements", initiatedBy: "local-user", mode: "supervised", maxIterations: 20 });
+    expect(bundle.run).toMatchObject({ id: "run-1", projectId: "project-1", status: "waiting_approval", currentStepId: "review_requirements", initiatedBy: "local-user", mode: "supervised", scope: "full_bid_draft", maxIterations: 20 });
     expect(bundle.run).toMatchObject({ progress: 0, summary: "已完成 0/1 个步骤；等待 1 项人工审批。" });
     expect(bundle.steps[0]).toMatchObject({ status: "waiting_approval", actor: "human_gate", title: "人工复核招标要求", tool: "RequirementsWorkbench" });
     expect(bundle.steps[0].sources?.[0]).toMatchObject({ document: "招标文件.pdf", page: 8, reviewState: "manual_review" });
@@ -20,8 +20,8 @@ describe("Agent run API adapter", () => {
   });
 
   it("maps autonomous snake_case command-center fields", () => {
-    const bundle = agentRunBundleFromApiPayload({ ...persistedRun, mode: "autonomous_draft", max_iterations: 12, current_iteration: 3, current_action: "提取项目摘要", next_action: "抽取招标要求", last_observation: "已识别 2 处主体名称差异", agent_summary: "正在生成内部草稿", plan_json: { stages: [{ key: "understand", title: "理解文件", status: "completed" }, { key: "evidence", title: "证据核验", status: "in_progress" }, { key: "unknown", status: "completed" }, { key: "draft", status: "server_future_state" }] } }, "project-1");
-    expect(bundle.run).toMatchObject({ mode: "autonomous_draft", maxIterations: 12, iteration: 3, currentAction: "提取项目摘要", nextAction: "抽取招标要求", observation: "已识别 2 处主体名称差异", summary: "正在生成内部草稿" });
+    const bundle = agentRunBundleFromApiPayload({ ...persistedRun, mode: "autonomous_draft", scope: "full_bid_draft", outcome: "partial", max_iterations: 12, current_iteration: 3, current_action: "提取项目摘要", next_action: "抽取招标要求", last_observation: "已识别 2 处主体名称差异", agent_summary: "正在生成内部草稿", plan_json: { stages: [{ key: "understand", title: "理解文件", status: "completed" }, { key: "evidence", title: "证据核验", status: "in_progress" }, { key: "unknown", status: "completed" }, { key: "draft", status: "server_future_state" }] } }, "project-1");
+    expect(bundle.run).toMatchObject({ mode: "autonomous_draft", scope: "full_bid_draft", outcome: "partial", maxIterations: 12, iteration: 3, currentAction: "提取项目摘要", nextAction: "抽取招标要求", observation: "已识别 2 处主体名称差异", summary: "正在生成内部草稿" });
     expect(bundle.run.planStages).toEqual([{ key: "understand", title: "理解文件", status: "completed" }, { key: "evidence", title: "证据核验", status: "in_progress" }]);
   });
 
@@ -38,8 +38,8 @@ describe("Agent run API adapter", () => {
 
   it("posts autonomous launch options using the backend snake_case contract", async () => {
     const request = vi.fn(async () => persistedRun);
-    await createAgentRun("project-1", { goal: "生成响应草稿", mode: "autonomous_draft", maxIterations: 9 }, request as AgentRequest);
-    expect(request).toHaveBeenCalledWith("/api/projects/project-1/agent-runs", expect.objectContaining({ method: "POST", body: JSON.stringify({ goal: "生成响应草稿", mode: "autonomous_draft", max_iterations: 9 }) }));
+    await createAgentRun("project-1", { goal: "生成响应草稿", mode: "autonomous_draft", scope: "full_bid_draft", maxIterations: 9 }, request as AgentRequest);
+    expect(request).toHaveBeenCalledWith("/api/projects/project-1/agent-runs", expect.objectContaining({ method: "POST", body: JSON.stringify({ goal: "生成响应草稿", mode: "autonomous_draft", scope: "full_bid_draft", max_iterations: 9 }) }));
   });
 
   it("maps evidence-match artifact metadata into a candidate evidence output", () => {

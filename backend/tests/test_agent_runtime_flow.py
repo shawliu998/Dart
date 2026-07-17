@@ -113,7 +113,9 @@ def test_autonomous_draft_runs_to_single_final_work_package_review(client, demo)
     run_id = created.json()["run"]["id"]
     data = client.get(f"/api/agent-runs/{run_id}", headers=headers).json()
     assert data["run"]["mode"] == "autonomous_draft"
+    assert data["run"]["scope"] == "full_bid_draft"
     assert data["run"]["status"] == "waiting_approval"
+    assert data["run"]["outcome"] == "success"
     assert data["run"]["current_action"] == "finish_run"
     assert data["run"]["iteration"] <= data["run"]["max_iterations"]
     stages = data["run"]["plan_json"]["stages"]
@@ -160,6 +162,45 @@ def test_autonomous_draft_runs_to_single_final_work_package_review(client, demo)
     assert low_confidence and all(item["review_status"] != "provisional" for item in low_confidence)
     assert disqualification and all(item["review_status"] != "provisional" for item in disqualification)
     assert all(item["human_verified"] is False for item in requirements)
+    responses = client.get(f"/api/projects/{project_id}/responses", headers=headers).json()
+    assert len(responses) == len(requirements)
+    responses_by_requirement = {item["requirement_id"]: item for item in responses}
+    assert set(responses_by_requirement) == {item["id"] for item in requirements}
+    assert all(
+        responses_by_requirement[item["id"]]["status"] == "needs_review"
+        and responses_by_requirement[item["id"]]["response_strategy"]
+        == "否决风险条款，需优先人工确认"
+        for item in disqualification
+    )
+    very_low_confidence = [
+        item
+        for item in requirements
+        if float(item["extraction_confidence"]) < 0.70
+        and responses_by_requirement[item["id"]]["response_strategy"]
+        != "否决风险条款，需优先人工确认"
+    ]
+    assert very_low_confidence and all(
+        responses_by_requirement[item["id"]]["status"] == "needs_review"
+        and responses_by_requirement[item["id"]]["draft_text"]
+        == "【待人工确认原始条款后编写响应】"
+        for item in very_low_confidence
+    )
+    matches = client.get(
+        f"/api/projects/{project_id}/evidence-matches", headers=headers
+    ).json()
+    provisional_requirement_ids = {
+        item["match"]["requirement_id"]
+        for item in matches
+        if item["match"]["status"] == "provisional_match"
+    }
+    checks = client.get(f"/api/projects/{project_id}/compliance", headers=headers).json()
+    checks_by_requirement = {item["requirement_id"]: item for item in checks}
+    assert provisional_requirement_ids
+    assert all(
+        checks_by_requirement[requirement_id]["result"] == "manual_review"
+        and "provisional" in checks_by_requirement[requirement_id]["reason"]
+        for requirement_id in provisional_requirement_ids
+    )
     events = _assert_strictly_increasing_event_sequences(client, headers, run_id)
     assert {event["event_type"] for event in events} >= {"agent.decision", "tool.completed", "review.deferred", "response_quality.pass_completed"}
 
@@ -171,6 +212,7 @@ def test_autonomous_draft_runs_to_single_final_work_package_review(client, demo)
     assert completed.status_code == 200, completed.text
     final = completed.json()["run"]
     assert final["status"] == "completed"
+    assert final["outcome"] == "success"
     assert final["completion_reason"] == "final_work_package_approved"
     assert next(stage for stage in final["plan_json"]["stages"] if stage["key"] == "review")["status"] == "completed"
 

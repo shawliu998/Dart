@@ -23,6 +23,7 @@ const number = (value: unknown, fallback = 0): number => {
 const nullableText = (value: unknown): string | null => typeof value === "string" ? value : null;
 const boundedInteger = (value: unknown, fallback: number, minimum: number, maximum: number): number => Math.min(maximum, Math.max(minimum, Math.floor(number(value, fallback))));
 const oneOf = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T => allowed.includes(value as T) ? value as T : fallback;
+const optionalOneOf = <T extends string>(value: unknown, allowed: readonly T[]): T | undefined => allowed.includes(value as T) ? value as T : undefined;
 const source = (value: unknown): AgentSourceRef => {
   const item = object(value);
   const confidenceValue = item.confidence ?? item.extraction_confidence;
@@ -180,6 +181,8 @@ export function agentRunBundleFromApiPayload(payload: unknown, projectId: string
     id: runId, projectId: text(runValue.project_id ?? runValue.projectId, projectId), projectName: text(runValue.project_name ?? runValue.projectName, "本地项目"),
     title: text(runValue.title ?? runValue.workflow_type ?? runValue.workflowType, "投标分析运行"), goal: text(runValue.goal ?? runValue.objective, "完成投标分析与响应草稿工作包。"),
     mode: oneOf(runValue.mode ?? runValue.run_mode ?? runValue.runMode, ["autonomous_draft", "supervised"] as const, "supervised"),
+    scope: oneOf(runValue.scope, ["full_bid_draft", "risk_review", "material_gap_analysis", "response_improvement", "amendment_reanalysis", "work_package_check"] as const, "full_bid_draft"),
+    outcome: optionalOneOf(runValue.outcome, ["success", "partial", "blocked", "no_result"] as const),
     maxIterations: boundedInteger(runValue.max_iterations ?? runValue.maxIterations, 20, 1, 100),
     iteration: boundedInteger(runValue.iteration ?? runValue.current_iteration ?? runValue.currentIteration, 0, 0, 100),
     currentAction: text(runValue.current_action ?? runValue.currentAction ?? runValue.action) || undefined,
@@ -214,6 +217,7 @@ export async function createAgentRun(projectId: string, input: AgentRunCreateInp
   const payload = {
     goal: input.goal?.trim() || undefined,
     mode: input.mode ?? "autonomous_draft",
+    scope: input.scope ?? "full_bid_draft",
     max_iterations: boundedInteger(input.maxIterations, 20, 1, 100),
   };
   try { return { source: "api", data: agentRunBundleFromApiPayload(await request(`/api/projects/${projectId}/agent-runs`, { method: "POST", body: JSON.stringify(payload) }), projectId), error: null }; } catch (error) { return failure(error); }

@@ -136,7 +136,11 @@ def test_metadata_creates_agent_tables_on_sqlite(engine) -> None:
     assert "uq_agent_events_run_sequence" in event_uniques
 
     run_indexes = {i["name"] for i in inspector.get_indexes("agent_runs")}
-    assert {"ix_agent_runs_project_id", "ix_agent_runs_tenant_project"} <= run_indexes
+    assert {
+        "ix_agent_runs_project_id",
+        "ix_agent_runs_tenant_project",
+        "uq_agent_runs_active_project",
+    } <= run_indexes
     step_indexes = {i["name"] for i in inspector.get_indexes("agent_step_runs")}
     assert "ix_agent_step_runs_run_id" in step_indexes
     event_indexes = {i["name"] for i in inspector.get_indexes("agent_events")}
@@ -183,6 +187,8 @@ def test_agent_run_defaults(session) -> None:
     assert isinstance(run.id, UUID)
     assert run.status == "queued"
     assert run.mode == "autonomous_draft"
+    assert run.scope == "full_bid_draft"
+    assert run.outcome is None
     assert run.plan_json == {}
     assert run.iteration == 0 and run.max_iterations == 20
     assert run.current_action is None and run.next_action is None
@@ -413,6 +419,7 @@ def test_agent_run_create_defaults() -> None:
     assert request.workflow_type == DEFAULT_WORKFLOW_TYPE
     assert request.input_revision == 1
     assert request.mode == "autonomous_draft"
+    assert request.scope == "full_bid_draft"
     assert request.max_iterations == 20
 
 
@@ -458,7 +465,8 @@ def test_migration_revision_linkage() -> None:
     assert revisions["0005_response_workbench"].down_revision == "0004_model_run_provenance"
     assert revisions["0006_autonomous_draft_agent"].down_revision == "0005_response_workbench"
     assert revisions["0007_unique_active_agent_job"].down_revision == "0006_autonomous_draft_agent"
-    assert tuple(script.get_heads()) == ("0007_unique_active_agent_job",)
+    assert revisions["0008_agent_run_scope_outcome"].down_revision == "0007_unique_active_agent_job"
+    assert tuple(script.get_heads()) == ("0008_agent_run_scope_outcome",)
 
 
 def _load_migration_module() -> ModuleType:

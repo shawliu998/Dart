@@ -20,6 +20,15 @@ AgentRunStatus = Literal[
     "cancelled",
 ]
 AgentRunMode = Literal["autonomous_draft", "supervised"]
+AgentRunOutcome = Literal["success", "partial", "blocked", "no_result"]
+AgentRunScope = Literal[
+    "full_bid_draft",
+    "risk_review",
+    "material_gap_analysis",
+    "response_improvement",
+    "amendment_reanalysis",
+    "work_package_check",
+]
 AgentStepStatus = Literal[
     "pending",
     "running",
@@ -39,6 +48,7 @@ class AgentRunCreate(BaseModel):
     workflow_type: str = Field(default=DEFAULT_WORKFLOW_TYPE, min_length=3, max_length=100)
     input_revision: int = Field(default=1, ge=1)
     mode: AgentRunMode = "autonomous_draft"
+    scope: AgentRunScope = "full_bid_draft"
     max_iterations: int = Field(default=20, ge=1, le=100)
 
 
@@ -57,6 +67,8 @@ class AgentRunRead(ORMModel):
     workflow_type: str
     goal: str
     mode: AgentRunMode
+    scope: AgentRunScope
+    outcome: AgentRunOutcome | None
     plan_json: dict
     iteration: int
     max_iterations: int

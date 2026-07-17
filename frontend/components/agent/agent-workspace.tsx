@@ -41,6 +41,20 @@ const runLabels: Record<AgentRunStatus, string> = {
   cancelled: "已取消",
 };
 
+const outcomeLabels = {
+  success: "自主草稿已完成",
+  partial: "已生成部分结果",
+  blocked: "需要补充输入后继续",
+  no_result: "未能识别有效要求",
+} as const;
+
+const outcomeStyles = {
+  success: "border-emerald-200 bg-emerald-50 text-emerald-900",
+  partial: "border-amber-200 bg-amber-50 text-amber-900",
+  blocked: "border-red-200 bg-red-50 text-red-800",
+  no_result: "border-slate-300 bg-slate-100 text-slate-700",
+} as const;
+
 const stepLabels: Record<AgentStepStatus, string> = {
   pending: "未开始",
   running: "进行中",
@@ -105,6 +119,7 @@ function RunSummary({ bundle, source }: { bundle: AgentRunBundle; source: "api" 
             <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${run.mode === "autonomous_draft" ? "border-teal-200 bg-teal-50 text-teal-900" : "border-slate-200 bg-slate-50 text-slate-700"}`}>
               {run.mode === "autonomous_draft" ? "自主草稿" : "监督执行"}
             </span>
+            {run.outcome && <span className={`rounded-full border px-2.5 py-1 text-xs font-semibold ${outcomeStyles[run.outcome]}`}>{outcomeLabels[run.outcome]}</span>}
             <span className="text-xs text-slate-500">运行 ID：{run.id}</span>
           </div>
           <h1 className="mt-3 text-2xl font-semibold tracking-tight text-slate-950">{run.title}</h1>
@@ -217,7 +232,7 @@ function StepTimeline({ steps }: { steps: AgentStep[] }) {
                 {step.tool && <span>工具：{step.tool}</span>}
                 {(step.summary || step.message) && <span>{step.summary || step.message}</span>}
               </div>
-              {step.sources?.[0] && <div className="mt-3"><SourceReference source={step.sources[0]} compact /></div>}
+              <div className="mt-3"><SourceReference source={step.sources?.[0]} compact /></div>
             </article>
           </li>
         ))}
@@ -270,7 +285,7 @@ function ApprovalQueue({ approvals, source }: { approvals: AgentApproval[]; sour
               <div><dt className="font-medium text-slate-800">影响</dt><dd className="mt-0.5 text-slate-600">{approval.impactSummary}</dd></div>
               <div className="flex gap-4"><div><dt className="font-medium text-slate-800">所需角色</dt><dd className="mt-0.5 text-slate-600">{approval.requiredRole}</dd></div><div><dt className="font-medium text-slate-800">可逆性</dt><dd className="mt-0.5 text-slate-600">{approval.reversible ? "可撤销并保留审计" : "不可在运行中心撤销"}</dd></div></div>
             </dl>
-            <div className="mt-3"><SourceReference source={approval.sourceReferences[0]} /></div>
+            <div className="mt-3"><SourceReference source={approval.sourceReferences?.[0]} /></div>
             {source === "api" && approval.status === "pending" && approval.type !== "final_work_package_review" && (
               <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
                 <label className="block text-xs font-semibold text-slate-900" htmlFor={`approval-reason-${approval.id}`}>审批理由</label>
@@ -310,7 +325,7 @@ function OutputGrid({ outputs }: { outputs: AgentOutput[] }) {
               <strong className="text-2xl text-slate-900" aria-label={`${output.count} 项`}>{output.count}</strong>
             </div>
             <p className="mt-2 flex-1 text-xs leading-5 text-slate-600">{output.summary}</p>
-            <SourceReference source={output.provenance[0]} compact />
+            <SourceReference source={output.provenance?.[0]} compact />
             <Link className="mt-3 inline-flex items-center gap-1 text-xs font-semibold text-teal-800 hover:underline focus:outline-none focus:ring-2 focus:ring-blue-500" href={output.href}>查看业务结果<ArrowRight aria-hidden="true" size={13} /></Link>
           </article>
         ))}
