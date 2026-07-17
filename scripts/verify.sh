@@ -56,7 +56,11 @@ else
 fi
 
 if [[ -f frontend/package.json ]]; then
-  (cd frontend && npm run test:e2e && npm run build)
+  BIDEVIDENCE_E2E_PORT="${E2E_PORT:-}"
+  if [[ -z "$BIDEVIDENCE_E2E_PORT" ]]; then
+    BIDEVIDENCE_E2E_PORT="$($PYTHON -c 'import socket; sock = socket.socket(); sock.bind(("127.0.0.1", 0)); print(sock.getsockname()[1]); sock.close()')"
+  fi
+  (cd frontend && E2E_PORT="$BIDEVIDENCE_E2E_PORT" npm run test:e2e && npm run build)
 fi
 
 echo "BidEvidence 完整交付门禁通过。"
