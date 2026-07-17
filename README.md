@@ -143,6 +143,7 @@ make demo         # 一键启动、seed并准备验收产物
 make verify-demo  # 文件、JSON、哈希和oracle计数
 make acceptance   # 证据/合规/冲突/公告/任务/ZIP/audit/safety独立验收
 make acceptance-api # 对已启动且seed的API、真实ZIP和审计导出做验收
+make acceptance-agent # 对已启动且seed的API执行完整自主Agent工作流验收
 make lint         # ruff、mypy、ESLint、TypeScript
 make test         # 独立验收、后端和前端测试
 make verify       # 完整门禁：以上 + Compose + Playwright + production build
@@ -158,6 +159,7 @@ bash scripts/setup.sh
 bash scripts/demo.sh
 python3 scripts/verify_demo.py
 python3 scripts/acceptance_mvp.py --artifacts-dir .data/acceptance --clean
+python3 scripts/acceptance_agent.py --artifacts-dir .data/agent-acceptance
 bash scripts/verify.sh
 ```
 
@@ -171,6 +173,7 @@ python scripts/acceptance_mvp.py --artifacts-dir .data/acceptance --clean
 docker compose up -d --build
 Start-Sleep -Seconds 10
 python scripts/seed_running_api.py
+python scripts/acceptance_agent.py --artifacts-dir .data/agent-acceptance
 cd backend; python -m pytest; cd ..
 cd frontend; npm test; npm run lint; npm run typecheck; npm run test:e2e; npm run build; cd ..
 ```

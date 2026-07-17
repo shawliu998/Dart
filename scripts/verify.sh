@@ -46,6 +46,7 @@ if [[ "$api_ready" != "1" ]]; then
 fi
 python3 scripts/seed_running_api.py --base-url http://127.0.0.1:18080
 python3 scripts/acceptance_api.py --base-url http://127.0.0.1:18080 --artifacts-dir .data/verify-runtime/service-acceptance --clean
+python3 scripts/acceptance_agent.py --base-url http://127.0.0.1:18080 --artifacts-dir .data/verify-runtime/agent-acceptance
 cleanup_api
 trap - EXIT
 
