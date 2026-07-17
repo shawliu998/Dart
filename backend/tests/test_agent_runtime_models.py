@@ -457,7 +457,8 @@ def test_migration_revision_linkage() -> None:
     assert revisions["0004_model_run_provenance"].down_revision == "0003_agent_runtime"
     assert revisions["0005_response_workbench"].down_revision == "0004_model_run_provenance"
     assert revisions["0006_autonomous_draft_agent"].down_revision == "0005_response_workbench"
-    assert tuple(script.get_heads()) == ("0006_autonomous_draft_agent",)
+    assert revisions["0007_unique_active_agent_job"].down_revision == "0006_autonomous_draft_agent"
+    assert tuple(script.get_heads()) == ("0007_unique_active_agent_job",)
 
 
 def _load_migration_module() -> ModuleType:

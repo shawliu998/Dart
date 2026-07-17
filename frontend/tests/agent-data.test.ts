@@ -1,4 +1,4 @@
-import { agentApi, agentRunBundleFromApiPayload, createAgentRun, getLatestAgentRun, type AgentRequest } from "@/lib/api/agent";
+import { agentApi, agentEventsFromApiPayload, agentRunBundleFromApiPayload, createAgentRun, getLatestAgentRun, type AgentRequest } from "@/lib/api/agent";
 
 const persistedRun = {
   id: "run-1", project_id: "project-1", project_name: "真实项目", workflow_type: "bid_analysis_and_response_v1",
@@ -20,8 +20,20 @@ describe("Agent run API adapter", () => {
   });
 
   it("maps autonomous snake_case command-center fields", () => {
-    const bundle = agentRunBundleFromApiPayload({ ...persistedRun, mode: "autonomous_draft", max_iterations: 12, current_iteration: 3, current_action: "提取项目摘要", next_action: "抽取招标要求", last_observation: "已识别 2 处主体名称差异", agent_summary: "正在生成内部草稿" }, "project-1");
+    const bundle = agentRunBundleFromApiPayload({ ...persistedRun, mode: "autonomous_draft", max_iterations: 12, current_iteration: 3, current_action: "提取项目摘要", next_action: "抽取招标要求", last_observation: "已识别 2 处主体名称差异", agent_summary: "正在生成内部草稿", plan_json: { stages: [{ key: "understand", title: "理解文件", status: "completed" }, { key: "evidence", title: "证据核验", status: "in_progress" }, { key: "unknown", status: "completed" }, { key: "draft", status: "server_future_state" }] } }, "project-1");
     expect(bundle.run).toMatchObject({ mode: "autonomous_draft", maxIterations: 12, iteration: 3, currentAction: "提取项目摘要", nextAction: "抽取招标要求", observation: "已识别 2 处主体名称差异", summary: "正在生成内部草稿" });
+    expect(bundle.run.planStages).toEqual([{ key: "understand", title: "理解文件", status: "completed" }, { key: "evidence", title: "证据核验", status: "in_progress" }]);
+  });
+
+  it("maps append-only events, omitting incomplete rows without inventing a timestamp", () => {
+    expect(agentEventsFromApiPayload([
+      { sequence: 2, event_type: "response_quality.pass_completed", payload: { pass: 2 }, created_at: "2026-07-17T09:02:00Z" },
+      { sequence: 1, event_type: "review.deferred", payload: { reason: "等待人工确认" }, created_at: "2026-07-17T09:01:00Z" },
+      { sequence: 3, event_type: "tool.completed", payload: {} },
+    ])).toEqual([
+      { sequence: 1, eventType: "review.deferred", payload: { reason: "等待人工确认" }, timestamp: "2026-07-17T09:01:00Z" },
+      { sequence: 2, eventType: "response_quality.pass_completed", payload: { pass: 2 }, timestamp: "2026-07-17T09:02:00Z" },
+    ]);
   });
 
   it("posts autonomous launch options using the backend snake_case contract", async () => {

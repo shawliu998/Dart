@@ -1,6 +1,6 @@
 import { apiRequest, isDemoMode } from "./client";
 import { createAgentRunBundle } from "@/lib/agent/demo";
-import type { AgentApproval, AgentDataResult, AgentOutput, AgentRun, AgentRunBundle, AgentRunCreateInput, AgentSourceRef, AgentStep } from "@/lib/agent/types";
+import type { AgentApproval, AgentDataResult, AgentEvent, AgentOutput, AgentPlanStage, AgentRun, AgentRunBundle, AgentRunCreateInput, AgentSourceRef, AgentStep } from "@/lib/agent/types";
 
 type JsonObject = Record<string, unknown>;
 export type AgentRequest = <T>(path: string, init?: RequestInit) => Promise<T>;
@@ -37,6 +37,40 @@ const source = (value: unknown): AgentSourceRef => {
 };
 const sourceRows = (value: unknown) => rows(value, ["source_references", "sourceReferences", "sources", "provenance"]).map(source);
 const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+const planStageKeys = ["understand", "evidence", "draft", "deliver", "review"] as const;
+const planStageStatuses = ["pending", "in_progress", "completed", "waiting_approval"] as const;
+const planStageTitles: Record<AgentPlanStage["key"], string> = {
+  understand: "理解项目与招标文件", evidence: "匹配证据并运行检查", draft: "生成内部响应草稿", deliver: "生成交付工作包", review: "统一人工复核",
+};
+
+function isPlanStageKey(value: unknown): value is AgentPlanStage["key"] {
+  return typeof value === "string" && planStageKeys.some((key) => key === value);
+}
+
+function isPlanStageStatus(value: unknown): value is AgentPlanStage["status"] {
+  return typeof value === "string" && planStageStatuses.some((status) => status === value);
+}
+
+function mapPlanStages(value: unknown): AgentPlanStage[] {
+  const seen = new Set<string>();
+  return rows(value, ["stages"]).flatMap((item) => {
+    if (!isPlanStageKey(item.key) || !isPlanStageStatus(item.status) || seen.has(item.key)) return [];
+    const key = item.key;
+    seen.add(key);
+    return [{ key, title: text(item.title, planStageTitles[key]), status: item.status }];
+  });
+}
+
+/** Strict adapter for the append-only /events response. Invalid rows are omitted, never invented. */
+export function agentEventsFromApiPayload(payload: unknown): AgentEvent[] {
+  return rows(payload, ["items", "events"]).flatMap((item) => {
+    const sequence = number(item.sequence, 0);
+    const eventType = text(item.event_type ?? item.eventType);
+    const timestamp = text(item.created_at ?? item.createdAt ?? item.timestamp);
+    if (sequence <= 0 || !eventType || !timestamp) return [];
+    return [{ sequence, eventType, payload: object(item.payload), timestamp }];
+  }).sort((left, right) => left.sequence - right.sequence);
+}
 
 type StepPresentation = Pick<AgentStep, "title" | "description" | "actor" | "tool">;
 
@@ -141,6 +175,7 @@ export function agentRunBundleFromApiPayload(payload: unknown, projectId: string
   const steps = rows(root.steps ?? runValue.steps, ["items", "step_runs", "stepRuns"]).map((item, index) => mapStep(item, runId, index));
   const approvals = rows(root.approvals ?? runValue.approvals, ["items", "approval_requests", "approvalRequests"]).map((item) => mapApproval(item, runId, projectId));
   const outputs = rows(root.outputs ?? root.artifacts ?? runValue.outputs ?? runValue.artifacts, ["items", "artifacts"]).map((item) => mapOutput(item, runId, projectId));
+  const planStages = mapPlanStages(runValue.plan_json ?? runValue.planJson);
   const run: AgentRun = {
     id: runId, projectId: text(runValue.project_id ?? runValue.projectId, projectId), projectName: text(runValue.project_name ?? runValue.projectName, "本地项目"),
     title: text(runValue.title ?? runValue.workflow_type ?? runValue.workflowType, "投标分析运行"), goal: text(runValue.goal ?? runValue.objective, "完成投标分析与响应草稿工作包。"),
@@ -155,9 +190,9 @@ export function agentRunBundleFromApiPayload(payload: unknown, projectId: string
     trigger: oneOf(runValue.trigger, ["project_opened", "document_updated", "amendment_received", "manual_rerun"] as const, "manual_rerun"),
     startedAt: text(runValue.started_at ?? runValue.startedAt ?? runValue.created_at ?? runValue.createdAt), updatedAt: text(runValue.updated_at ?? runValue.updatedAt ?? runValue.created_at ?? runValue.createdAt), completedAt: text(runValue.completed_at ?? runValue.completedAt) || undefined,
     progress: progressFromSteps(steps), currentStepId: text(runValue.current_step_id ?? runValue.currentStepId ?? runValue.current_step ?? runValue.currentStep) || undefined, initiatedBy: text(runValue.created_by ?? runValue.createdBy, "本地工作区"),
-    promptVersion: text(runValue.prompt_version ?? runValue.promptVersion), policyVersion: text(runValue.policy_version ?? runValue.policyVersion), summary: text(runValue.agent_summary ?? runValue.agentSummary) || summaryFromSteps(steps, approvals, oneOf(runValue.status, ["queued", "planning", "running", "waiting_approval", "completed", "failed", "cancelled"] as const, "queued")), steps, approvals, outputs,
+    promptVersion: text(runValue.prompt_version ?? runValue.promptVersion), policyVersion: text(runValue.policy_version ?? runValue.policyVersion), summary: text(runValue.agent_summary ?? runValue.agentSummary) || summaryFromSteps(steps, approvals, oneOf(runValue.status, ["queued", "planning", "running", "waiting_approval", "completed", "failed", "cancelled"] as const, "queued")), planStages, steps, approvals, outputs,
   };
-  return { run, steps, approvals, outputs };
+  return { run, steps, approvals, outputs, events: [] };
 }
 
 function failure(error: unknown): AgentDataResult<AgentRunBundle> {
@@ -192,7 +227,7 @@ export const agentApi = {
   getRun: getLatestAgentRun,
   createRun: createAgentRun,
   getRunById: getAgentRun,
-  events: (runId: string, request: AgentRequest = apiRequest) => request(`/api/agent-runs/${runId}/events`),
+  events: async (runId: string, request: AgentRequest = apiRequest): Promise<AgentEvent[]> => agentEventsFromApiPayload(await request(`/api/agent-runs/${runId}/events`)),
   cancel: (runId: string, request: AgentRequest = apiRequest) => request(`/api/agent-runs/${runId}/cancel`, { method: "POST", body: JSON.stringify({}) }),
   retry: (runId: string, request: AgentRequest = apiRequest) => request(`/api/agent-runs/${runId}/retry`, { method: "POST", body: JSON.stringify({}) }),
   approve: (approvalId: string, input: AgentActionInput, request: AgentRequest = apiRequest) => request(`/api/approvals/${approvalId}/approve`, { method: "POST", body: JSON.stringify(input) }),

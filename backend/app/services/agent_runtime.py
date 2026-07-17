@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+from contextlib import contextmanager
+from contextvars import ContextVar
 from copy import deepcopy
 from decimal import Decimal
+from typing import Callable, Iterator
 from uuid import UUID
 
-from sqlalchemy import func, select
+from sqlalchemy import and_, func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.service import stable_hash
@@ -38,6 +42,10 @@ from app.services.responses import generate_project_responses
 from app.services.review_workflows import run_compliance
 
 WORKFLOW_TYPE = "bid_analysis_and_response_v1"
+_ACTIVE_AGENT_JOB_STATUSES = ("queued", "running", "retrying")
+_agent_heartbeat: ContextVar[Callable[[], bool] | None] = ContextVar(
+    "agent_run_heartbeat", default=None
+)
 BID_WORKFLOW_STEPS: tuple[tuple[str, str], ...] = (
     ("ingest_documents", "接收与校验招标文件"),
     ("parse_documents", "解析文档并建立来源索引"),
@@ -59,6 +67,110 @@ _AUTONOMOUS_PLAN: tuple[tuple[str, str, set[str]], ...] = (
     ("deliver", "生成交付工作包", {"export_artifacts"}),
     ("review", "统一人工复核", set()),
 )
+
+
+@contextmanager
+def agent_run_heartbeat(callback: Callable[[], bool]) -> Iterator[None]:
+    """Bind a worker lease callback to this execution without global cross-talk."""
+    token = _agent_heartbeat.set(callback)
+    try:
+        yield
+    finally:
+        _agent_heartbeat.reset(token)
+
+
+def enqueue_agent_run_job(
+    db: Session,
+    run: AgentRun,
+    *,
+    created_by: UUID,
+    immediate: bool = False,
+) -> AsyncJob:
+    """Return the sole active job for a run, creating one only when needed.
+
+    The parent row lock serializes create/resume/retry in database deployments;
+    SQLite still gets deterministic idempotency through the same query path.
+    """
+    db.flush()
+    db.scalar(select(AgentRun.id).where(AgentRun.id == run.id).with_for_update())
+    active = db.scalar(
+        select(AsyncJob)
+        .where(
+            AsyncJob.tenant_id == run.tenant_id,
+            AsyncJob.job_type == "agent_run",
+            AsyncJob.entity_id == run.id,
+            AsyncJob.status.in_(_ACTIVE_AGENT_JOB_STATUSES),
+        )
+        .order_by(AsyncJob.created_at)
+        .limit(1)
+    )
+    if active is not None:
+        # A manual retry makes an already scheduled automatic retry runnable
+        # now, but never modifies a job another worker already owns.
+        if immediate and active.status in {"queued", "retrying"}:
+            active.status = "queued"
+            active.current_step = "queued"
+            active.next_retry_at = None
+            active.cancel_requested = False
+            active.retryable = True
+        return active
+    job = AsyncJob(
+        tenant_id=run.tenant_id,
+        created_by=created_by,
+        job_type="agent_run",
+        entity_id=run.id,
+        input_revision=run.input_revision,
+    )
+    try:
+        # SQLite ignores SELECT FOR UPDATE.  The partial unique index is the
+        # final concurrency guard there; a savepoint lets the losing caller
+        # recover the winner instead of turning an idempotent enqueue into 500.
+        with db.begin_nested():
+            db.add(job)
+            db.flush()
+        return job
+    except IntegrityError:
+        existing = db.scalar(
+            select(AsyncJob)
+            .where(
+                AsyncJob.tenant_id == run.tenant_id,
+                AsyncJob.job_type == "agent_run",
+                AsyncJob.entity_id == run.id,
+                AsyncJob.status.in_(_ACTIVE_AGENT_JOB_STATUSES),
+            )
+            .order_by(AsyncJob.created_at)
+            .limit(1)
+        )
+        if existing is None:
+            raise
+        return existing
+
+
+def _cancel_agent_jobs_for_run(db: Session, run: AgentRun) -> None:
+    """Cancel queued work now and ask an owned worker to stop at its boundary."""
+    matching = and_(
+        AsyncJob.tenant_id == run.tenant_id,
+        AsyncJob.job_type == "agent_run",
+        AsyncJob.entity_id == run.id,
+    )
+    db.execute(
+        update(AsyncJob)
+        .where(matching, AsyncJob.status.in_(("queued", "retrying")))
+        .values(
+            status="cancelled",
+            current_step="cancelled",
+            retryable=False,
+            cancel_requested=True,
+            next_retry_at=None,
+            lease_owner=None,
+            lease_expires_at=None,
+        )
+    )
+    db.execute(
+        update(AsyncJob)
+        .where(matching, AsyncJob.status == "running")
+        .values(cancel_requested=True)
+    )
 
 
 def _initial_autonomous_plan() -> dict:
@@ -177,7 +289,7 @@ def create_run(
             "max_iterations": max_iterations,
         },
     )
-    db.add(AsyncJob(tenant_id=principal.tenant_id, created_by=principal.user_id, job_type="agent_run", entity_id=run.id, input_revision=input_revision))
+    enqueue_agent_run_job(db, run, created_by=principal.user_id)
     db.commit()
     db.refresh(run)
     return _bundle(db, principal, run)
@@ -274,14 +386,72 @@ def process_agent_run(run_id: UUID) -> bool:
             role=creator.role if creator is not None else "viewer",
         )
         autonomous = run.mode == "autonomous_draft"
+        active_run = run
+
+        def stop_before_commit() -> bool:
+            """Check cancellation/ownership before publishing this boundary.
+
+            The callback is present only when invoked by the durable queue.  It
+            is intentionally optional so direct service calls retain their
+            deterministic behaviour in tests and local tools.
+            """
+            heartbeat = _agent_heartbeat.get()
+            lease_ok = heartbeat() if heartbeat is not None else True
+            # Read cancellation through a fresh, read-only session.  The
+            # runtime session may have loaded the run before a concurrent
+            # cancel committed; its identity map must not publish stale
+            # completed/blocked state over that newer decision.
+            with SessionLocal() as boundary_db:
+                latest_cancel = boundary_db.scalar(
+                    select(AgentRun.cancel_requested).where(
+                        AgentRun.id == active_run.id,
+                        AgentRun.tenant_id == active_run.tenant_id,
+                    )
+                )
+            if lease_ok and not latest_cancel:
+                return False
+            # Do not let a stale worker publish work after losing its lease.
+            # Roll back first, then re-read cancellation written by the API.
+            db.rollback()
+            db.refresh(active_run)
+            if active_run.cancel_requested or latest_cancel:
+                active_run.cancel_requested = True
+                running_step = db.scalar(
+                    select(AgentStepRun)
+                    .where(
+                        AgentStepRun.run_id == active_run.id,
+                        AgentStepRun.status == "running",
+                    )
+                    .order_by(AgentStepRun.sequence)
+                    .limit(1)
+                )
+                if running_step is not None:
+                    running_step.status, running_step.completed_at = "cancelled", utcnow()
+                if active_run.status != "cancelled":
+                    active_run.status, active_run.completed_at = "cancelled", utcnow()
+                    _event(db, active_run, "run.cancelled", {})
+                db.commit()
+                return True
+            return True
+
+        def commit_boundary() -> bool:
+            if stop_before_commit():
+                return True
+            db.commit()
+            return False
+
         run.status, run.started_at = "planning", run.started_at or utcnow()
+        run.completed_at, run.error_code, run.error_message = None, None, None
         _event(db, run, "run.started", {})
-        db.commit()
+        if commit_boundary():
+            return run.status == "cancelled"
         try:
             for step in _steps(db, run.id):
                 db.refresh(run)
                 if run.cancel_requested:
-                    step.status, run.status, run.completed_at = "cancelled", "cancelled", utcnow()
+                    if step.status != "completed":
+                        step.status, step.completed_at = "cancelled", utcnow()
+                    run.status, run.completed_at = "cancelled", utcnow()
                     _event(db, run, "run.cancelled", {}, step)
                     db.commit()
                     return True
@@ -307,7 +477,8 @@ def process_agent_run(run_id: UUID) -> bool:
                             {"reason": run.completion_reason, "iteration": run.iteration},
                             step,
                         )
-                        db.commit()
+                        if commit_boundary():
+                            return run.status == "cancelled"
                         return True
                     decision = next_decision(_steps(db, run.id))
                     run.iteration += 1
@@ -320,8 +491,10 @@ def process_agent_run(run_id: UUID) -> bool:
                     run.plan_json = plan
                     _event(db, run, "agent.decision", decision.model_dump(mode="json"), step)
                 run.status, run.current_step, step.status, step.started_at = "running", step.step_key, "running", utcnow()
+                step.completed_at, step.error_code, step.error_message = None, None, None
                 _event(db, run, "step.started", {"step_key": step.step_key}, step)
-                db.commit()
+                if commit_boundary():
+                    return run.status == "cancelled"
                 if step.step_key == "ingest_documents":
                     documents = list(db.scalars(select(Document).where(Document.project_id == run.project_id, Document.tenant_id == run.tenant_id, Document.deleted_at.is_(None))))
                     tender_main_count = sum(item.document_type == "tender_main" for item in documents)
@@ -344,10 +517,12 @@ def process_agent_run(run_id: UUID) -> bool:
                                 ).model_dump(mode="json"),
                                 step,
                             )
-                            db.commit()
+                            if commit_boundary():
+                                return run.status == "cancelled"
                             return True
                         _fail(db, run, step, "NO_TENDER_MAIN", "请先上传至少一份招标主文件")
-                        db.commit()
+                        if commit_boundary():
+                            return run.status == "cancelled"
                         return False
                     inventory = {
                         "document_count": len(documents),
@@ -386,10 +561,12 @@ def process_agent_run(run_id: UUID) -> bool:
                                 ).model_dump(mode="json"),
                                 step,
                             )
-                            db.commit()
+                            if commit_boundary():
+                                return run.status == "cancelled"
                             return True
                         _fail(db, run, step, "TENDER_PARSE_FAILED", "招标主文件解析失败，无法继续分析")
-                        db.commit()
+                        if commit_boundary():
+                            return run.status == "cancelled"
                         return False
                     parse_summary = {"parsed_document_count": len(parsed), "total_page_count": sum(item.page_count for item in parsed), "ocr_required_count": 0, "failed_files": failures, "warning": "部分附件未解析，已跳过" if failures else None}
                     db.add(AgentArtifact(tenant_id=run.tenant_id, run_id=run.id, step_run_id=step.id, artifact_type="parse_summary", title="文件解析结果", storage_key=f"runtime://{run.id}/parse-summary", content_hash=stable_hash(parse_summary), metadata_json=parse_summary, created_by=principal.user_id))
@@ -431,10 +608,12 @@ def process_agent_run(run_id: UUID) -> bool:
                             {"provisional_requirement_count": len(eligible), "human_verified": False},
                         )
                         _event(db, run, "review.deferred", {"review": "requirements", "href": f"/projects/{run.project_id}/review"}, step)
-                        db.commit()
+                        if commit_boundary():
+                            return run.status == "cancelled"
                         continue
                     _request_approval(db, run, step, approval_type="review_requirements", title="请复核招标要求", description="要求候选、来源和低置信度项必须由人工确认后再进入证据匹配。", impact_summary=f"/projects/{run.project_id}/requirements")
-                    db.commit()
+                    if commit_boundary():
+                        return run.status == "cancelled"
                     return True
                 elif step.step_key == "match_evidence":
                     matches = suggest_matches(db, principal, run.project_id, provisional=autonomous)
@@ -458,10 +637,12 @@ def process_agent_run(run_id: UUID) -> bool:
                             {"provisional_match_count": provisional_count, "human_accepted": False},
                         )
                         _event(db, run, "review.deferred", {"review": "evidence", "href": f"/projects/{run.project_id}/review"}, step)
-                        db.commit()
+                        if commit_boundary():
+                            return run.status == "cancelled"
                         continue
                     _request_approval(db, run, step, approval_type="review_evidence_matches", title="请复核证据匹配", description="候选证据必须逐条接受或拒绝；未接受的材料不会进入合规结论或响应草稿。", impact_summary=f"/projects/{run.project_id}/evidence-matching")
-                    db.commit()
+                    if commit_boundary():
+                        return run.status == "cancelled"
                     return True
                 elif step.step_key == "run_compliance_rules":
                     checks = run_compliance(db, principal, run.project_id)
@@ -493,10 +674,12 @@ def process_agent_run(run_id: UUID) -> bool:
                             {"review_state": "internal_draft", "human_approved": False},
                         )
                         _event(db, run, "review.deferred", {"review": "responses", "href": f"/projects/{run.project_id}/review"}, step)
-                        db.commit()
+                        if commit_boundary():
+                            return run.status == "cancelled"
                         continue
                     _request_approval(db, run, step, approval_type="review_responses", title="请复核投标响应", description="请编辑、补充或批准响应草稿；缺少材料的条款会明确保留待补充标记。", impact_summary=f"/projects/{run.project_id}/responses")
-                    db.commit()
+                    if commit_boundary():
+                        return run.status == "cancelled"
                     return True
                 elif step.step_key == "export_artifacts":
                     exported = export_project_artifacts(db, principal, run.project_id)
@@ -509,7 +692,8 @@ def process_agent_run(run_id: UUID) -> bool:
                             run.completion_reason = "max_iterations_reached"
                             run.agent_summary = "交付物已生成，但未达到最终人工复核。"
                             _event(db, run, "run.partial", {"reason": run.completion_reason}, step)
-                            db.commit()
+                            if commit_boundary():
+                                return run.status == "cancelled"
                             return True
                         run.iteration += 1
                         run.current_action, run.next_action = "finish_run", "finish_run"
@@ -526,12 +710,15 @@ def process_agent_run(run_id: UUID) -> bool:
                         )
                         _update_plan(run, _steps(db, run.id), final_review=True)
                         run.agent_summary = "内部草稿工作包已生成，等待最终人工复核。"
-                        db.commit()
+                        if commit_boundary():
+                            return run.status == "cancelled"
                         return True
-                db.commit()
+                if commit_boundary():
+                    return run.status == "cancelled"
             run.status, run.completed_at = "completed", utcnow()
             _event(db, run, "run.completed", {"workflow_type": WORKFLOW_TYPE})
-            db.commit()
+            if commit_boundary():
+                return run.status == "cancelled"
             return True
         except Exception as exc:
             db.rollback()
@@ -539,7 +726,8 @@ def process_agent_run(run_id: UUID) -> bool:
             if run is not None:
                 step = next((item for item in _steps(db, run.id) if item.status == "running"), _steps(db, run.id)[-1])
                 _fail(db, run, step, "RUNTIME_ERROR", str(exc)[:1000])
-                db.commit()
+                if commit_boundary():
+                    return run.status == "cancelled"
             return False
 
 
@@ -568,10 +756,12 @@ def decide_approval(db: Session, principal: Principal, approval_id: UUID, *, app
             _event(db, run, "run.completed", {"approval_type": approval.approval_type, "reason": reason}, step)
         else:
             run.status, run.completed_at = "queued", None
-            db.add(AsyncJob(tenant_id=run.tenant_id, created_by=principal.user_id, job_type="agent_run", entity_id=run.id, input_revision=run.input_revision))
+            enqueue_agent_run_job(db, run, created_by=principal.user_id)
             _event(db, run, "run.resumed", {"approval_type": approval.approval_type, "reason": reason}, step)
     else:
         step.status, run.status, run.completed_at = "cancelled", "cancelled", utcnow()
+        run.cancel_requested = True
+        _cancel_agent_jobs_for_run(db, run)
         _event(db, run, "run.cancelled", {"reason": reason}, step)
     db.commit()
     return _bundle(db, principal, run)
@@ -581,6 +771,7 @@ def cancel_run(db: Session, principal: Principal, run_id: UUID) -> dict:
     data = get_run(db, principal, run_id)
     run: AgentRun = data["run"]
     run.cancel_requested = True
+    _cancel_agent_jobs_for_run(db, run)
     if run.status in {"queued", "planning", "waiting_approval"}:
         run.status, run.completed_at = "cancelled", utcnow()
         _event(db, run, "run.cancelled", {})
@@ -594,7 +785,8 @@ def retry_run(db: Session, principal: Principal, run_id: UUID) -> dict:
     if run.status != "failed":
         raise ValueError("only failed runs may be retried")
     run.status, run.cancel_requested, run.error_code, run.error_message = "queued", False, None, None
-    db.add(AsyncJob(tenant_id=run.tenant_id, created_by=principal.user_id, job_type="agent_run", entity_id=run.id, input_revision=run.input_revision))
+    run.completed_at = None
+    enqueue_agent_run_job(db, run, created_by=principal.user_id, immediate=True)
     _event(db, run, "run.retry_requested", {})
     db.commit()
     return _bundle(db, principal, run)

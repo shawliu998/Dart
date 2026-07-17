@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -132,6 +133,21 @@ class DisqualificationRule(UUIDAuditMixin, Base):
 
 class AsyncJob(UUIDAuditMixin, Base):
     __tablename__ = "async_jobs"
+    __table_args__ = (
+        Index(
+            "uq_async_jobs_active_agent_run",
+            "tenant_id",
+            "job_type",
+            "entity_id",
+            unique=True,
+            sqlite_where=text(
+                "job_type = 'agent_run' AND status IN ('queued', 'running', 'retrying')"
+            ),
+            postgresql_where=text(
+                "job_type = 'agent_run' AND status IN ('queued', 'running', 'retrying')"
+            ),
+        ),
+    )
     job_type: Mapped[str] = mapped_column(String(40))
     entity_id: Mapped[UUID]
     status: Mapped[str] = mapped_column(String(20), default="queued")

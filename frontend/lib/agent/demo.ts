@@ -144,6 +144,7 @@ export function createAgentRunBundle(projectId: string, snapshot: AgentSnapshot 
       promptVersion: "bid-orchestrator@2.0-demo",
       policyVersion: "compliance-boundary@1.1",
       summary: `${approvals.length} 个人工门禁、${snapshot.openTaskCount} 项未完成任务、${snapshot.failedPackageCheckCount} 项封装阻塞。`,
+      planStages: [],
       steps,
       approvals,
       outputs,
@@ -151,6 +152,7 @@ export function createAgentRunBundle(projectId: string, snapshot: AgentSnapshot 
     steps,
     approvals,
     outputs,
+    events: [],
   };
 }
 

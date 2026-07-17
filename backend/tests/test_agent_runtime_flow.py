@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 from pathlib import Path
-from uuid import uuid4
+from uuid import UUID, uuid4
 
-from app.services import agent_runtime
+from sqlalchemy import update
+
+from app.auth.dependencies import Principal
+from app.db.session import SessionLocal
+from app.models.entities import AgentEvent, AgentRun
+from app.services import agent_runtime, jobs
 from app.services.demo_seed import stable_id
 
 WORKFLOW_STEP_KEYS = [
@@ -217,6 +222,127 @@ def test_autonomous_background_run_uses_persisted_creator_role(
     assert created.status_code == 201, created.text
     assert observed_roles
     assert set(observed_roles) == {"bid_manager"}
+
+
+def test_agent_worker_binds_the_durable_lease_guard(client, demo, monkeypatch) -> None:
+    """A durable agent run verifies its lease before entering the runtime."""
+    observed: list[tuple[object, str]] = []
+    original_heartbeat = jobs.heartbeat_job
+
+    def recording_heartbeat(job_id, worker_id):
+        observed.append((job_id, worker_id))
+        return original_heartbeat(job_id, worker_id)
+
+    monkeypatch.setattr(jobs, "heartbeat_job", recording_heartbeat)
+    paused_data, _approval_id = _create_run_waiting_for_approval(client, demo)
+
+    assert paused_data["run"]["status"] == "waiting_approval"
+    assert observed
+
+
+def test_lost_lease_does_not_publish_an_early_terminal_result(client, demo) -> None:
+    headers = demo["auth_headers"]
+    project = client.post(
+        "/api/projects",
+        headers=headers,
+        json={
+            "name": "失租终态测试",
+            "project_code": f"LOST-LEASE-{uuid4().hex[:8]}",
+            "buyer_name": "测试采购人",
+        },
+    )
+    assert project.status_code == 201, project.text
+    principal = Principal(
+        tenant_id=UUID(demo["tenant_id"]),
+        user_id=UUID(demo["user_id"]),
+        role="admin",
+    )
+    with SessionLocal() as db:
+        bundle = agent_runtime.create_run(
+            db,
+            principal,
+            UUID(project.json()["id"]),
+            goal="验证失租不发布终态",
+            input_revision=1,
+        )
+        run_id = bundle["run"].id
+
+    ownership = iter((True, True, False))
+    with agent_runtime.agent_run_heartbeat(lambda: next(ownership)):
+        assert agent_runtime.process_agent_run(run_id) is False
+
+    with SessionLocal() as db:
+        run = db.get(AgentRun, run_id)
+        assert run is not None
+        assert run.status == "running"
+        assert run.completion_reason is None
+        event_types = {
+            item.event_type
+            for item in db.query(AgentEvent).filter(AgentEvent.run_id == run_id)
+        }
+        assert "tool.blocked" not in event_types
+
+
+def test_committed_cancel_wins_before_an_early_terminal_publish(
+    client, demo, monkeypatch
+) -> None:
+    headers = demo["auth_headers"]
+    project = client.post(
+        "/api/projects",
+        headers=headers,
+        json={
+            "name": "取消竞争测试",
+            "project_code": f"CANCEL-RACE-{uuid4().hex[:8]}",
+            "buyer_name": "测试采购人",
+        },
+    )
+    assert project.status_code == 201, project.text
+    principal = Principal(
+        tenant_id=UUID(demo["tenant_id"]),
+        user_id=UUID(demo["user_id"]),
+        role="admin",
+    )
+    with SessionLocal() as db:
+        bundle = agent_runtime.create_run(
+            db,
+            principal,
+            UUID(project.json()["id"]),
+            goal="验证取消优先于候选终态",
+            input_revision=1,
+        )
+        run_id = bundle["run"].id
+
+    original_event = agent_runtime._event
+    cancel_committed = False
+
+    def event_with_cancel(db, run, event_type, payload, step=None):
+        nonlocal cancel_committed
+        if event_type == "tool.blocked" and not cancel_committed:
+            with SessionLocal() as cancelling_db:
+                cancelling_db.execute(
+                    update(AgentRun)
+                    .where(AgentRun.id == run.id)
+                    .values(cancel_requested=True)
+                )
+                cancelling_db.commit()
+            cancel_committed = True
+        return original_event(db, run, event_type, payload, step)
+
+    monkeypatch.setattr(agent_runtime, "_event", event_with_cancel)
+    assert agent_runtime.process_agent_run(run_id) is True
+
+    with SessionLocal() as db:
+        run = db.get(AgentRun, run_id)
+        assert run is not None
+        assert run.status == "cancelled"
+        assert run.cancel_requested is True
+        assert run.completion_reason is None
+        event_types = {
+            item.event_type
+            for item in db.query(AgentEvent).filter(AgentEvent.run_id == run_id)
+        }
+        assert "run.cancelled" in event_types
+        assert "tool.blocked" not in event_types
 
 
 def test_agent_run_persists_three_review_gates_and_exports_after_resuming(client, demo) -> None:

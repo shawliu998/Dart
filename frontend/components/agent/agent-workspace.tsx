@@ -20,11 +20,13 @@ import {
 import type {
   AgentApproval,
   AgentDataResult,
+  AgentEvent,
   AgentOutput,
   AgentRunBundle,
   AgentRunStatus,
   AgentStep,
   AgentStepStatus,
+  AgentPlanStageStatus,
 } from "@/lib/agent";
 import { agentApi } from "@/lib/api/agent";
 import { SourceReference } from "./source-reference";
@@ -131,24 +133,10 @@ function RunSummary({ bundle, source }: { bundle: AgentRunBundle; source: "api" 
   );
 }
 
-const autonomousPhases = [
-  { title: "文档理解", detail: "解析文件与提取项目摘要", keys: ["ingest", "parse", "profile"] },
-  { title: "要求与证据", detail: "抽取要求并匹配可追溯证据", keys: ["requirement", "evidence", "match"] },
-  { title: "合规与响应", detail: "运行规则并生成分类响应草稿", keys: ["compliance", "response", "draft"] },
-  { title: "交付物生成", detail: "汇总内部草稿并生成工作包", keys: ["export", "package"] },
-  { title: "统一复核", detail: "集中呈现结果并提交最终人工复核", keys: ["review"] },
-];
-
-function phaseState(bundle: AgentRunBundle, phaseIndex: number): "completed" | "running" | "pending" {
-  const { run, steps } = bundle;
-  const phase = autonomousPhases[phaseIndex];
-  const matching = steps.filter((step) => `${step.title} ${step.tool ?? ""}`.toLowerCase().split(/[^a-z]+/).some((word) => phase.keys.some((key) => word.includes(key))));
-  if (matching.some((step) => step.status === "running" || step.status === "waiting_approval" || step.status === "blocked")) return "running";
-  if (matching.length && matching.every((step) => step.status === "completed")) return "completed";
-  const progressPhase = Math.min(4, Math.floor((run.progress / 100) * autonomousPhases.length));
-  if (phaseIndex < progressPhase || run.status === "completed") return "completed";
-  return phaseIndex === progressPhase && ["queued", "planning", "running"].includes(run.status) ? "running" : "pending";
-}
+const planStageLabels: Record<AgentPlanStageStatus, string> = { pending: "待执行", in_progress: "进行中", completed: "已完成", waiting_approval: "等待人工审批" };
+const planStageStyles: Record<AgentPlanStageStatus, string> = {
+  pending: "border-slate-200 bg-white text-slate-600", in_progress: "border-blue-300 bg-blue-50 text-blue-900", completed: "border-emerald-300 bg-emerald-50 text-emerald-900", waiting_approval: "border-amber-300 bg-amber-50 text-amber-900",
+};
 
 function AutonomousCommandCenter({ bundle }: { bundle: AgentRunBundle }) {
   const { run } = bundle;
@@ -158,13 +146,9 @@ function AutonomousCommandCenter({ bundle }: { bundle: AgentRunBundle }) {
         <div><h2 id="autonomous-plan-title" className="text-base font-semibold text-slate-950">自主执行计划</h2><p className="mt-1 text-xs text-slate-600">有限循环只调用受控工具；当前产物均为内部草稿，须经最终人工复核。</p></div>
         <span className="rounded-full border border-teal-200 bg-white px-2.5 py-1 text-xs font-semibold text-teal-900">第 {run.iteration} / {run.maxIterations} 次迭代</span>
       </div>
-      <ol className="mt-4 grid gap-2 md:grid-cols-5" aria-label="五阶段执行计划">
-        {autonomousPhases.map((phase, index) => {
-          const status = phaseState(bundle, index);
-          const style = status === "completed" ? "border-emerald-300 bg-emerald-50 text-emerald-900" : status === "running" ? "border-blue-300 bg-blue-50 text-blue-900" : "border-slate-200 bg-white text-slate-600";
-          return <li key={phase.title} className={`rounded-lg border p-3 ${style}`}><span className="text-[11px] font-bold">{String(index + 1).padStart(2, "0")}</span><h3 className="mt-1 text-sm font-semibold">{phase.title}</h3><p className="mt-1 text-[11px] leading-4">{phase.detail}</p><span className="mt-2 block text-[11px] font-medium">{status === "completed" ? "已完成" : status === "running" ? "进行中" : "待执行"}</span></li>;
-        })}
-      </ol>
+      {run.planStages.length ? <ol className="mt-4 grid gap-2 md:grid-cols-5" aria-label="五阶段执行计划">
+        {run.planStages.map((stage, index) => <li key={stage.key} className={`rounded-lg border p-3 ${planStageStyles[stage.status]}`}><span className="text-[11px] font-bold">{String(index + 1).padStart(2, "0")}</span><h3 className="mt-1 text-sm font-semibold">{stage.title}</h3><span className="mt-2 block text-[11px] font-medium">{planStageLabels[stage.status]}</span></li>)}
+      </ol> : <p className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3 text-xs text-amber-900" role="status">后端尚未提供可展示的执行计划；不会根据步骤标题或进度推测阶段状态。</p>}
       <div className="mt-4 grid gap-3 md:grid-cols-3">
         <article className="rounded-lg border border-teal-100 bg-white p-3"><h3 className="text-xs font-semibold text-slate-700">当前动作</h3><p className="mt-1 text-sm text-slate-900">{run.currentAction ?? "正在根据项目状态选择下一项受控工具。"}</p></article>
         <article className="rounded-lg border border-teal-100 bg-white p-3"><h3 className="text-xs font-semibold text-slate-700">下一步</h3><p className="mt-1 text-sm text-slate-900">{run.nextAction ?? "完成当前动作后继续执行计划。"}</p></article>
@@ -172,6 +156,43 @@ function AutonomousCommandCenter({ bundle }: { bundle: AgentRunBundle }) {
       </div>
     </section>
   );
+}
+
+const eventLabels: Record<string, string> = {
+  "run.created": "运行已创建", "run.started": "运行已开始", "run.resumed": "运行已恢复", "run.partial": "运行部分完成", "run.completed": "运行已完成", "run.cancelled": "运行已取消",
+  "step.started": "步骤已开始", "step.completed": "步骤已完成", "step.failed": "步骤执行失败",
+  "agent.decision": "Agent 决策", "tool.completed": "受控工具已完成", "tool.blocked": "受控工具已阻塞", "tool.failed": "受控工具失败",
+  "approval.requested": "已请求人工审批",
+  "review.deferred": "已转入人工复核", "review.approved": "人工复核已批准", "review.rejected": "人工复核已拒绝",
+  "response_quality.pass_completed": "响应草稿自查完成",
+};
+
+function eventDetail(event: AgentEvent): string | null {
+  for (const key of ["summary", "message", "reason", "action", "next_action", "error_message"]) {
+    const value = event.payload[key];
+    if (typeof value === "string" && value) return value;
+  }
+  return null;
+}
+
+function eventBadges(event: AgentEvent): string[] {
+  const badges: string[] = [];
+  const iteration = event.payload.iteration;
+  if (typeof iteration === "number" && Number.isFinite(iteration)) badges.push(`第 ${iteration} 次迭代`);
+  const pass = event.payload.pass ?? event.payload.pass_number;
+  if (typeof pass === "number" && Number.isFinite(pass)) badges.push(`第 ${pass} 轮自查`);
+  if (event.eventType.includes("response_quality")) badges.push("响应自查");
+  if (event.eventType.includes("blocked") || event.payload.blocked === true) badges.push("已阻塞");
+  if (event.eventType.startsWith("review.") || event.eventType.startsWith("approval.")) badges.push("人工审批");
+  return badges;
+}
+
+function EventTimeline({ events, error }: { events: AgentEvent[]; error: string | null }) {
+  return <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="agent-events-title">
+    <div className="mb-4 flex items-center justify-between"><div><h2 id="agent-events-title" className="text-base font-semibold text-slate-950">最近运行事件</h2><p className="mt-1 text-xs text-slate-500">来自后端追加式事件流；按持久化序号展示。</p></div><GitBranch aria-hidden="true" className="text-slate-400" size={19} /></div>
+    {error && <p className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800" role="alert">事件流刷新失败：{error}。运行状态仍会继续刷新。</p>}
+    {events.length ? <ol className="space-y-3" aria-label="最近运行事件列表">{events.slice(-8).reverse().map((event) => <li key={`${event.sequence}-${event.timestamp}`} className="rounded-lg border border-slate-200 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-medium text-slate-900"><span className="mr-2 text-xs text-slate-400">#{event.sequence}</span>{eventLabels[event.eventType] ?? "运行事件"}</h3><time className="text-[11px] text-slate-500" dateTime={event.timestamp}>{event.timestamp}</time></div>{eventDetail(event) && <p className="mt-1 text-xs leading-5 text-slate-600">{eventDetail(event)}</p>}<div className="mt-2 flex flex-wrap gap-1">{eventBadges(event).map((badge) => <span key={badge} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700">{badge}</span>)}</div></li>)}</ol> : <p className="text-sm text-slate-600">暂未收到可展示的持久化事件。</p>}
+  </section>;
 }
 
 function StepTimeline({ steps }: { steps: AgentStep[] }) {
@@ -314,23 +335,67 @@ function FailureState({ result }: { result: Extract<AgentDataResult<AgentRunBund
 
 export function AgentWorkspace({ initialResult }: { initialResult: AgentDataResult<AgentRunBundle> }) {
   const [result, setResult] = useState(initialResult);
-  const activeRun = result.source !== "failure" && result.source === "api" && ["queued", "planning", "running"].includes(result.data.run.status);
+  const [events, setEvents] = useState<AgentEvent[]>(initialResult.source === "failure" ? [] : initialResult.data.events);
+  const [eventError, setEventError] = useState<string | null>(null);
+  const [runRefreshError, setRunRefreshError] = useState<string | null>(null);
+  const apiRun = result.source === "api" ? result.data.run : null;
+  const apiRunId = apiRun?.id;
+  const apiProjectId = apiRun?.projectId;
+  const apiRunStatus = apiRun?.status;
 
   useEffect(() => {
-    if (!activeRun) return;
+    if (!apiRunId || !apiProjectId) return;
     let disposed = false;
-    const refresh = async () => {
-      const next = await agentApi.getRunById(result.data.run.id, result.data.run.projectId);
-      if (!disposed && next.source !== "failure") setResult(next);
+    let timer: number | undefined;
+    let failedPollCount = 0;
+    let lastKnownStatus = apiRunStatus;
+    const refreshEvents = async () => {
+      try {
+        const nextEvents = await agentApi.events(apiRunId);
+        if (!disposed) { setEvents(nextEvents); setEventError(null); }
+      } catch (error) {
+        if (!disposed) setEventError(error instanceof Error ? error.message : "未知错误");
+      }
     };
-    const timer = window.setInterval(() => { void refresh(); }, 1000);
-    return () => { disposed = true; window.clearInterval(timer); };
-  }, [activeRun, result]);
+    const refresh = async () => {
+      const [runResult] = await Promise.all([agentApi.getRunById(apiRunId, apiProjectId), refreshEvents()]);
+      if (disposed) return lastKnownStatus;
+      if (runResult.source === "failure") {
+        setRunRefreshError(runResult.error.message);
+      } else {
+        setResult(runResult);
+        setRunRefreshError(null);
+        lastKnownStatus = runResult.data.run.status;
+      }
+      return lastKnownStatus;
+    };
+    const tick = async () => {
+      const status = await refresh();
+      if (disposed) return;
+      if (status && ["queued", "planning", "running"].includes(status)) {
+        failedPollCount = 0;
+        timer = window.setTimeout(() => { void tick(); }, 1000);
+      } else if (status === "failed" && failedPollCount < 18) {
+        // A worker can persist `failed` just before the job scheduler changes
+        // the same run back to `queued`. Keep watching past the 60-second job
+        // lease recovery window, while bounding requests for terminal failures.
+        failedPollCount += 1;
+        const delay = failedPollCount <= 5 ? 1000 : 5000;
+        timer = window.setTimeout(() => { void tick(); }, delay);
+      }
+    };
+    void tick();
+    return () => {
+      disposed = true;
+      if (timer !== undefined) window.clearTimeout(timer);
+    };
+  }, [apiProjectId, apiRunId, apiRunStatus]);
 
   if (result.source === "failure") return <FailureState result={result} />;
   return (
     <div className="page space-y-4 pb-8">
       <RunSummary bundle={result.data} source={result.source} />
+      {runRefreshError && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800" role="alert">运行状态刷新失败：{runRefreshError}。当前显示上次成功读取的状态。</p>}
       {result.data.run.mode === "autonomous_draft" && <AutonomousCommandCenter bundle={result.data} />}
       <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" aria-labelledby="agent-run-list-title">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
@@ -347,6 +412,7 @@ export function AgentWorkspace({ initialResult }: { initialResult: AgentDataResu
         <StepTimeline steps={result.data.steps} />
         <ApprovalQueue approvals={result.data.approvals} source={result.source} />
       </div>
+      <EventTimeline events={result.source === "api" ? events : result.data.events} error={result.source === "api" ? eventError : null} />
       <OutputGrid outputs={result.data.outputs} />
       <aside className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-600">
         <ShieldAlert aria-hidden="true" className="mt-0.5 shrink-0 text-slate-500" size={16} />

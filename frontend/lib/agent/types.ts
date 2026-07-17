@@ -7,6 +7,23 @@ export type AgentApprovalStatus = "pending" | "approved" | "rejected";
 export type AgentOutputType = "requirement" | "risk" | "evidence" | "task" | "report" | "package";
 export type AgentOutputKind = "requirements" | "risk" | "evidence" | "consistency" | "amendment" | "task" | "package" | "audit";
 export type AgentActorKind = "deterministic_rule" | "mock_model" | "human_gate";
+export type AgentPlanStageKey = "understand" | "evidence" | "draft" | "deliver" | "review";
+export type AgentPlanStageStatus = "pending" | "in_progress" | "completed" | "waiting_approval";
+
+/** A durable stage from AgentRun.plan_json; it is never inferred from step text or progress. */
+export interface AgentPlanStage {
+  key: AgentPlanStageKey;
+  title: string;
+  status: AgentPlanStageStatus;
+}
+
+/** Append-only event persisted by the runtime. Unknown event types remain deliberately generic. */
+export interface AgentEvent {
+  sequence: number;
+  eventType: string;
+  payload: Record<string, unknown>;
+  timestamp: string;
+}
 
 export interface AgentSourceRef {
   document: string;
@@ -40,6 +57,7 @@ export interface AgentRun {
   promptVersion: string;
   policyVersion: string;
   summary: string;
+  planStages: AgentPlanStage[];
   steps: AgentStep[];
   approvals: ApprovalRequest[];
   outputs: AgentOutput[];
@@ -115,6 +133,7 @@ export interface AgentRunBundle {
   steps: AgentStep[];
   approvals: AgentApproval[];
   outputs: AgentOutput[];
+  events: AgentEvent[];
 }
 
 export interface AgentFailure {

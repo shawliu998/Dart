@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AgentWorkspace } from "@/components/agent/agent-workspace";
 import { AgentStatusControl } from "@/components/agent";
@@ -22,7 +22,7 @@ describe("AgentWorkspace", () => {
 
   it("shows the five-phase autonomous command center from API run fields", () => {
     const bundle = createAgentRunBundle("project-autonomous");
-    bundle.run = { ...bundle.run, mode: "autonomous_draft", iteration: 4, maxIterations: 12, currentAction: "生成投标响应草稿", nextAction: "检查证据覆盖", observation: "发现 3 项待补充材料" };
+    bundle.run = { ...bundle.run, mode: "autonomous_draft", iteration: 4, maxIterations: 12, currentAction: "生成投标响应草稿", nextAction: "检查证据覆盖", observation: "发现 3 项待补充材料", planStages: [{ key: "understand", title: "服务端计划：文件理解", status: "completed" }, { key: "evidence", title: "服务端计划：证据处理", status: "waiting_approval" }] };
     render(<AgentWorkspace initialResult={{ source: "api", data: bundle, error: null }} />);
     expect(screen.getByRole("heading", { name: "自主执行计划" })).toBeInTheDocument();
     expect(screen.getByRole("list", { name: "五阶段执行计划" })).toBeInTheDocument();
@@ -31,6 +31,58 @@ describe("AgentWorkspace", () => {
     expect(screen.getByText("发现 3 项待补充材料")).toBeInTheDocument();
     expect(screen.getByText("第 4 / 12 次迭代")).toBeInTheDocument();
     expect(screen.getByText(/当前产物均为内部草稿/)).toBeInTheDocument();
+    expect(screen.getByText("服务端计划：文件理解")).toBeInTheDocument();
+    expect(screen.getByText("服务端计划：证据处理")).toBeInTheDocument();
+    expect(screen.queryByText("交付物生成")).not.toBeInTheDocument();
+  });
+
+  it("keeps run polling available and shows the real event error when event refresh fails", async () => {
+    const bundle = createAgentRunBundle("project-events");
+    bundle.run = { ...bundle.run, mode: "autonomous_draft", status: "running", planStages: [{ key: "understand", title: "理解文件", status: "in_progress" }] };
+    const events = vi.spyOn(agentApi, "events").mockRejectedValue(new Error("EVENTS_503"));
+    const getRun = vi.spyOn(agentApi, "getRunById").mockResolvedValue({ source: "api", data: bundle, error: null });
+    render(<AgentWorkspace initialResult={{ source: "api", data: bundle, error: null }} />);
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("事件流刷新失败：EVENTS_503"));
+    expect(getRun).toHaveBeenCalledWith(bundle.run.id, bundle.run.projectId);
+    events.mockRestore();
+    getRun.mockRestore();
+  });
+
+  it("shows a real run refresh failure while retaining the last successful snapshot", async () => {
+    const bundle = createAgentRunBundle("project-run-refresh");
+    bundle.run = { ...bundle.run, mode: "autonomous_draft", status: "running", planStages: [{ key: "understand", title: "理解文件", status: "in_progress" }] };
+    const events = vi.spyOn(agentApi, "events").mockResolvedValue([]);
+    const getRun = vi.spyOn(agentApi, "getRunById").mockResolvedValue({ source: "failure", data: null, error: { code: "agent_run_request_failed", message: "RUN_503", retryable: true } });
+    render(<AgentWorkspace initialResult={{ source: "api", data: bundle, error: null }} />);
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("运行状态刷新失败：RUN_503"));
+    expect(screen.getAllByText(bundle.run.title).length).toBeGreaterThan(0);
+    events.mockRestore();
+    getRun.mockRestore();
+  });
+
+  it("keeps polling across a transient failed state until an automatic retry is queued", async () => {
+    const runningBundle = createAgentRunBundle("project-retry-bridge");
+    runningBundle.run = { ...runningBundle.run, mode: "autonomous_draft", status: "running" };
+    const failedBundle = {
+      ...runningBundle,
+      run: { ...runningBundle.run, status: "failed" as const, summary: "等待后台任务安排重试" },
+    };
+    const queuedBundle = {
+      ...runningBundle,
+      run: { ...runningBundle.run, status: "queued" as const, summary: "后台任务已重新排队" },
+    };
+    const events = vi.spyOn(agentApi, "events").mockResolvedValue([]);
+    const getRun = vi.spyOn(agentApi, "getRunById")
+      .mockResolvedValueOnce({ source: "api", data: failedBundle, error: null })
+      .mockResolvedValueOnce({ source: "api", data: failedBundle, error: null })
+      .mockResolvedValue({ source: "api", data: queuedBundle, error: null });
+
+    render(<AgentWorkspace initialResult={{ source: "api", data: runningBundle, error: null }} />);
+
+    await waitFor(() => expect(getRun).toHaveBeenCalledTimes(3), { timeout: 2500 });
+    expect(screen.getByText("后台任务已重新排队")).toBeInTheDocument();
+    events.mockRestore();
+    getRun.mockRestore();
   });
 
   it("opens the reusable status drawer with plan, tool calls, approvals and findings", async () => {
