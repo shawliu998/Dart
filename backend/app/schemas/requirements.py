@@ -16,6 +16,8 @@ RequirementCategory = Literal[
     "pricing",
     "delivery",
     "service",
+    "personnel",
+    "case",
     "legal",
     "security",
     "format",

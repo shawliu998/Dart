@@ -18,6 +18,7 @@ from app.models.entities import (
     EvidenceAsset,
     EvidenceClaim,
     EvidenceMatch,
+    Organization,
     Requirement,
 )
 from app.rules.core import normalize_legal_name
@@ -289,19 +290,35 @@ def extract_claims(db: Session, principal: Principal, asset: EvidenceAsset) -> l
 
 def _expected_types(requirement: Requirement) -> set[str]:
     text = f"{requirement.title} {requirement.normalized_requirement}".lower()
+    if "验收" in text:
+        return {"acceptance_report"}
     if "营业执照" in text:
         return {"business_license"}
     if "iso 9001" in text or "iso9001" in text:
         return {"iso_certificate", "qualification_certificate"}
     if "iso 27001" in text or "iso27001" in text:
         return {"iso_certificate", "qualification_certificate"}
-    if "案例" in text:
-        return {"contract", "acceptance_report", "customer_reference"}
-    if "项目负责人" in text or "人员" in text:
+    if requirement.category == "case" or "案例" in text or "业绩" in text:
+        return {"contract", "acceptance_report"}
+    if requirement.category == "personnel" or "项目负责人" in text or "人员" in text:
         return {"staff_certificate", "resume"}
     if "等保" in text or "安全" in text:
         return {"product_certificate", "test_report", "qualification_certificate"}
     return set()
+
+
+def _asset_entity_matches(asset: EvidenceAsset, expected_legal_name: str) -> bool:
+    return bool(expected_legal_name) and (
+        normalize_legal_name(asset.legal_entity) == normalize_legal_name(expected_legal_name)
+    )
+
+
+def _asset_is_current(asset: EvidenceAsset, claim: EvidenceClaim, on_date: date) -> bool:
+    return (
+        asset.status not in {"expired", "invalid", "revoked"}
+        and (asset.expiry_date is None or asset.expiry_date >= on_date)
+        and (claim.valid_to is None or claim.valid_to >= on_date)
+    )
 
 
 def suggest_matches(
@@ -318,6 +335,8 @@ def suggest_matches(
     claims = list(
         db.scalars(select(EvidenceClaim).where(EvidenceClaim.tenant_id == principal.tenant_id))
     )
+    organization = db.get(Organization, principal.tenant_id)
+    expected_legal_name = normalize_legal_name(organization.legal_name) if organization else ""
     today = date.today()
     for requirement in requirements:
         expected = _expected_types(requirement)
@@ -330,10 +349,8 @@ def suggest_matches(
             if asset is None or not _can_view(asset, principal):
                 continue
             type_ok = asset.evidence_type in expected
-            entity_ok = normalize_legal_name(asset.legal_entity) == normalize_legal_name(
-                claim.subject
-            )
-            valid = claim.valid_to is None or claim.valid_to >= today
+            entity_ok = _asset_entity_matches(asset, expected_legal_name)
+            valid = _asset_is_current(asset, claim, today)
             score = (
                 (0.55 if type_ok else 0.0) + (0.25 if entity_ok else 0.0) + (0.2 if valid else 0.0)
             )
@@ -349,7 +366,7 @@ def suggest_matches(
                 continue
             reasons = [
                 f"类型{'匹配' if type_ok else '不匹配'}",
-                f"主体{'一致' if entity_ok else '不一致'}",
+                f"材料主体{'一致' if entity_ok else '不一致'}",
                 f"有效期{'有效' if valid else '已过期'}",
             ]
             db.add(

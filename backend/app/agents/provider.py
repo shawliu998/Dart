@@ -1,8 +1,8 @@
 from __future__ import annotations
 
-import re
-import os
 import json
+import os
+import re
 from typing import Protocol, TypeVar
 
 import httpx
@@ -68,6 +68,9 @@ class MockLLMProvider:
             "应一致",
             "统一为",
             "须",
+            "完成交付",
+            "质保期",
+            "投标有效期",
         )
         for index, line in enumerate(lines):
             if len(line) < 6 or not any(token in line for token in signals):
@@ -75,7 +78,27 @@ class MockLLMProvider:
             disqual = any(
                 token in line for token in ("否决", "无效", "废标", "不接受", "不得参与", "未提供")
             )
-            mandatory = disqual or any(token in line for token in ("必须", "应当", "不得"))
+            advisory = any(
+                token in line
+                for token in ("建议", "可酌情", "宜提供", "可提供", "可提交", "可选择", "无需提供")
+            )
+            imperative = any(token in line for token in ("提供", "提交")) and not advisory
+            mandatory = disqual or imperative or any(
+                token in line
+                for token in (
+                    "必须",
+                    "应当",
+                    "不得",
+                    "须",
+                    "不少于",
+                    "不超过",
+                    "应一致",
+                    "统一为",
+                    "完成交付",
+                    "质保期",
+                    "投标有效期",
+                )
+            )
             confidence = 0.94 if disqual else (0.86 if mandatory else 0.68)
             category = self._category(line)
             clause = None
@@ -108,16 +131,30 @@ class MockLLMProvider:
     def _category(text: str) -> str:
         if any(x in text for x in ("价格", "报价", "限价", "金额")):
             return "pricing"
+        if any(x in text for x in ("项目负责人", "人员", "从业经验", "社保", "简历")):
+            return "personnel"
+        if any(x in text for x in ("案例", "业绩", "验收证明")):
+            return "case"
         if any(x in text for x in ("资质", "证书", "资格", "营业执照")):
             return "qualification"
         if any(x in text for x in ("签章", "盖章", "签字")):
             return "signature"
-        if any(x in text for x in ("递交", "截止", "投标文件")):
+        if any(x in text for x in ("PDF", "格式", "文件大小", "MB", "页数")):
+            return "format"
+        if any(x in text for x in ("递交", "截止", "投标文件", "送达")):
             return "submission"
-        if any(x in text for x in ("交付", "工期", "日期")):
+        if any(x in text for x in ("交付", "工期", "实施周期", "日期")):
             return "delivery"
+        if any(x in text for x in ("质保", "运维", "售后", "服务期")):
+            return "service"
+        if any(x in text for x in ("安全", "保密", "等保", "密码")):
+            return "security"
         if any(x in text for x in ("技术", "参数", "性能")):
             return "technical"
+        if any(x in text for x in ("主体名称", "法定名称", "法律", "授权委托")):
+            return "legal"
+        if any(x in text for x in ("税率", "付款", "合同条件", "商务", "投标有效期")):
+            return "commercial"
         return "other"
 
     @staticmethod
@@ -127,7 +164,15 @@ class MockLLMProvider:
             result.append("business_license")
         if "证书" in text or "资质" in text:
             result.append("qualification_certificate")
-        return result
+        if "ISO" in text.upper():
+            result.append("iso_certificate")
+        if "验收" in text:
+            result.append("acceptance_report")
+        elif "案例" in text or "业绩" in text:
+            result.extend(("contract", "acceptance_report"))
+        if any(token in text for token in ("项目负责人", "人员", "经验", "简历")):
+            result.extend(("staff_certificate", "resume"))
+        return list(dict.fromkeys(result))
 
 
 class OpenAICompatibleProvider:

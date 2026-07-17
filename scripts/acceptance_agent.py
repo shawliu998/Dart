@@ -167,12 +167,13 @@ def run(base_url: str, artifacts_dir: Path) -> dict[str, Any]:
         "案例业绩型响应",
         "交付计划型响应",
     }
+    observed_strategies = {item.get("response_strategy") for item in responses}
     require(
-        any(item.get("response_strategy") in category_strategies for item in responses),
+        category_strategies <= observed_strategies,
         "未根据条款类别生成差异化响应",
     )
     require(
-        len({item.get("response_strategy") for item in responses}) >= 2,
+        len(observed_strategies) >= 2,
         "所有响应仍使用同一策略",
     )
     require(
@@ -190,6 +191,10 @@ def run(base_url: str, artifacts_dir: Path) -> dict[str, Any]:
             for phrase in ("我方完全满足", "我方予以响应")
         ),
         "响应中仍存在无证据的通用承诺",
+    )
+    require(
+        any(item.get("evidence_claim_ids") for item in responses),
+        "分类响应未引用任何企业证据 Claim",
     )
     tasks = client.request(f"/api/projects/{project_id}/tasks")
     require(any(item["source_type"].startswith("agent_") for item in tasks), "未生成Agent补救任务")
@@ -218,6 +223,7 @@ def run(base_url: str, artifacts_dir: Path) -> dict[str, Any]:
         "artifacts": sorted(artifact_types),
         "claims": len(detail["claims"]),
         "responses": len(responses),
+        "response_strategies": sorted(strategy for strategy in observed_strategies if strategy),
         "agent_tasks": sum(item["source_type"].startswith("agent_") for item in tasks),
         "events": len(events),
         "final_status": completed["run"]["status"],
