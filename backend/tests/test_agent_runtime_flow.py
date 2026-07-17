@@ -120,6 +120,19 @@ def test_autonomous_draft_runs_to_single_final_work_package_review(client, demo)
     assert data["steps"][4]["status"] == "completed"
     assert data["steps"][6]["status"] == "completed"
     assert data["steps"][9]["status"] == "completed"
+    profile_artifact = next(item for item in data["artifacts"] if item["artifact_type"] == "project_profile")
+    profile = profile_artifact["metadata_json"]
+    assert profile["kind"] == "project_profile_candidates"
+    assert profile["review_state"] == "manual_review"
+    assert set(profile["candidates"]) == {"name", "buyer_name", "project_code", "deadline"}
+    assert all(
+        item["review_state"] in {"manual_review", "missing"}
+        for item in profile["candidates"].values()
+    )
+    quality_artifact = next(item for item in data["artifacts"] if item["artifact_type"] == "response_quality_check")
+    assert 1 <= len(quality_artifact["metadata_json"]["passes"]) <= 2
+    assert "issue_count" in quality_artifact["metadata_json"]
+    assert quality_artifact["metadata_json"]["review_href"] == f"/projects/{project_id}/review"
     final_approval = next(item for item in data["approvals"] if item["status"] == "pending")
     assert final_approval["approval_type"] == "final_work_package_review"
     assert final_approval["impact_summary"] == f"/projects/{project_id}/review"
@@ -143,7 +156,7 @@ def test_autonomous_draft_runs_to_single_final_work_package_review(client, demo)
     assert disqualification and all(item["review_status"] != "provisional" for item in disqualification)
     assert all(item["human_verified"] is False for item in requirements)
     events = _assert_strictly_increasing_event_sequences(client, headers, run_id)
-    assert {event["event_type"] for event in events} >= {"agent.decision", "tool.completed", "review.deferred"}
+    assert {event["event_type"] for event in events} >= {"agent.decision", "tool.completed", "review.deferred", "response_quality.pass_completed"}
 
     completed = client.post(
         f"/api/approvals/{final_approval['id']}/approve",

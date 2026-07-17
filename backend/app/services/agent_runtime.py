@@ -31,7 +31,9 @@ from app.services.documents import create_job, run_parse_job
 from app.services.extraction import run_extraction_job
 from app.services.evidence import suggest_matches
 from app.services.exports import export_project_artifacts
+from app.services.project_profile import build_project_profile_candidates
 from app.services.projects import get_project
+from app.services.response_quality import run_response_quality_checks
 from app.services.responses import generate_project_responses
 from app.services.review_workflows import run_compliance
 
@@ -393,8 +395,7 @@ def process_agent_run(run_id: UUID) -> bool:
                     db.add(AgentArtifact(tenant_id=run.tenant_id, run_id=run.id, step_run_id=step.id, artifact_type="parse_summary", title="文件解析结果", storage_key=f"runtime://{run.id}/parse-summary", content_hash=stable_hash(parse_summary), metadata_json=parse_summary, created_by=principal.user_id))
                     _complete(db, run, step, parse_summary)
                 elif step.step_key == "extract_project_profile":
-                    project = get_project(db, principal, run.project_id)
-                    profile = {"name": project.name, "buyer_name": project.buyer_name, "project_code": project.project_code, "deadline": project.deadline.isoformat() if project.deadline else None}
+                    profile = build_project_profile_candidates(db, principal, run.project_id)
                     db.add(AgentArtifact(tenant_id=run.tenant_id, run_id=run.id, step_run_id=step.id, artifact_type="project_profile", title="项目摘要候选", storage_key=f"runtime://{run.id}/project-profile", content_hash=stable_hash(profile), metadata_json=profile, created_by=principal.user_id))
                     _complete(db, run, step, profile)
                 elif step.step_key == "extract_requirements":
@@ -474,6 +475,14 @@ def process_agent_run(run_id: UUID) -> bool:
                     )
                     summary = {"count": len(responses), "missing_evidence_count": sum(item.status == "missing_evidence" for item in responses), "href": f"/projects/{run.project_id}/responses"}
                     db.add(AgentArtifact(tenant_id=run.tenant_id, run_id=run.id, step_run_id=step.id, artifact_type="response_drafts", title="投标响应草稿", storage_key=f"runtime://{run.id}/response-drafts", content_hash=stable_hash(summary), metadata_json=summary, created_by=principal.user_id))
+                    if autonomous:
+                        quality = run_response_quality_checks(db, principal, run.project_id)
+                        quality_metadata = quality.model_dump(mode="json")
+                        db.add(AgentArtifact(tenant_id=run.tenant_id, run_id=run.id, step_run_id=step.id, artifact_type="response_quality_check", title="响应草稿质量自查", storage_key=f"runtime://{run.id}/response-quality", content_hash=stable_hash(quality_metadata), metadata_json=quality_metadata, created_by=principal.user_id))
+                        for quality_pass in quality.passes:
+                            _event(db, run, "response_quality.pass_completed", {"pass_number": quality_pass.pass_number, "issue_count": len(quality_pass.issues), "repaired_count": quality_pass.repaired_count}, step)
+                        summary["quality_issue_count"] = quality.issue_count
+                        summary["quality_repaired_count"] = quality.repaired_count
                     _complete(db, run, step, summary)
                 elif step.step_key == "review_responses":
                     if autonomous:

@@ -97,6 +97,7 @@ function mapOutput(value: unknown, runId: string, projectId: string): AgentOutpu
   const metadata = object(item.metadata_json ?? item.metadata);
   const artifactType = item.artifact_type ?? item.artifactType;
   const isEvidenceMatchCandidates = artifactType === "evidence_match_candidates";
+  const isResponseQualityCheck = artifactType === "response_quality_check";
   const storageKey = text(item.storage_key ?? item.storageKey);
   const downloadHref = text(item.download_url ?? item.downloadUrl ?? metadata.download_url ?? metadata.downloadUrl);
   const isDownloadable = typeof artifactType === "string" && (artifactType.endsWith("_xlsx") || artifactType === "response_draft_docx") || storageKey.startsWith("exports/");
@@ -104,7 +105,13 @@ function mapOutput(value: unknown, runId: string, projectId: string): AgentOutpu
     id: text(item.id), runId: text(item.run_id ?? item.runId, runId), stepId: text(item.step_run_id ?? item.stepRunId ?? item.step_id ?? item.stepId),
     type: oneOf(isEvidenceMatchCandidates ? "evidence" : item.type ?? artifactType, ["requirement", "risk", "evidence", "task", "report", "package"] as const, "report"),
     kind: oneOf(isEvidenceMatchCandidates ? "evidence" : item.kind ?? artifactType, ["requirements", "risk", "evidence", "consistency", "amendment", "task", "package", "audit"] as const, "audit"),
-    title: text(item.title, isEvidenceMatchCandidates ? "候选匹配" : ""), description: text(item.description), summary: text(item.summary ?? metadata.summary), count: number(item.count ?? metadata.count), severity: oneOf(item.severity ?? metadata.severity, ["fatal", "high", "medium", "low", "info"] as const, "info"), href: downloadHref || (isDownloadable ? `/api/agent-artifacts/${text(item.id)}/download` : text(item.href ?? metadata.href, artifactType === "response_drafts" ? `/projects/${projectId}/responses` : artifactType === "compliance_summary" ? `/projects/${projectId}/evidence-matching` : "/agent")), createdAt: text(item.created_at ?? item.createdAt), provenance: sourceRows(item.provenance ?? metadata.provenance),
+    title: text(item.title, isEvidenceMatchCandidates ? "候选匹配" : isResponseQualityCheck ? "响应草稿质量自查" : ""),
+    description: text(item.description),
+    summary: text(item.summary ?? metadata.summary ?? (isResponseQualityCheck ? metadata.after_summary : undefined)),
+    count: number(item.count ?? metadata.count ?? (isResponseQualityCheck ? metadata.issue_count : undefined)),
+    severity: oneOf(item.severity ?? metadata.severity, ["fatal", "high", "medium", "low", "info"] as const, isResponseQualityCheck && Boolean(metadata.manual_review_required) ? "high" : "info"),
+    href: downloadHref || (isDownloadable ? `/api/agent-artifacts/${text(item.id)}/download` : text(item.href ?? metadata.href ?? (isResponseQualityCheck ? metadata.review_href : undefined), artifactType === "response_drafts" ? `/projects/${projectId}/responses` : artifactType === "compliance_summary" ? `/projects/${projectId}/evidence-matching` : "/agent")),
+    createdAt: text(item.created_at ?? item.createdAt), provenance: sourceRows(item.provenance ?? metadata.provenance),
   };
 }
 

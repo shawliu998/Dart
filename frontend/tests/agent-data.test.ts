@@ -54,6 +54,18 @@ describe("Agent run API adapter", () => {
     expect(bundle.outputs[0].href).toBe("/api/agent-artifacts/artifact-export-1/download");
   });
 
+  it("maps response-quality results to the final review workbench", () => {
+    const bundle = agentRunBundleFromApiPayload({
+      ...persistedRun,
+      artifacts: [{
+        id: "artifact-quality-1", step_run_id: "step-1", artifact_type: "response_quality_check", created_at: "2026-07-17T09:02:00Z",
+        metadata_json: { issue_count: 3, manual_review_required: true, after_summary: "仍有 3 项需要人工复核。", review_href: "/projects/project-1/review" },
+      }],
+    }, "project-1");
+
+    expect(bundle.outputs[0]).toMatchObject({ title: "响应草稿质量自查", kind: "audit", count: 3, summary: "仍有 3 项需要人工复核。", severity: "high", href: "/projects/project-1/review" });
+  });
+
   it("preserves the explicit evidence and response review approval types", () => {
     const bundle = agentRunBundleFromApiPayload({
       ...persistedRun,
