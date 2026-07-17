@@ -449,7 +449,8 @@ def test_migration_revision_linkage() -> None:
     assert revisions["0002_phase2_to_5"].down_revision == "0001_phase01"
     assert revisions["0003_agent_runtime"].down_revision == "0002_phase2_to_5"
     assert revisions["0004_model_run_provenance"].down_revision == "0003_agent_runtime"
-    assert tuple(script.get_heads()) == ("0004_model_run_provenance",)
+    assert revisions["0005_response_workbench"].down_revision == "0004_model_run_provenance"
+    assert tuple(script.get_heads()) == ("0005_response_workbench",)
 
 
 def _load_migration_module() -> ModuleType:

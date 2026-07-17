@@ -3,12 +3,18 @@ from __future__ import annotations
 from pathlib import Path
 from uuid import uuid4
 
-P1_STEP_KEYS = [
+WORKFLOW_STEP_KEYS = [
     "ingest_documents",
     "parse_documents",
     "extract_project_profile",
     "extract_requirements",
     "review_requirements",
+    "match_evidence",
+    "review_evidence_matches",
+    "run_compliance_rules",
+    "draft_responses",
+    "review_responses",
+    "export_artifacts",
 ]
 
 
@@ -49,9 +55,10 @@ def _create_run_waiting_for_approval(client, demo) -> tuple[dict, str]:
     assert paused.status_code == 200, paused.text
     paused_data = paused.json()
     assert paused_data["run"]["status"] == "waiting_approval"
-    assert [step["step_key"] for step in paused_data["steps"]] == P1_STEP_KEYS
-    assert [step["status"] for step in paused_data["steps"][:-1]] == ["completed"] * 4
-    assert paused_data["steps"][-1]["status"] == "waiting_approval"
+    assert [step["step_key"] for step in paused_data["steps"]] == WORKFLOW_STEP_KEYS
+    assert [step["status"] for step in paused_data["steps"][:4]] == ["completed"] * 4
+    assert paused_data["steps"][4]["status"] == "waiting_approval"
+    assert [step["status"] for step in paused_data["steps"][5:]] == ["pending"] * 6
     assert len(paused_data["approvals"]) == 1
     return paused_data, paused_data["approvals"][0]["id"]
 
@@ -65,11 +72,12 @@ def _assert_strictly_increasing_event_sequences(client, headers: dict[str, str],
     return events
 
 
-def test_agent_run_persists_steps_events_and_resumes_after_approval(client, demo) -> None:
-    """The API-backed P1 slice pauses at the review gate and resumes durably."""
+def test_agent_run_persists_three_review_gates_and_exports_after_resuming(client, demo) -> None:
+    """A durable run resumes through requirement, evidence, and response review gates."""
     headers = demo["auth_headers"]
     paused_data, approval_id = _create_run_waiting_for_approval(client, demo)
     run_id = paused_data["run"]["id"]
+    project_id = paused_data["run"]["project_id"]
     event_data = _assert_strictly_increasing_event_sequences(client, headers, run_id)
     assert {event["event_type"] for event in event_data} >= {
         "run.created",
@@ -77,22 +85,60 @@ def test_agent_run_persists_steps_events_and_resumes_after_approval(client, demo
         "approval.requested",
     }
 
-    completed = client.post(
+    requirements = client.get(f"/api/projects/{project_id}/requirements", headers=headers).json()
+    assert requirements
+    for requirement in requirements:
+        reviewed = client.post(
+            f"/api/requirements/{requirement['id']}/verify",
+            headers=headers,
+            json={"decision": "verify", "reason": "已核对招标文件原文"},
+        )
+        assert reviewed.status_code == 200, reviewed.text
+
+    resumed = client.post(
         f"/api/approvals/{approval_id}/approve",
         headers=headers,
         json={"reason": "已核对招标文件原文与要求来源"},
     )
-    assert completed.status_code == 200, completed.text
-    assert completed.json()["run"]["status"] == "completed"
-    assert completed.json()["approvals"][0]["status"] == "approved"
-    assert completed.json()["steps"][-1]["status"] == "completed"
-    candidates = [item for item in completed.json()["artifacts"] if item["artifact_type"] == "evidence_match_candidates"]
+    assert resumed.status_code == 200, resumed.text
+    evidence_gate = client.get(f"/api/agent-runs/{run_id}", headers=headers).json()
+    assert evidence_gate["run"]["status"] == "waiting_approval"
+    assert evidence_gate["steps"][5]["status"] == "completed"
+    assert evidence_gate["steps"][6]["status"] == "waiting_approval"
+    candidates = [item for item in evidence_gate["artifacts"] if item["artifact_type"] == "evidence_match_candidates"]
     assert len(candidates) == 1
-    assert candidates[0]["metadata_json"]["href"] == f"/projects/{completed.json()['run']['project_id']}/evidence-matching"
+    assert candidates[0]["metadata_json"]["href"] == f"/projects/{project_id}/evidence-matching"
+
+    evidence_approval = next(item for item in evidence_gate["approvals"] if item["status"] == "pending")
+    resumed = client.post(
+        f"/api/approvals/{evidence_approval['id']}/approve",
+        headers=headers,
+        json={"reason": "已完成证据候选核对"},
+    )
+    assert resumed.status_code == 200, resumed.text
+    response_gate = client.get(f"/api/agent-runs/{run_id}", headers=headers).json()
+    assert response_gate["run"]["status"] == "waiting_approval"
+    assert response_gate["steps"][8]["status"] == "completed"
+    assert response_gate["steps"][9]["status"] == "waiting_approval"
+    response_approval = next(item for item in response_gate["approvals"] if item["status"] == "pending")
+    completed = client.post(
+        f"/api/approvals/{response_approval['id']}/approve",
+        headers=headers,
+        json={"reason": "已完成响应草稿复核"},
+    )
+    assert completed.status_code == 200, completed.text
+    final = client.get(f"/api/agent-runs/{run_id}", headers=headers).json()
+    assert final["run"]["status"] == "completed"
+    assert final["steps"][-1]["status"] == "completed"
+    assert {item["artifact_type"] for item in final["artifacts"]} >= {
+        "compliance_matrix_xlsx",
+        "response_draft_docx",
+        "risk_tasks_xlsx",
+    }
 
     final_events = _assert_strictly_increasing_event_sequences(client, headers, run_id)
     assert len(final_events) > len(event_data)
-    assert {"evidence.matches_suggested", "run.completed"} <= {event["event_type"] for event in final_events}
+    assert {"run.resumed", "run.completed"} <= {event["event_type"] for event in final_events}
 
 
 def test_agent_run_rejection_cancels_review_step_and_appends_event(client, demo) -> None:
@@ -110,7 +156,7 @@ def test_agent_run_rejection_cancels_review_step_and_appends_event(client, demo)
     data = rejected.json()
     assert data["run"]["status"] == "cancelled"
     assert data["approvals"][0]["status"] == "rejected"
-    assert data["steps"][-1]["status"] == "cancelled"
+    assert data["steps"][4]["status"] == "cancelled"
     events_after = _assert_strictly_increasing_event_sequences(client, headers, run_id)
     assert len(events_after) == len(events_before) + 1
     assert events_after[-1]["event_type"] == "run.cancelled"

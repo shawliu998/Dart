@@ -1,0 +1,96 @@
+from __future__ import annotations
+
+from decimal import Decimal
+from uuid import UUID, uuid4
+
+from sqlalchemy import select
+
+from app.db.session import SessionLocal
+from app.models.entities import Requirement, ResponseItem
+
+
+def _draft_response(demo: dict) -> str:
+    tenant_id = UUID(demo["tenant_id"])
+    user_id = UUID(demo["user_id"])
+    project_id = UUID(demo["project_id"])
+    with SessionLocal() as db:
+        requirement = db.scalar(
+            select(Requirement).where(
+                Requirement.project_id == project_id,
+                Requirement.tenant_id == tenant_id,
+            )
+        )
+        assert requirement is not None
+        item = db.scalar(
+            select(ResponseItem).where(
+                ResponseItem.project_id == project_id,
+                ResponseItem.requirement_id == requirement.id,
+                ResponseItem.tenant_id == tenant_id,
+            )
+        )
+        if item is None:
+            item = ResponseItem(
+                tenant_id=tenant_id,
+                created_by=user_id,
+                project_id=project_id,
+                requirement_id=requirement.id,
+            )
+            db.add(item)
+        item.status = "drafted"
+        item.draft_text = "基于已确认材料的响应草稿。"
+        item.confidence = Decimal("0.820")
+        db.commit()
+        return str(item.id)
+
+
+def test_response_workbench_lists_edits_and_approves_with_audit(client, demo):
+    headers = demo["auth_headers"]
+    project_id = demo["project_id"]
+    response_id = _draft_response(demo)
+
+    listed = client.get(f"/api/projects/{project_id}/responses", headers=headers)
+    assert listed.status_code == 200
+    row = next(item for item in listed.json() if item["id"] == response_id)
+    assert row["status"] == "drafted"
+    assert row["evidence_claim_ids"] == []
+
+    edited = client.patch(
+        f"/api/responses/{response_id}",
+        headers=headers,
+        json={"edited_text": "经人工调整后的响应内容。", "reason": "补充项目实施说明"},
+    )
+    assert edited.status_code == 200
+    assert edited.json()["status"] == "needs_review"
+    assert edited.json()["edited_text"] == "经人工调整后的响应内容。"
+    assert edited.json()["reviewed_by"] is None
+
+    approved = client.post(
+        f"/api/responses/{response_id}/approve",
+        headers=headers,
+        json={"reason": "复核后批准此响应"},
+    )
+    assert approved.status_code == 200
+    assert approved.json()["status"] == "approved"
+    assert approved.json()["reviewed_by"] == demo["user_id"]
+
+
+def test_response_workbench_enforces_tenant_and_reason(client, demo):
+    response_id = _draft_response(demo)
+    other_headers = {
+        "X-Tenant-ID": str(uuid4()),
+        "X-User-ID": demo["user_id"],
+        "X-Role": "admin",
+    }
+    assert client.get(
+        f"/api/projects/{demo['project_id']}/responses", headers=other_headers
+    ).status_code == 404
+    assert client.patch(
+        f"/api/responses/{response_id}",
+        headers=demo["auth_headers"],
+        json={"edited_text": "缺少原因"},
+    ).status_code == 422
+    assert client.post(
+        f"/api/responses/{response_id}/approve",
+        headers=demo["auth_headers"],
+        json={"reason": "可批准"},
+    ).status_code == 200

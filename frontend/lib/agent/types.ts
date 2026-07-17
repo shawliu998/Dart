@@ -59,7 +59,12 @@ export interface ApprovalRequest {
   id: string;
   runId: string;
   stepId: string;
-  type: "evidence_match" | "compliance_override" | "consistency_resolution" | "amendment_apply" | "package_warning" | "package_build";
+  /**
+   * Persisted approval types are deliberately explicit.  An unrecognised
+   * server value must not be presented as a compliance override, because that
+   * changes the meaning of a human decision in the workbench.
+   */
+  type: "review_requirements" | "review_evidence_matches" | "review_responses" | "evidence_match" | "compliance_override" | "consistency_resolution" | "amendment_apply" | "package_warning" | "package_build" | "unknown";
   title: string;
   description: string;
   impactSummary: string;

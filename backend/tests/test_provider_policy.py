@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import pytest
 
-from app.agents.provider import MockLLMProvider, ProviderUnavailableError, get_requirement_provider
+from app.agents.provider import MockLLMProvider, OpenAICompatibleProvider, ProviderUnavailableError, get_requirement_provider
 from app.main import health
 
 
@@ -25,3 +25,22 @@ def test_health_reports_an_unapproved_provider_without_attempting_a_live_call(mo
     assert response["llm_provider"] == "kimi-k3"
     assert response["llm_provider_status"] == "unavailable"
     assert response["llm_model"] is None
+
+
+def test_openai_compatible_provider_requires_explicit_complete_configuration(monkeypatch) -> None:
+    monkeypatch.setenv("BIDEVIDENCE_LLM_PROVIDER", "openai_compatible")
+    monkeypatch.delenv("BIDEVIDENCE_LLM_BASE_URL", raising=False)
+    monkeypatch.delenv("BIDEVIDENCE_LLM_API_KEY", raising=False)
+    monkeypatch.delenv("BIDEVIDENCE_LLM_MODEL", raising=False)
+    with pytest.raises(ProviderUnavailableError, match="requires"):
+        get_requirement_provider()
+
+
+def test_openai_compatible_provider_is_constructed_without_a_network_call(monkeypatch) -> None:
+    monkeypatch.setenv("BIDEVIDENCE_LLM_PROVIDER", "openai_compatible")
+    monkeypatch.setenv("BIDEVIDENCE_LLM_BASE_URL", "http://127.0.0.1:11434/v1")
+    monkeypatch.setenv("BIDEVIDENCE_LLM_API_KEY", "test-key")
+    monkeypatch.setenv("BIDEVIDENCE_LLM_MODEL", "local-model")
+    provider = get_requirement_provider()
+    assert isinstance(provider, OpenAICompatibleProvider)
+    assert provider.model == "local-model"

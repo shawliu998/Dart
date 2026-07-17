@@ -109,8 +109,8 @@ export const projectApi = {
   async disqualifications(projectId: string): Promise<DisqualificationItem[]> {
     return remoteOrFallback(() => apiRequest<DisqualificationDto[]>(`/api/projects/${projectId}/disqualifications`), disqualifications, mapDisqualificationDto);
   },
-  async create(input: { name: string; projectCode: string; buyerName: string }): Promise<Project> {
-    const dto = await apiRequest<ProjectDto>("/api/projects", { method: "POST", body: JSON.stringify({ name: input.name, project_code: input.projectCode, buyer_name: input.buyerName, status: "draft", current_stage: "ingesting" }) });
+  async create(input: { name: string; projectCode?: string; buyerName?: string }): Promise<Project> {
+    const dto = await apiRequest<ProjectDto>("/api/projects", { method: "POST", body: JSON.stringify({ name: input.name, project_code: input.projectCode || "待提取", buyer_name: input.buyerName || "待提取", status: "draft", current_stage: "ingesting" }) });
     return mapProjectDto(dto);
   },
   async uploadDocument(projectId: string, file: File, documentType = "tender_main"): Promise<{ id: string }> {

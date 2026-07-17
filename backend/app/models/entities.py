@@ -301,6 +301,47 @@ class ModelRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class ResponseItem(UUIDAuditMixin, Base):
+    """An editable, source-bound draft for one reviewed tender requirement."""
+
+    __tablename__ = "response_items"
+    __table_args__ = (
+        UniqueConstraint("project_id", "requirement_id", name="uq_response_item_requirement"),
+        CheckConstraint(
+            "status IN ('not_started', 'drafted', 'needs_review', 'missing_evidence', "
+            "'approved', 'excluded')",
+            name="ck_response_items_status",
+        ),
+        Index("ix_response_items_tenant_project", "tenant_id", "project_id"),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(ForeignKey("tender_projects.id"), index=True)
+    requirement_id: Mapped[UUID] = mapped_column(ForeignKey("requirements.id"), index=True)
+    model_run_id: Mapped[UUID | None] = mapped_column(ForeignKey("model_runs.id"), nullable=True)
+    status: Mapped[str] = mapped_column(String(30), default="not_started")
+    response_strategy: Mapped[str | None] = mapped_column(Text, nullable=True)
+    draft_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    edited_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    missing_information: Mapped[list] = mapped_column(JSON, default=list)
+    risk_notes: Mapped[list] = mapped_column(JSON, default=list)
+    confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
+    generation_version: Mapped[int] = mapped_column(Integer, default=1)
+    reviewed_by: Mapped[UUID | None] = mapped_column(nullable=True)
+    reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ResponseEvidenceLink(UUIDAuditMixin, Base):
+    __tablename__ = "response_evidence_links"
+    __table_args__ = (
+        UniqueConstraint(
+            "response_item_id", "evidence_claim_id", name="uq_response_evidence_link"
+        ),
+    )
+
+    response_item_id: Mapped[UUID] = mapped_column(ForeignKey("response_items.id"), index=True)
+    evidence_claim_id: Mapped[UUID] = mapped_column(ForeignKey("evidence_claims.id"), index=True)
+
+
 class EvidenceAsset(UUIDAuditMixin, SoftDeleteMixin, Base):
     __tablename__ = "evidence_assets"
     organization_id: Mapped[UUID] = mapped_column(index=True)

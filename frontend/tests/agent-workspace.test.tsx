@@ -11,6 +11,7 @@ describe("AgentWorkspace", () => {
     render(<AgentWorkspace initialResult={result} />);
     expect(screen.getByRole("heading", { name: "投标合规与交付编排" })).toBeInTheDocument();
     expect(screen.getByText("本地确定性演示")).toBeInTheDocument();
+    expect(screen.getAllByText("补充文件更新后启动").length).toBeGreaterThan(0);
     expect(screen.getAllByText("等待人工批准").length).toBeGreaterThan(0);
     expect(screen.getAllByText("已阻塞").length).toBeGreaterThan(0);
     expect(screen.getByRole("link", { name: /打开要求复核工作台/ })).toHaveAttribute("href", "/projects/project-1/requirements");

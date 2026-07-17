@@ -24,6 +24,8 @@ from app.models.entities import (
     EvidenceMatch,
     RemediationTask,
     Requirement,
+    ResponseEvidenceLink,
+    ResponseItem,
     SubmissionPackage,
 )
 from app.schemas.domain import (
@@ -37,18 +39,49 @@ from app.schemas.domain import (
     MatchDecision,
     PackageBuild,
     PackageItemUpdate,
+    ResponseEdit,
+    ResponseItemRead,
     TaskCreate,
     TaskDecision,
     TaskUpdate,
 )
 from app.services import evidence as evidence_service
 from app.services import packaging as package_service
+from app.services import responses as response_service
 from app.services import review_workflows as workflow
 from app.services.projects import get_project
 from app.storage.local import resolve_storage
 from app.storage.adapter import get_storage_adapter
 
 router = APIRouter(prefix="/api")
+
+
+def _response_read(db: Session, item: ResponseItem) -> dict:
+    """Serialize source links without exposing claims from another tenant."""
+    return {
+        **model_dict(item),
+        "evidence_claim_ids": list(
+            db.scalars(
+                select(ResponseEvidenceLink.evidence_claim_id).where(
+                    ResponseEvidenceLink.response_item_id == item.id,
+                    ResponseEvidenceLink.tenant_id == item.tenant_id,
+                )
+            )
+        ),
+    }
+
+
+def _get_response_item(db: Session, principal: Principal, response_id: UUID) -> ResponseItem:
+    item = db.scalar(
+        select(ResponseItem).where(
+            ResponseItem.id == response_id,
+            ResponseItem.tenant_id == principal.tenant_id,
+        )
+    )
+    if item is None:
+        raise HTTPException(status_code=404, detail="response item not found")
+    get_project(db, principal, item.project_id)
+    return item
 
 
 @router.post("/evidence", response_model=EvidenceRead, status_code=201)
@@ -162,6 +195,68 @@ def reject_match(
 ):
     require_review(principal)
     return model_dict(evidence_service.decide_match(db, principal, match_id, False, data.reason))
+
+
+@router.get("/projects/{project_id}/responses", response_model=list[ResponseItemRead])
+def list_responses(
+    project_id: UUID, db: Session = Depends(get_db), principal: Principal = Depends(get_principal)
+):
+    get_project(db, principal, project_id)
+    items = list(
+        db.scalars(
+            select(ResponseItem)
+            .where(
+                ResponseItem.project_id == project_id,
+                ResponseItem.tenant_id == principal.tenant_id,
+            )
+            .order_by(ResponseItem.created_at)
+        )
+    )
+    return [_response_read(db, item) for item in items]
+
+
+@router.patch("/responses/{response_id}", response_model=ResponseItemRead)
+def edit_response(
+    response_id: UUID,
+    data: ResponseEdit,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+):
+    require_write(principal)
+    item = _get_response_item(db, principal, response_id)
+    before = {"edited_text": item.edited_text, "status": item.status}
+    item.edited_text = data.edited_text
+    item.status = "needs_review"
+    item.reviewed_by = None
+    item.reviewed_at = None
+    item.version += 1
+    append_event(
+        db,
+        principal,
+        action="response.edited",
+        entity_type="response_item",
+        entity_id=item.id,
+        project_id=item.project_id,
+        before=before,
+        after={"edited_text": item.edited_text, "status": item.status, "reason": data.reason},
+    )
+    db.commit()
+    db.refresh(item)
+    return _response_read(db, item)
+
+
+@router.post("/responses/{response_id}/approve", response_model=ResponseItemRead)
+def approve_response(
+    response_id: UUID,
+    data: MatchDecision,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+):
+    require_review(principal)
+    item = _get_response_item(db, principal, response_id)
+    if item.status not in {"drafted", "needs_review"}:
+        raise HTTPException(status_code=409, detail="response item is not ready for approval")
+    return _response_read(db, response_service.approve_response(db, principal, item, data.reason))
 
 
 @router.post("/projects/{project_id}/compliance/run")

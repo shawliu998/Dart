@@ -11,8 +11,8 @@ from app.schemas.common import ORMModel
 
 class ProjectCreate(BaseModel):
     name: str = Field(min_length=2, max_length=300)
-    project_code: str = Field(min_length=2, max_length=100)
-    buyer_name: str = Field(min_length=2, max_length=300)
+    project_code: str = Field(default="待提取", min_length=2, max_length=100)
+    buyer_name: str = Field(default="待提取", min_length=2, max_length=300)
     budget_amount: Decimal | None = Field(default=None, ge=0)
     currency: str = Field(default="CNY", pattern=r"^[A-Z]{3}$")
     deadline: datetime | None = None

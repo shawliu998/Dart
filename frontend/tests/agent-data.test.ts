@@ -12,7 +12,8 @@ describe("Agent run API adapter", () => {
   it("maps persisted snake_case runtime data without synthesizing a run", () => {
     const bundle = agentRunBundleFromApiPayload(persistedRun, "project-1");
     expect(bundle.run).toMatchObject({ id: "run-1", projectId: "project-1", status: "waiting_approval", currentStepId: "review_requirements", initiatedBy: "local-user" });
-    expect(bundle.steps[0]).toMatchObject({ status: "waiting_approval", actor: "human_gate" });
+    expect(bundle.run).toMatchObject({ progress: 0, summary: "已完成 0/1 个步骤；等待 1 项人工审批。" });
+    expect(bundle.steps[0]).toMatchObject({ status: "waiting_approval", actor: "human_gate", title: "人工复核招标要求", tool: "RequirementsWorkbench" });
     expect(bundle.steps[0].sources?.[0]).toMatchObject({ document: "招标文件.pdf", page: 8, reviewState: "manual_review" });
     expect(bundle.approvals[0]).toMatchObject({ id: "approval-1", status: "pending", requiredRole: "项目负责人" });
     expect(bundle.outputs[0]).toMatchObject({ id: "artifact-1", kind: "requirements" });
@@ -31,6 +32,36 @@ describe("Agent run API adapter", () => {
     }, "project-1");
     expect(bundle.outputs[0]).toMatchObject({ type: "evidence", kind: "evidence", title: "候选匹配", count: 2, summary: "已找到待复核的证据候选", href: "/projects/project-1/evidence", severity: "medium" });
     expect(bundle.outputs[0].provenance[0]).toMatchObject({ document: "资格证明.pdf", page: 3, reviewState: "rule_result" });
+  });
+
+  it("keeps exported artifacts on their real download endpoint", () => {
+    const bundle = agentRunBundleFromApiPayload({
+      ...persistedRun,
+      artifacts: [{ id: "artifact-export-1", step_run_id: "step-1", artifact_type: "compliance_matrix_xlsx", storage_key: "exports/project-1/matrix.xlsx", title: "合规矩阵", created_at: "2026-07-17T09:02:00Z" }],
+    }, "project-1");
+
+    expect(bundle.outputs[0].href).toBe("/api/agent-artifacts/artifact-export-1/download");
+  });
+
+  it("preserves the explicit evidence and response review approval types", () => {
+    const bundle = agentRunBundleFromApiPayload({
+      ...persistedRun,
+      approvals: [
+        { id: "approval-evidence", step_run_id: "step-1", approval_type: "review_evidence_matches", status: "pending" },
+        { id: "approval-response", step_run_id: "step-1", approval_type: "review_responses", status: "pending" },
+      ],
+    }, "project-1");
+
+    expect(bundle.approvals.map((approval) => approval.type)).toEqual(["review_evidence_matches", "review_responses"]);
+  });
+
+  it("maps unknown approval types to an explicit safe value", () => {
+    const bundle = agentRunBundleFromApiPayload({
+      ...persistedRun,
+      approvals: [{ id: "approval-unknown", step_run_id: "step-1", approval_type: "new_server_approval", status: "pending" }],
+    }, "project-1");
+
+    expect(bundle.approvals[0].type).toBe("unknown");
   });
 
   it("gets the latest persisted run from the project endpoint", async () => {

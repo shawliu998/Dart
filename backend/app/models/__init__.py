@@ -18,6 +18,8 @@ from app.models.entities import (  # noqa: F401
     EvidenceClaim,
     EvidenceMatch,
     ModelRun,
+    ResponseEvidenceLink,
+    ResponseItem,
     Organization,
     PackageItem,
     RemediationTask,

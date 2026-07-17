@@ -6,6 +6,7 @@ from zipfile import BadZipFile, ZipFile
 from dataclasses import dataclass
 from xml.etree import ElementTree
 
+from openpyxl import load_workbook
 from pypdf import PdfReader
 
 
@@ -27,6 +28,8 @@ class DeterministicTextParser:
             return self._parse_pdf(data)
         if mime_type.endswith("wordprocessingml.document"):
             return self._parse_docx(data)
+        if mime_type.endswith("spreadsheetml.sheet"):
+            return self._parse_xlsx(data)
         payload = data.split(b"\n", 1)[1] if data.startswith(b"%PDF") else data
         text = payload.decode("utf-8", errors="replace").replace("\x00", "")
         chunks = text.split("\f")
@@ -52,14 +55,14 @@ class DeterministicTextParser:
         pages = []
         for index, pdf_page in enumerate(reader.pages, start=1):
             text = (pdf_page.extract_text() or "").strip()
-            if not text:
-                text = "[该页未提取到可用文本，需人工复核/OCR]"
+            ocr_required = not text
             pages.append(
                 ParsedPage(
                     index,
                     text,
                     {
                         "adapter": "pypdf-v1",
+                        "ocr_required": ocr_required,
                         "blocks": [{"type": "page_text", "bbox": [0, 0, 1, 1], "text": text}],
                     },
                 )
@@ -80,22 +83,51 @@ class DeterministicTextParser:
         except (BadZipFile, KeyError) as exc:
             raise ValueError("invalid DOCX package") from exc
         root = ElementTree.fromstring(xml_data)
+        namespace = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
         paragraphs = []
-        for paragraph in root.iter(
-            "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}p"
-        ):
+        for paragraph in root.iter(f"{namespace}p"):
             text = "".join(
                 node.text or ""
-                for node in paragraph.iter(
-                    "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}t"
-                )
+                for node in paragraph.iter(f"{namespace}t")
             ).strip()
             if text:
                 paragraphs.append(text)
+        tables = []
+        for table_index, table in enumerate(root.iter(f"{namespace}tbl"), start=1):
+            rows = []
+            for row_index, row in enumerate(table.findall(f"{namespace}tr"), start=1):
+                cells = []
+                for cell_index, cell in enumerate(row.findall(f"{namespace}tc"), start=1):
+                    value = "".join(node.text or "" for node in cell.iter(f"{namespace}t")).strip()
+                    cells.append({"cell": f"R{row_index}C{cell_index}", "text": value})
+                rows.append(cells)
+            tables.append({"table_index": table_index, "rows": rows})
+        blocks = [{"type": "paragraph", "paragraph_index": index, "text": text} for index, text in enumerate(paragraphs, start=1)]
+        for table_data in tables:
+            blocks.append({"type": "table", **table_data})
         return [
             ParsedPage(
                 1,
                 "\n".join(paragraphs) or "[文档未提取到可用文本，需人工复核]",
-                {"adapter": "docx-xml-v1", "blocks": []},
+                {"adapter": "docx-xml-v1", "blocks": blocks, "tables": tables, "logical_location": "paragraph"},
             )
         ]
+
+    def _parse_xlsx(self, data: bytes) -> list[ParsedPage]:
+        try:
+            workbook = load_workbook(BytesIO(data), read_only=True, data_only=False)
+        except Exception as exc:
+            raise ValueError("invalid XLSX package") from exc
+        pages = []
+        for index, sheet in enumerate(workbook.worksheets, start=1):
+            cells = []
+            for row in sheet.iter_rows():
+                for cell in row:
+                    if cell.value is None:
+                        continue
+                    cells.append({"address": cell.coordinate, "value": str(cell.value), "formula": cell.data_type == "f"})
+            raw_text = "\n".join(f"{cell['address']}: {cell['value']}" for cell in cells)
+            pages.append(ParsedPage(index, raw_text, {"adapter": "openpyxl-v1", "sheet": sheet.title, "cells": cells}))
+        if not pages:
+            raise ValueError("XLSX contains no sheets")
+        return pages

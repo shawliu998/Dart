@@ -37,14 +37,34 @@ const source = (value: unknown): AgentSourceRef => {
 const sourceRows = (value: unknown) => rows(value, ["source_references", "sourceReferences", "sources", "provenance"]).map(source);
 const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
 
+type StepPresentation = Pick<AgentStep, "title" | "description" | "actor" | "tool">;
+
+/** The server persists the workflow key; the client supplies its stable product-facing meaning. */
+export const bidStepPresentation: Record<string, StepPresentation> = {
+  ingest_documents: { title: "接收与校验招标文件", description: "校验上传文件并纳入项目文档清单。", actor: "deterministic_rule", tool: "DocumentIngestionService" },
+  parse_documents: { title: "解析文档并建立来源索引", description: "解析文件内容，建立可回溯的页码与位置索引。", actor: "deterministic_rule", tool: "DocumentParsingService" },
+  extract_project_profile: { title: "提取项目摘要候选", description: "从已解析文件汇总项目基本信息候选。", actor: "mock_model", tool: "ProjectProfileExtraction" },
+  extract_requirements: { title: "抽取招标要求候选", description: "抽取要求候选并保留来源位置。", actor: "mock_model", tool: "RequirementExtractionAgent" },
+  review_requirements: { title: "人工复核招标要求", description: "在要求工作台确认、修改或退回要求候选。", actor: "human_gate", tool: "RequirementsWorkbench" },
+  match_evidence: { title: "生成企业证据候选", description: "为已复核要求生成可解释的材料候选。", actor: "deterministic_rule", tool: "EvidenceMatchingService" },
+  review_evidence_matches: { title: "人工复核证据匹配", description: "在证据匹配工作台接受、拒绝或补充候选材料。", actor: "human_gate", tool: "EvidenceMatchingWorkbench" },
+  run_compliance_rules: { title: "运行确定性合规检查", description: "基于已确认要求和证据计算合规状态。", actor: "deterministic_rule", tool: "ComplianceRuleEngine" },
+  draft_responses: { title: "生成投标响应草稿", description: "根据已接受证据生成可编辑的响应草稿。", actor: "mock_model", tool: "ResponseDraftService" },
+  review_responses: { title: "人工复核投标响应", description: "在响应工作台编辑并确认响应草稿。", actor: "human_gate", tool: "ResponsesWorkbench" },
+  export_artifacts: { title: "导出交付物", description: "生成可下载的合规矩阵、响应初稿和风险待办。", actor: "deterministic_rule", tool: "ProjectExportService" },
+};
+
+const stepKey = (item: JsonObject) => text(item.step_key ?? item.stepKey);
+
 function mapStep(value: unknown, runId: string, index: number): AgentStep {
   const item = object(value);
+  const presentation = bidStepPresentation[stepKey(item)];
   return {
     id: text(item.id), runId: text(item.run_id ?? item.runId, runId), sequence: number(item.sequence, index + 1),
-    title: text(item.title ?? item.step_key ?? item.stepKey, `步骤 ${index + 1}`), description: text(item.description),
+    title: text(item.title, presentation?.title ?? stepKey(item) ?? `步骤 ${index + 1}`), description: text(item.description, presentation?.description ?? ""),
     status: oneOf(item.status, ["pending", "running", "waiting_approval", "completed", "failed", "blocked", "cancelled"] as const, "pending"),
-    actor: oneOf(item.actor ?? item.actor_kind ?? item.actorKind, ["deterministic_rule", "mock_model", "human_gate"] as const, "deterministic_rule"),
-    tool: text(item.tool) || undefined, summary: text(item.summary) || undefined, sources: sourceRows(item),
+    actor: oneOf(item.actor ?? item.actor_kind ?? item.actorKind, ["deterministic_rule", "mock_model", "human_gate"] as const, presentation?.actor ?? "deterministic_rule"),
+    tool: text(item.tool, presentation?.tool ?? "") || undefined, summary: text(item.summary) || undefined, sources: sourceRows(item),
     startedAt: nullableText(item.started_at ?? item.startedAt), finishedAt: nullableText(item.completed_at ?? item.finished_at ?? item.finishedAt),
     outputIds: strings(item.output_ids ?? item.outputIds), approvalIds: strings(item.approval_ids ?? item.approvalIds), message: text(item.message ?? item.error_message ?? item.errorMessage),
   };
@@ -52,26 +72,54 @@ function mapStep(value: unknown, runId: string, index: number): AgentStep {
 
 function mapApproval(value: unknown, runId: string): AgentApproval {
   const item = object(value);
+  const approvalType = oneOf(item.approval_type ?? item.type, ["review_requirements", "review_evidence_matches", "review_responses", "evidence_match", "compliance_override", "consistency_resolution", "amendment_apply", "package_warning", "package_build", "unknown"] as const, "unknown");
+  const impactSummary = text(item.impact_summary ?? item.impactSummary);
+  const destinations: Partial<Record<AgentApproval["type"], string>> = {
+    review_requirements: "打开要求工作台",
+    review_evidence_matches: "打开证据匹配工作台",
+    review_responses: "打开响应工作台",
+  };
+  const destination = destinations[approvalType] ?? "打开审批工作台";
   return {
     id: text(item.id), runId: text(item.run_id ?? item.runId, runId), stepId: text(item.step_run_id ?? item.stepRunId ?? item.step_id ?? item.stepId),
-    type: oneOf(item.approval_type ?? item.type, ["evidence_match", "compliance_override", "consistency_resolution", "amendment_apply", "package_warning", "package_build"] as const, "compliance_override"),
-    title: text(item.title), description: text(item.description), impactSummary: text(item.impact_summary ?? item.impactSummary), reversible: Boolean(item.reversible), reason: text(item.decision_reason ?? item.decisionReason),
+    type: approvalType,
+    title: text(item.title), description: text(item.description), impactSummary, reversible: Boolean(item.reversible), reason: text(item.decision_reason ?? item.decisionReason),
     risk: oneOf(item.risk, ["fatal", "high", "medium", "low"] as const, "medium"), status: oneOf(item.status, ["pending", "approved", "rejected"] as const, "pending"),
-    requiredRole: text(item.requested_role ?? item.required_role ?? item.requiredRole, "项目负责人"), destinationLabel: text(item.destination_label ?? item.destinationLabel, "打开审批工作台"), href: text(item.href, "#"), sourceReferences: sourceRows(item),
+    requiredRole: text(item.requested_role ?? item.required_role ?? item.requiredRole, "项目负责人"), destinationLabel: text(item.destination_label ?? item.destinationLabel, destination), href: text(item.href, impactSummary.startsWith("/projects/") ? impactSummary : "/agent"), sourceReferences: sourceRows(item),
   };
 }
 
-function mapOutput(value: unknown, runId: string): AgentOutput {
+function mapOutput(value: unknown, runId: string, projectId: string): AgentOutput {
   const item = object(value);
   const metadata = object(item.metadata_json ?? item.metadata);
   const artifactType = item.artifact_type ?? item.artifactType;
   const isEvidenceMatchCandidates = artifactType === "evidence_match_candidates";
+  const storageKey = text(item.storage_key ?? item.storageKey);
+  const downloadHref = text(item.download_url ?? item.downloadUrl ?? metadata.download_url ?? metadata.downloadUrl);
+  const isDownloadable = typeof artifactType === "string" && (artifactType.endsWith("_xlsx") || artifactType === "response_draft_docx") || storageKey.startsWith("exports/");
   return {
     id: text(item.id), runId: text(item.run_id ?? item.runId, runId), stepId: text(item.step_run_id ?? item.stepRunId ?? item.step_id ?? item.stepId),
     type: oneOf(isEvidenceMatchCandidates ? "evidence" : item.type ?? artifactType, ["requirement", "risk", "evidence", "task", "report", "package"] as const, "report"),
     kind: oneOf(isEvidenceMatchCandidates ? "evidence" : item.kind ?? artifactType, ["requirements", "risk", "evidence", "consistency", "amendment", "task", "package", "audit"] as const, "audit"),
-    title: text(item.title, isEvidenceMatchCandidates ? "候选匹配" : ""), description: text(item.description), summary: text(item.summary ?? metadata.summary), count: number(item.count ?? metadata.count), severity: oneOf(item.severity ?? metadata.severity, ["fatal", "high", "medium", "low", "info"] as const, "info"), href: text(item.href ?? metadata.href, "#"), createdAt: text(item.created_at ?? item.createdAt), provenance: sourceRows(item.provenance ?? metadata.provenance),
+    title: text(item.title, isEvidenceMatchCandidates ? "候选匹配" : ""), description: text(item.description), summary: text(item.summary ?? metadata.summary), count: number(item.count ?? metadata.count), severity: oneOf(item.severity ?? metadata.severity, ["fatal", "high", "medium", "low", "info"] as const, "info"), href: downloadHref || (isDownloadable ? `/api/agent-artifacts/${text(item.id)}/download` : text(item.href ?? metadata.href, artifactType === "response_drafts" ? `/projects/${projectId}/responses` : artifactType === "compliance_summary" ? `/projects/${projectId}/evidence-matching` : "/agent")), createdAt: text(item.created_at ?? item.createdAt), provenance: sourceRows(item.provenance ?? metadata.provenance),
   };
+}
+
+function progressFromSteps(steps: AgentStep[]): number {
+  if (!steps.length) return 0;
+  const completed = steps.filter((step) => step.status === "completed").length;
+  return Math.round((completed / steps.length) * 100);
+}
+
+function summaryFromSteps(steps: AgentStep[], approvals: AgentApproval[], status: AgentRun["status"]): string {
+  const completed = steps.filter((step) => step.status === "completed").length;
+  const current = steps.find((step) => step.status === "running" || step.status === "waiting_approval" || step.status === "blocked");
+  if (status === "completed") return `全部 ${steps.length} 个步骤已完成。`;
+  if (status === "failed") return `已完成 ${completed}/${steps.length} 个步骤；运行失败，请查看失败步骤。`;
+  if (status === "cancelled") return `已完成 ${completed}/${steps.length} 个步骤；运行已取消。`;
+  if (status === "waiting_approval") return `已完成 ${completed}/${steps.length} 个步骤；等待 ${approvals.filter((item) => item.status === "pending").length} 项人工审批。`;
+  if (current) return `已完成 ${completed}/${steps.length} 个步骤；正在处理「${current.title}」。`;
+  return steps.length ? `已完成 ${completed}/${steps.length} 个步骤，等待继续执行。` : "尚未创建执行步骤。";
 }
 
 /** Maps the persisted runtime payload; API data never receives synthetic timestamps or people. */
@@ -82,15 +130,15 @@ export function agentRunBundleFromApiPayload(payload: unknown, projectId: string
   if (!runId) throw new Error("invalid_agent_payload");
   const steps = rows(root.steps ?? runValue.steps, ["items", "step_runs", "stepRuns"]).map((item, index) => mapStep(item, runId, index));
   const approvals = rows(root.approvals ?? runValue.approvals, ["items", "approval_requests", "approvalRequests"]).map((item) => mapApproval(item, runId));
-  const outputs = rows(root.outputs ?? root.artifacts ?? runValue.outputs ?? runValue.artifacts, ["items", "artifacts"]).map((item) => mapOutput(item, runId));
+  const outputs = rows(root.outputs ?? root.artifacts ?? runValue.outputs ?? runValue.artifacts, ["items", "artifacts"]).map((item) => mapOutput(item, runId, projectId));
   const run: AgentRun = {
     id: runId, projectId: text(runValue.project_id ?? runValue.projectId, projectId), projectName: text(runValue.project_name ?? runValue.projectName, "本地项目"),
     title: text(runValue.title ?? runValue.workflow_type ?? runValue.workflowType, "投标分析运行"), goal: text(runValue.goal),
     status: oneOf(runValue.status, ["queued", "planning", "running", "waiting_approval", "completed", "failed", "cancelled"] as const, "queued"),
     trigger: oneOf(runValue.trigger, ["project_opened", "document_updated", "amendment_received", "manual_rerun"] as const, "manual_rerun"),
     startedAt: text(runValue.started_at ?? runValue.startedAt ?? runValue.created_at ?? runValue.createdAt), updatedAt: text(runValue.updated_at ?? runValue.updatedAt ?? runValue.created_at ?? runValue.createdAt), completedAt: text(runValue.completed_at ?? runValue.completedAt) || undefined,
-    progress: number(runValue.progress), currentStepId: text(runValue.current_step_id ?? runValue.currentStepId ?? runValue.current_step ?? runValue.currentStep) || undefined, initiatedBy: text(runValue.created_by ?? runValue.createdBy, "本地工作区"),
-    promptVersion: text(runValue.prompt_version ?? runValue.promptVersion), policyVersion: text(runValue.policy_version ?? runValue.policyVersion), summary: text(runValue.summary ?? runValue.error_message ?? runValue.errorMessage), steps, approvals, outputs,
+    progress: progressFromSteps(steps), currentStepId: text(runValue.current_step_id ?? runValue.currentStepId ?? runValue.current_step ?? runValue.currentStep) || undefined, initiatedBy: text(runValue.created_by ?? runValue.createdBy, "本地工作区"),
+    promptVersion: text(runValue.prompt_version ?? runValue.promptVersion), policyVersion: text(runValue.policy_version ?? runValue.policyVersion), summary: summaryFromSteps(steps, approvals, oneOf(runValue.status, ["queued", "planning", "running", "waiting_approval", "completed", "failed", "cancelled"] as const, "queued")), steps, approvals, outputs,
   };
   return { run, steps, approvals, outputs };
 }

@@ -117,3 +117,31 @@ class PackageItemUpdate(BaseModel):
     required: bool | None = None
     human_confirmed: bool = False
     reason: str = Field(min_length=3, max_length=2000)
+
+
+class ResponseEdit(BaseModel):
+    """A human edit that must be sent back through review before use."""
+
+    edited_text: str = Field(min_length=1, max_length=50000)
+    reason: str = Field(min_length=3, max_length=2000)
+
+
+class ResponseItemRead(ORMModel):
+    id: UUID
+    project_id: UUID
+    requirement_id: UUID
+    model_run_id: UUID | None
+    status: str
+    response_strategy: str | None
+    draft_text: str | None
+    edited_text: str | None
+    missing_information: list
+    risk_notes: list
+    confidence: float | None
+    generation_version: int
+    version: int
+    reviewed_by: UUID | None
+    reviewed_at: datetime | None
+    created_at: datetime
+    updated_at: datetime
+    evidence_claim_ids: list[UUID] = Field(default_factory=list)

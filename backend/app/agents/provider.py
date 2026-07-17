@@ -2,8 +2,10 @@ from __future__ import annotations
 
 import re
 import os
+import json
 from typing import Protocol, TypeVar
 
+import httpx
 from pydantic import BaseModel
 
 from app.schemas.requirements import RequirementBatch
@@ -128,6 +130,48 @@ class MockLLMProvider:
         return result
 
 
+class OpenAICompatibleProvider:
+    """Small JSON-schema adapter for an explicitly configured OpenAI-compatible endpoint."""
+
+    name = "openai_compatible"
+
+    def __init__(self, *, base_url: str, api_key: str, model: str) -> None:
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.model = model
+
+    async def structured_generate(
+        self,
+        *,
+        system_prompt: str,
+        user_input: str,
+        output_schema: type[T],
+        metadata: dict,
+    ) -> T:
+        payload = {
+            "model": self.model,
+            "messages": [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_input},
+            ],
+            "temperature": 0,
+            "response_format": {"type": "json_object"},
+        }
+        try:
+            async with httpx.AsyncClient(timeout=60) as client:
+                response = await client.post(
+                    f"{self.base_url}/chat/completions",
+                    headers={"Authorization": f"Bearer {self.api_key}"},
+                    json=payload,
+                )
+            response.raise_for_status()
+            content = response.json()["choices"][0]["message"]["content"]
+            parsed = json.loads(content) if isinstance(content, str) else content
+            return output_schema.model_validate(parsed)
+        except (httpx.HTTPError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+            raise ProviderUnavailableError(f"OpenAI-compatible provider failed: {exc}") from exc
+
+
 def get_requirement_provider(provider_name: str | None = None) -> LLMProvider:
     """Return an explicitly approved provider for requirement extraction.
 
@@ -138,6 +182,16 @@ def get_requirement_provider(provider_name: str | None = None) -> LLMProvider:
     selected = (provider_name or os.getenv("BIDEVIDENCE_LLM_PROVIDER") or "mock").strip().lower()
     if selected == "mock":
         return MockLLMProvider()
+    if selected == "openai_compatible":
+        base_url = os.getenv("BIDEVIDENCE_LLM_BASE_URL")
+        api_key = os.getenv("BIDEVIDENCE_LLM_API_KEY")
+        model = os.getenv("BIDEVIDENCE_LLM_MODEL")
+        if not base_url or not api_key or not model:
+            raise ProviderUnavailableError(
+                "openai_compatible requires BIDEVIDENCE_LLM_BASE_URL, "
+                "BIDEVIDENCE_LLM_API_KEY, and BIDEVIDENCE_LLM_MODEL"
+            )
+        return OpenAICompatibleProvider(base_url=base_url, api_key=api_key, model=model)
     raise ProviderUnavailableError(
         f"provider '{selected}' is not approved for local execution; use mock or register an approved adapter"
     )

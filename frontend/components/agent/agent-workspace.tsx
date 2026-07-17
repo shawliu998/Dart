@@ -68,6 +68,17 @@ const severityStyles: Record<AgentOutput["severity"], string> = {
 };
 
 const riskLabel = { fatal: "致命", high: "高", medium: "中", low: "低" };
+const triggerLabels: Record<AgentRunBundle["run"]["trigger"], string> = {
+  project_opened: "打开项目后启动",
+  document_updated: "文档更新后启动",
+  amendment_received: "补充文件更新后启动",
+  manual_rerun: "手动重新运行",
+};
+const actorLabels: Record<AgentStep["actor"], string> = {
+  deterministic_rule: "确定性规则",
+  mock_model: "模型生成",
+  human_gate: "人工工作台",
+};
 
 function StepIcon({ status }: { status: AgentStepStatus }) {
   if (status === "completed") return <CheckCircle2 aria-hidden="true" size={17} />;
@@ -97,7 +108,7 @@ function RunSummary({ bundle, source }: { bundle: AgentRunBundle; source: "api" 
         <dl className="grid min-w-80 grid-cols-2 gap-x-6 gap-y-3 text-xs">
           <div><dt className="text-slate-500">项目</dt><dd className="mt-1 font-medium text-slate-900">{run.projectName}</dd></div>
           <div><dt className="text-slate-500">发起人</dt><dd className="mt-1 font-medium text-slate-900">{run.initiatedBy}</dd></div>
-          <div><dt className="text-slate-500">触发原因</dt><dd className="mt-1 font-medium text-slate-900">补充公告到达</dd></div>
+          <div><dt className="text-slate-500">触发原因</dt><dd className="mt-1 font-medium text-slate-900">{triggerLabels[run.trigger]}</dd></div>
           <div><dt className="text-slate-500">最后更新</dt><dd className="mt-1 font-medium text-slate-900">{run.updatedAt}</dd></div>
         </dl>
       </div>
@@ -134,8 +145,9 @@ function StepTimeline({ steps }: { steps: AgentStep[] }) {
               </div>
               <p className="mt-1 text-xs leading-5 text-slate-600">{step.description}</p>
               <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[11px] text-slate-500">
+                <span>执行者：{actorLabels[step.actor]}</span>
                 {step.tool && <span>工具：{step.tool}</span>}
-                <span>{step.message}</span>
+                {(step.summary || step.message) && <span>{step.summary || step.message}</span>}
               </div>
               {step.sources?.[0] && <div className="mt-3"><SourceReference source={step.sources[0]} compact /></div>}
             </article>
@@ -264,7 +276,7 @@ export function AgentWorkspace({ initialResult }: { initialResult: AgentDataResu
           <div><h2 id="agent-run-list-title" className="text-sm font-semibold text-slate-950">运行记录</h2><p className="mt-1 text-xs text-slate-500">当前项目：{result.data.run.projectName}</p></div>
           <ol className="min-w-0 flex-1 sm:max-w-xl">
             <li aria-current="true" className="flex items-center justify-between gap-3 rounded-lg border border-teal-200 bg-teal-50 px-3 py-2">
-              <span className="min-w-0"><strong className="block truncate text-xs text-slate-900">{result.data.run.title}</strong><small className="text-[11px] text-slate-600">{result.data.run.startedAt} · {result.data.run.trigger === "amendment_received" ? "补充公告触发" : "项目触发"}</small></span>
+              <span className="min-w-0"><strong className="block truncate text-xs text-slate-900">{result.data.run.title}</strong><small className="text-[11px] text-slate-600">{result.data.run.startedAt} · {triggerLabels[result.data.run.trigger]}</small></span>
               <span className="shrink-0 text-xs font-semibold text-teal-900">{runLabels[result.data.run.status]}</span>
             </li>
           </ol>
