@@ -15,7 +15,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import Session
 
 from app.audit.service import stable_hash
-from app.autonomous_agent import ToolResult, next_decision
+from app.autonomous_agent import ToolResult, build_agent_context, next_decision
 from app.autonomous_agent.schemas import ToolName
 from app.auth.dependencies import Principal
 from app.db.base import utcnow
@@ -69,6 +69,22 @@ BID_WORKFLOW_STEPS: tuple[tuple[str, str], ...] = (
     ("review_responses", "人工复核投标响应"),
     ("export_artifacts", "导出交付物"),
 )
+
+_ACTION_BY_STEP: dict[str, ToolName] = {
+    "ingest_documents": "inspect_project",
+    "parse_documents": "parse_pending_documents",
+    "extract_project_profile": "extract_project_profile",
+    "extract_requirements": "extract_requirements",
+    "match_evidence": "match_evidence",
+    "run_compliance_rules": "run_compliance_checks",
+    "draft_responses": "generate_responses",
+    "export_artifacts": "assemble_work_package",
+}
+_REVIEW_DEPENDENCY_BY_STEP: dict[str, ToolName] = {
+    "review_requirements": "extract_requirements",
+    "review_evidence_matches": "match_evidence",
+    "review_responses": "generate_responses",
+}
 
 _AUTONOMOUS_PLAN: tuple[tuple[str, str, set[str]], ...] = (
     ("understand", "理解项目与招标文件", {"ingest_documents", "parse_documents", "extract_project_profile", "extract_requirements"}),
@@ -341,17 +357,7 @@ def _complete(db: Session, run: AgentRun, step: AgentStepRun, payload: dict) -> 
     step.status, step.completed_at, step.output_hash = "completed", utcnow(), stable_hash(payload)
     _event(db, run, "step.completed", payload, step)
     if run.mode == "autonomous_draft":
-        action_by_step: dict[str, ToolName] = {
-            "ingest_documents": "inspect_project",
-            "parse_documents": "parse_pending_documents",
-            "extract_project_profile": "extract_project_profile",
-            "extract_requirements": "extract_requirements",
-            "match_evidence": "match_evidence",
-            "run_compliance_rules": "run_compliance_checks",
-            "draft_responses": "generate_responses",
-            "export_artifacts": "assemble_work_package",
-        }
-        action = action_by_step.get(step.step_key)
+        action = _ACTION_BY_STEP.get(step.step_key)
         if action:
             result = ToolResult(
                 tool=action,
@@ -364,6 +370,26 @@ def _complete(db: Session, run: AgentRun, step: AgentStepRun, payload: dict) -> 
             run.last_observation = result.summary
             _event(db, run, "tool.completed", result.model_dump(mode="json"), step)
         _update_plan(run, _steps(db, run.id))
+
+
+def _skip_satisfied_step(
+    db: Session,
+    run: AgentRun,
+    step: AgentStepRun,
+    *,
+    next_tool: ToolName,
+) -> None:
+    """Persist a state/scope skip without pretending the tool executed."""
+    step.status, step.completed_at = "completed", utcnow()
+    payload = {
+        "step_key": step.step_key,
+        "reason": "already_satisfied_or_out_of_scope",
+        "next_tool": next_tool,
+        "scope": run.scope,
+    }
+    step.output_hash = stable_hash(payload)
+    _event(db, run, "step.skipped", payload, step)
+    _update_plan(run, _steps(db, run.id))
 
 
 def _request_approval(
@@ -492,6 +518,21 @@ def process_agent_run(run_id: UUID) -> bool:
                     return True
                 if step.status == "completed":
                     continue
+                if autonomous and step.step_key in _REVIEW_DEPENDENCY_BY_STEP:
+                    context = build_agent_context(db, run)
+                    dependency = _REVIEW_DEPENDENCY_BY_STEP[step.step_key]
+                    # A review placeholder only belongs to a scope that actually
+                    # produced the corresponding provisional artifact.
+                    if dependency not in context.completed_tools:
+                        _skip_satisfied_step(
+                            db,
+                            run,
+                            step,
+                            next_tool=next_decision(context).tool or "finish_run",
+                        )
+                        if commit_boundary():
+                            return run.status == "cancelled"
+                        continue
                 # The planner may only select a registered, persisted workflow action.  Review
                 # placeholders are deliberately not tools and are converted below to provisional
                 # draft state; no human decision is fabricated.
@@ -516,7 +557,19 @@ def process_agent_run(run_id: UUID) -> bool:
                         if commit_boundary():
                             return run.status == "cancelled"
                         return True
-                    decision = next_decision(_steps(db, run.id))
+                    context = build_agent_context(db, run)
+                    decision = next_decision(context)
+                    expected_action = _ACTION_BY_STEP[step.step_key]
+                    if decision.tool != expected_action:
+                        _skip_satisfied_step(
+                            db,
+                            run,
+                            step,
+                            next_tool=decision.tool or "finish_run",
+                        )
+                        if commit_boundary():
+                            return run.status == "cancelled"
+                        continue
                     run.iteration += 1
                     run.current_action = decision.tool
                     run.next_action = decision.tool
@@ -776,7 +829,7 @@ def process_agent_run(run_id: UUID) -> bool:
                             return True
                         run.iteration += 1
                         run.current_action, run.next_action = "finish_run", "finish_run"
-                        finish_decision = next_decision(_steps(db, run.id))
+                        finish_decision = next_decision(build_agent_context(db, run))
                         _event(db, run, "agent.decision", finish_decision.model_dump(mode="json"), step)
                         _request_approval(
                             db,

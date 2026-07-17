@@ -266,6 +266,59 @@ def test_autonomous_background_run_uses_persisted_creator_role(
     assert set(observed_roles) == {"bid_manager"}
 
 
+def test_risk_review_scope_skips_response_and_export_tools(client, demo) -> None:
+    headers = demo["auth_headers"]
+    project = client.post(
+        "/api/projects",
+        headers=headers,
+        json={
+            "name": "风险复核范围测试",
+            "project_code": f"RISK-SCOPE-{uuid4().hex[:8]}",
+            "buyer_name": "测试采购人",
+        },
+    )
+    assert project.status_code == 201, project.text
+    project_id = project.json()["id"]
+    pdf_path = Path(__file__).resolve().parents[2] / "demo" / "tender" / "招标文件.pdf"
+    with pdf_path.open("rb") as pdf:
+        uploaded = client.post(
+            f"/api/projects/{project_id}/documents",
+            headers=headers,
+            data={"document_type": "tender_main"},
+            files={"file": (pdf_path.name, pdf, "application/pdf")},
+        )
+    assert uploaded.status_code == 201, uploaded.text
+
+    created = client.post(
+        f"/api/projects/{project_id}/agent-runs",
+        headers=headers,
+        json={"goal": "只识别招标风险", "scope": "risk_review"},
+    )
+    assert created.status_code == 201, created.text
+    run_id = created.json()["run"]["id"]
+    final = client.get(f"/api/agent-runs/{run_id}", headers=headers).json()
+    assert final["run"]["status"] == "completed"
+    assert final["run"]["outcome"] == "success"
+    statuses = {item["step_key"]: item["status"] for item in final["steps"]}
+    assert statuses["run_compliance_rules"] == "completed"
+    events = client.get(f"/api/agent-runs/{run_id}/events", headers=headers).json()
+    completed_tools = {
+        item["payload"]["tool"]
+        for item in events
+        if item["event_type"] == "tool.completed"
+    }
+    assert "run_compliance_checks" in completed_tools
+    assert completed_tools.isdisjoint(
+        {"match_evidence", "generate_responses", "assemble_work_package"}
+    )
+    skipped_steps = {
+        item["payload"]["step_key"]
+        for item in events
+        if item["event_type"] == "step.skipped"
+    }
+    assert {"match_evidence", "draft_responses", "export_artifacts"} <= skipped_steps
+
+
 def test_agent_worker_binds_the_durable_lease_guard(client, demo, monkeypatch) -> None:
     """A durable agent run verifies its lease before entering the runtime."""
     observed: list[tuple[object, str]] = []

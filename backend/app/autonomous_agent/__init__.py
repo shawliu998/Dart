@@ -5,7 +5,15 @@ only from a closed registry; services remain the source of tender-domain behavio
 """
 
 from app.autonomous_agent.loop import next_decision
-from app.autonomous_agent.schemas import PlannerDecision, ToolResult
+from app.autonomous_agent.context import build_agent_context
+from app.autonomous_agent.schemas import AgentContext, PlannerDecision, ToolResult
 from app.autonomous_agent.tools import TOOL_REGISTRY
 
-__all__ = ["PlannerDecision", "TOOL_REGISTRY", "ToolResult", "next_decision"]
+__all__ = [
+    "AgentContext",
+    "PlannerDecision",
+    "TOOL_REGISTRY",
+    "ToolResult",
+    "build_agent_context",
+    "next_decision",
+]
