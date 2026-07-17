@@ -7,6 +7,7 @@ from sqlalchemy.orm import Session
 
 from app.auth.dependencies import Principal, get_principal
 from app.auth.tokens import create_token, verify_password
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.entities import User
 
@@ -20,6 +21,8 @@ class LoginRequest(BaseModel):
 
 @router.post("/login")
 def login(data: LoginRequest, db: Session = Depends(get_db)):
+    if get_settings().desktop_mode:
+        raise HTTPException(status_code=404, detail="desktop mode does not use login")
     user = db.scalar(select(User).where(User.email == data.email, User.status == "active"))
     if user is None or not verify_password(data.password, user.password_hash):
         raise HTTPException(status_code=401, detail="invalid credentials")

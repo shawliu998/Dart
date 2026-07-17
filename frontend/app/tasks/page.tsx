@@ -4,5 +4,5 @@ import { TaskCenter } from "@/features/tasks/task-center";
 
 export default async function GlobalTasksPage() {
   const result = await phaseApi.tasks(DEMO_PROJECT_ID);
-  return <TaskCenter projectId={DEMO_PROJECT_ID} initialTasks={result.data} source={result.source} />;
+  return <TaskCenter projectId={DEMO_PROJECT_ID} initialTasks={result.data} source={result.source} loadError={result.error} />;
 }

@@ -52,10 +52,12 @@ export function EvidenceMatchingWorkbench({
   projectId,
   initialGroups,
   source,
+  error,
 }: {
   projectId: string;
   initialGroups: EvidenceMatchGroup[];
   source: DataSource;
+  error?: string;
 }) {
   const [groups, setGroups] = useState(initialGroups);
   const [selectedId, setSelectedId] = useState(initialGroups[0]?.id);
@@ -229,7 +231,48 @@ export function EvidenceMatchingWorkbench({
     setBulkOpen(false);
   }
 
-  if (!selected) return null;
+  if (error && source === "api") {
+    return (
+      <div className="page match-page" data-project-id={projectId}>
+        <header className="page-header">
+          <div className="page-title-group">
+            <h1>证据匹配工作台</h1>
+            <p>一项要求可关联多份证据，一份材料也可复用于多个要求；所有匹配必须人工确认。</p>
+          </div>
+          <span className="data-source api">API 数据不可用</span>
+        </header>
+        <section className="panel empty-state" role="alert" aria-live="assertive">
+          <AlertTriangle size={20} aria-hidden="true" />
+          <strong>证据匹配数据暂时不可用</strong>
+          <p>未能从 API 读取该项目的证据匹配。请检查本地服务后重试；当前页面不会显示替代数据。</p>
+          <button className="button" type="button" onClick={() => window.location.reload()}>
+            重试读取
+          </button>
+        </section>
+      </div>
+    );
+  }
+
+  if (!selected) {
+    return (
+      <div className="page match-page" data-project-id={projectId}>
+        <header className="page-header">
+          <div className="page-title-group">
+            <h1>证据匹配工作台</h1>
+            <p>一项要求可关联多份证据，一份材料也可复用于多个要求；所有匹配必须人工确认。</p>
+          </div>
+          <span className={`data-source ${source}`}>
+            {source === "api" ? "API 数据" : "本地演示数据"}
+          </span>
+        </header>
+        <section className="panel empty-state">
+          <Link2 size={20} aria-hidden="true" />
+          <strong>暂无待匹配要求</strong>
+          <p>解析并人工确认招标要求后，证据候选会显示在这里。</p>
+        </section>
+      </div>
+    );
+  }
   const acceptedCount = groups.reduce(
     (sum, group) =>
       sum +

@@ -3,11 +3,21 @@ import { amendments, auditRecords, consistencyIssues, evidenceAssets, evidenceMa
 import type { Amendment, AmendmentChange, AuditRecord, ConsistencyIssue, DataResult, EvidenceAsset, EvidenceCandidate, EvidenceMatchGroup, PackageCheck, PackageNode, RemediationTask } from "@/lib/phase-data/types";
 
 type AnyDto = Record<string, unknown>;
-export interface ActionResult<T = unknown> { data: T; persisted: boolean; message: string; failed?: boolean; }
+export type ActionResult<T = unknown> =
+  | { data: T; persisted: boolean; message: string; failed?: false }
+  | { data: null; persisted: false; message: string; failed: true };
 
 const text = (value: unknown, fallback = "") => typeof value === "string" ? value : fallback;
 const num = (value: unknown, fallback = 0) => typeof value === "number" ? value : Number(value ?? fallback);
 const list = (value: unknown) => Array.isArray(value) ? value.map(String) : [];
+const reasons = (value: unknown) => Array.isArray(value) ? value.map(String) : typeof value === "string" && value ? [value] : [];
+
+function matchDecision(dto: AnyDto): EvidenceCandidate["decision"] {
+  const decision = text(dto.human_decision ?? dto.decision ?? dto.status).toLowerCase();
+  if (decision === "accepted" || decision === "accept") return "accepted";
+  if (decision === "rejected" || decision === "reject") return "rejected";
+  return "pending";
+}
 
 export function mapEvidenceDto(dto: AnyDto): EvidenceAsset {
   const claims = Array.isArray(dto.claims) ? dto.claims as AnyDto[] : [];
@@ -23,7 +33,47 @@ export function mapEvidenceDto(dto: AnyDto): EvidenceAsset {
 
 export function mapMatchGroupDto(dto: AnyDto): EvidenceMatchGroup {
   const candidates = Array.isArray(dto.candidates ?? dto.matches) ? (dto.candidates ?? dto.matches) as AnyDto[] : [];
-  return { id: text(dto.id ?? dto.requirement_id), requirementCode: text(dto.requirementCode ?? dto.requirement_code), requirementTitle: text(dto.requirementTitle ?? dto.requirement_title, "未命名要求"), risk: text(dto.risk ?? dto.risk_level, "medium") as EvidenceMatchGroup["risk"], requirementStatus: text(dto.requirementStatus ?? dto.requirement_status, "review") as EvidenceMatchGroup["requirementStatus"], page: num(dto.page ?? dto.source_page, 1), selectedEvidenceIds: list(dto.selectedEvidenceIds ?? dto.selected_evidence_ids), candidates: candidates.map((candidate, index) => ({ id: text(candidate.id, `match-${index}`), evidenceId: text(candidate.evidenceId ?? candidate.evidence_id), name: text(candidate.name ?? candidate.evidence_name, "未命名材料"), score: num(candidate.score ?? candidate.match_score), reason: list(candidate.reason ?? candidate.match_reasons), legalEntity: text(candidate.legalEntity ?? candidate.legal_entity, "主体待确认"), validUntil: text(candidate.validUntil ?? candidate.valid_until, "待确认"), completeness: num(candidate.completeness ?? candidate.completeness_score), decision: text(candidate.decision, "pending") as EvidenceCandidate["decision"] })) };
+  return { id: text(dto.id ?? dto.requirement_id), requirementCode: text(dto.requirementCode ?? dto.requirement_code), requirementTitle: text(dto.requirementTitle ?? dto.requirement_title, "未命名要求"), risk: text(dto.risk ?? dto.risk_level, "medium") as EvidenceMatchGroup["risk"], requirementStatus: text(dto.requirementStatus ?? dto.requirement_status, "review") as EvidenceMatchGroup["requirementStatus"], page: num(dto.page ?? dto.source_page, 1), selectedEvidenceIds: list(dto.selectedEvidenceIds ?? dto.selected_evidence_ids), candidates: candidates.map((candidate, index) => ({ id: text(candidate.id, `match-${index}`), evidenceId: text(candidate.evidenceId ?? candidate.evidence_id), name: text(candidate.name ?? candidate.evidence_name, "未命名材料"), score: num(candidate.score ?? candidate.match_score), reason: reasons(candidate.reason ?? candidate.match_reasons), legalEntity: text(candidate.legalEntity ?? candidate.legal_entity, "主体待确认"), validUntil: text(candidate.validUntil ?? candidate.valid_until, "待确认"), completeness: num(candidate.completeness ?? candidate.completeness_score), decision: matchDecision(candidate) })) };
+}
+
+/** Adapts the API's relational match rows into the workbench's requirement groups. */
+export function mapFlatEvidenceMatchRows(rows: AnyDto[]): EvidenceMatchGroup[] {
+  const groups = new Map<string, EvidenceMatchGroup>();
+  rows.forEach((row, index) => {
+    const match = (row.match && typeof row.match === "object" ? row.match : {}) as AnyDto;
+    const requirement = (row.requirement && typeof row.requirement === "object" ? row.requirement : {}) as AnyDto;
+    const claim = (row.claim && typeof row.claim === "object" ? row.claim : {}) as AnyDto;
+    const asset = (row.asset && typeof row.asset === "object" ? row.asset : {}) as AnyDto;
+    const requirementId = text(requirement.id ?? match.requirement_id, `requirement-${index}`);
+    const candidate = {
+      id: text(match.id, `match-${index}`),
+      evidenceId: text(asset.id ?? claim.evidence_asset_id),
+      name: text(asset.name ?? asset.filename, "未命名材料"),
+      score: num(match.match_score ?? match.score),
+      reason: [...reasons(match.reason ?? match.match_reasons), ...reasons(match.human_reason)],
+      legalEntity: text(asset.legal_entity ?? asset.legalEntity, "主体待确认"),
+      validUntil: text(asset.expiry_date ?? asset.valid_until ?? asset.validUntil, "待确认"),
+      completeness: num(match.completeness_score ?? match.completeness, 0),
+      decision: matchDecision(match),
+    } satisfies EvidenceCandidate;
+    let group = groups.get(requirementId);
+    if (!group) {
+      group = {
+        id: requirementId,
+        requirementCode: text(requirement.requirement_code ?? requirement.code),
+        requirementTitle: text(requirement.title ?? requirement.normalized_requirement, "未命名要求"),
+        risk: text(requirement.risk_level ?? requirement.risk, "medium") as EvidenceMatchGroup["risk"],
+        requirementStatus: "review",
+        page: num(requirement.source_page ?? requirement.page, 1),
+        selectedEvidenceIds: [],
+        candidates: [],
+      };
+      groups.set(requirementId, group);
+    }
+    group.candidates.push(candidate);
+    if (candidate.decision === "accepted" && candidate.evidenceId && !group.selectedEvidenceIds.includes(candidate.evidenceId)) group.selectedEvidenceIds.push(candidate.evidenceId);
+  });
+  return [...groups.values()];
 }
 
 export function mapAmendmentDto(dto: AnyDto, changes: AmendmentChange[] = []): Amendment {
@@ -50,38 +100,48 @@ export function mapAuditDto(dto: AnyDto): AuditRecord {
   return { id: text(dto.id), actor: text(dto.actor ?? dto.actor_name, text(dto.model_name, "系统")), actorType: (dto.model_name ? "agent" : "human") as AuditRecord["actorType"], timestamp: text(dto.timestamp), action, entityType: text(dto.entityType ?? dto.entity_type), entityId: text(dto.entityId ?? dto.entity_id), entityLabel: text(dto.entityLabel ?? dto.entity_label, text(dto.entity_id)), before: typeof dto.before === "string" ? dto.before : JSON.stringify(dto.before ?? "—"), after: typeof dto.after === "string" ? dto.after : JSON.stringify(dto.after ?? "—"), modelOrRule: text(dto.modelOrRule ?? dto.model_name, "人工操作"), promptVersion: text(dto.promptVersion ?? dto.prompt_version, "—"), inputHash: text(dto.inputHash ?? dto.input_hash, "—"), outputHash: text(dto.outputHash ?? dto.output_hash, "—"), humanOverride: Boolean(dto.humanOverride ?? dto.human_override), reason: text(dto.reason, action), risk: text(dto.risk ?? dto.risk_level, "low") as AuditRecord["risk"] };
 }
 
-async function getWithFallback<T>(path: string, fallback: T, map?: (dto: AnyDto) => unknown): Promise<DataResult<T>> {
-  if (!isRemoteApiConfigured) return { data: fallback, source: "demo" };
+async function getData<T>(path: string, demoData: T, unavailableData: T, map?: (dto: AnyDto) => unknown): Promise<DataResult<T>> {
+  if (!isRemoteApiConfigured) return { data: demoData, source: "demo" };
   try {
     const response = await apiRequest<unknown>(path);
-    if (Array.isArray(response) && response.length > 0) return { data: (map ? response.map((item) => map(item as AnyDto)) : response) as T, source: "api" };
+    if (Array.isArray(response)) return { data: (map ? response.map((item) => map(item as AnyDto)) : response) as T, source: "api" };
     if (response && !Array.isArray(response)) return { data: response as T, source: "api" };
-  } catch { /* Phase endpoint may not be deployed yet. */ }
-  return { data: fallback, source: "demo" };
+    return { data: unavailableData, source: "api", error: "API 返回了无法识别的数据。" };
+  } catch (error) {
+    return { data: unavailableData, source: "api", error: error instanceof Error ? error.message : "API 请求失败" };
+  }
 }
 
 async function mutate<T>(path: string, init: RequestInit, demoData: T, demoMessage: string): Promise<ActionResult<T>> {
   if (isRemoteApiConfigured) {
     try { return { data: await apiRequest<T>(path, init), persisted: true, message: "操作已提交后端并进入审计流程。" }; }
-    catch (error) { return { data: demoData, persisted: false, failed: true, message: `后端操作失败，未更改本地状态：${error instanceof Error ? error.message : "未知错误"}。可重试或显式进入本地演示。` }; }
+    catch (error) { return { data: null, persisted: false, failed: true, message: `后端操作失败，未更改本地状态：${error instanceof Error ? error.message : "未知错误"}。` }; }
   }
   return { data: demoData, persisted: false, message: demoMessage };
 }
 
 export const phaseApi = {
-  evidence: () => getWithFallback<EvidenceAsset[]>("/api/evidence", evidenceAssets, mapEvidenceDto),
-  evidenceMatches: (projectId: string) => getWithFallback<EvidenceMatchGroup[]>(`/api/projects/${projectId}/evidence-matches`, evidenceMatchGroups, mapMatchGroupDto),
-  consistency: (projectId: string) => getWithFallback<ConsistencyIssue[]>(`/api/projects/${projectId}/consistency`, consistencyIssues, mapConsistencyDto),
+  evidence: () => getData<EvidenceAsset[]>("/api/evidence", evidenceAssets, [], mapEvidenceDto),
+  evidenceMatches: async (projectId: string): Promise<DataResult<EvidenceMatchGroup[]>> => {
+    if (!isRemoteApiConfigured) return { data: evidenceMatchGroups, source: "demo" };
+    try {
+      const response = await apiRequest<unknown>(`/api/projects/${projectId}/evidence-matches`);
+      if (!Array.isArray(response)) return { data: [], source: "api", error: "API 返回了无法识别的数据。" };
+      const rows = response as AnyDto[];
+      return { data: rows.some((row) => row.match && typeof row.match === "object") ? mapFlatEvidenceMatchRows(rows) : rows.map(mapMatchGroupDto), source: "api" };
+    } catch (error) { return { data: [], source: "api", error: error instanceof Error ? error.message : "API 请求失败" }; }
+  },
+  consistency: (projectId: string) => getData<ConsistencyIssue[]>(`/api/projects/${projectId}/consistency`, consistencyIssues, [], mapConsistencyDto),
   amendments: async (projectId: string): Promise<DataResult<Amendment[]>> => {
     if (!isRemoteApiConfigured) return { data: amendments, source: "demo" };
     try {
       const rows = await apiRequest<AnyDto[]>(`/api/projects/${projectId}/amendments`);
-      if (!rows.length) return { data: amendments, source: "demo" };
+      if (!rows.length) return { data: [], source: "api" };
       const mapped = await Promise.all(rows.map(async (row) => { try { const changes = await apiRequest<AnyDto[]>(`/api/amendments/${text(row.id)}/changes`); return mapAmendmentDto(row, changes.map(mapAmendmentChangeDto)); } catch { return mapAmendmentDto(row); } }));
       return { data: mapped, source: "api" };
-    } catch { return { data: amendments, source: "demo" }; }
+    } catch (error) { return { data: [], source: "api", error: error instanceof Error ? error.message : "API 请求失败" }; }
   },
-  tasks: (projectId: string) => getWithFallback<RemediationTask[]>(`/api/projects/${projectId}/tasks`, remediationTasks, mapTaskDto),
+  tasks: (projectId: string) => getData<RemediationTask[]>(`/api/projects/${projectId}/tasks`, remediationTasks, [], mapTaskDto),
   package: async (projectId: string): Promise<DataResult<{ tree: PackageNode[]; checks: PackageCheck[] }>> => {
     if (!isRemoteApiConfigured) return { data: { tree: packageTree, checks: packageChecks }, source: "demo" };
     try {
@@ -90,10 +150,10 @@ export const phaseApi = {
       const tree: PackageNode[] = items.map((item, index) => ({ id: text(item.id, `item-${index}`), packageItemId: text(item.id), name: text(item.name ?? item.filename ?? item.path), type: text(item.type, "file") as PackageNode["type"], status: text(item.status, "warning") as PackageNode["status"], size: text(item.size_display ?? item.size), version: text(item.version ?? item.version_number), children: Array.isArray(item.children) ? (item.children as AnyDto[]).map((child, childIndex) => ({ id: text(child.id, `child-${childIndex}`), packageItemId: text(child.id), name: text(child.name ?? child.filename), type: "file", status: text(child.status, "warning") as PackageNode["status"], size: text(child.size_display ?? child.size), version: text(child.version ?? child.version_number) })) : undefined }));
       const rawChecks = Array.isArray(dto.checks ?? dto.validation_results) ? (dto.checks ?? dto.validation_results) as AnyDto[] : [];
       const checks: PackageCheck[] = rawChecks.map((item, index) => ({ id: text(item.id, `check-${index}`), packageItemId: text(item.package_item_id), label: text(item.label ?? item.rule_name), category: text(item.category, "校验"), status: text(item.status ?? item.result, "warning") as PackageCheck["status"], file: text(item.file ?? item.filename), message: text(item.message), suggestion: text(item.suggestion ?? item.remediation), sourceRequirement: text(item.sourceRequirement ?? item.source_requirement), humanConfirmed: Boolean(item.humanConfirmed ?? item.human_confirmed) }));
-      return { data: { tree: tree.length ? tree : packageTree, checks: checks.length ? checks : packageChecks }, source: "api" };
-    } catch { return { data: { tree: packageTree, checks: packageChecks }, source: "demo" }; }
+      return { data: { tree, checks }, source: "api" };
+    } catch (error) { return { data: { tree: [], checks: [] }, source: "api", error: error instanceof Error ? error.message : "API 请求失败" }; }
   },
-  audit: (projectId: string) => getWithFallback<AuditRecord[]>(`/api/projects/${projectId}/audit`, auditRecords, mapAuditDto),
+  audit: (projectId: string) => getData<AuditRecord[]>(`/api/projects/${projectId}/audit`, auditRecords, [], mapAuditDto),
   decideMatch: (id: string, decision: "accept" | "reject", reason: string) => mutate(`/api/evidence-matches/${id}/${decision}`, { method: "POST", body: JSON.stringify({ reason }) }, { id, decision }, `本地演示已${decision === "accept" ? "接受" : "拒绝"}匹配；未写入后端。`),
   resolveConsistency: (id: string, status: "resolved" | "accepted_difference", resolution: string) => mutate(`/api/consistency-issues/${id}/resolve`, { method: "POST", body: JSON.stringify({ status, resolution }) }, { id, status }, "本地演示已更新一致性问题；未写入后端。"),
   applyAmendment: (id: string) => mutate<Amendment>(`/api/amendments/${id}/apply`, { method: "POST", body: JSON.stringify({}) }, amendments.find((item) => item.id === id) ?? amendments[0], "本地演示已应用整份公告的变更影响；未写入后端。"),
@@ -103,9 +163,9 @@ export const phaseApi = {
   completeTask: (id: string) => mutate(`/api/tasks/${id}/complete`, { method: "POST", body: JSON.stringify({ note: "提交完成证明，进入复核" }) }, { id, status: "ready_for_review" }, "本地演示任务已提交复核；未写入后端。"),
   reviewTask: (id: string) => mutate(`/api/tasks/${id}/review`, { method: "POST", body: JSON.stringify({ note: "复核通过" }) }, { id, status: "done" }, "本地演示任务已复核完成；未写入后端。"),
   validatePackage: (projectId: string) => mutate(`/api/projects/${projectId}/package/validate`, { method: "POST", body: JSON.stringify({}) }, { checks: packageChecks }, "本地演示已运行确定性封装检查；未写入后端。"),
-  previewPackage: async (projectId: string): Promise<ActionResult<{ package_id: string }>> => { const result = await mutate<AnyDto>(`/api/projects/${projectId}/package/preview`, { method: "POST", body: JSON.stringify({}) }, { package_id: "pkg-demo-preview" }, "本地演示预览包已生成。"); return { ...result, data: { package_id: text(result.data.package_id ?? result.data.id, "pkg-demo-preview") } }; },
+  previewPackage: async (projectId: string): Promise<ActionResult<{ package_id: string }>> => { const result = await mutate<AnyDto>(`/api/projects/${projectId}/package/preview`, { method: "POST", body: JSON.stringify({}) }, { package_id: "pkg-demo-preview" }, "本地演示预览包已生成。"); if (result.failed) return result; return { ...result, data: { package_id: text(result.data.package_id ?? result.data.id, "pkg-demo-preview") } }; },
   bindPackageItem: (itemId: string, documentId: string) => mutate(`/api/package-items/${itemId}`, { method: "PATCH", body: JSON.stringify({ document_id: documentId, reason: "上传修复文件并绑定封装项" }) }, { id: itemId, document_id: documentId }, "本地演示已绑定修复文件；未写入后端。"),
   downloadPackage: (packageId: string) => apiDownload(`/api/submission-packages/${packageId}/download`),
-  buildPackage: async (projectId: string, approved: boolean, approvalReason: string): Promise<ActionResult<{ package_id: string; sha256?: string }>> => { const result = await mutate<AnyDto>(`/api/projects/${projectId}/package/build`, { method: "POST", body: JSON.stringify({ approved, approval_reason: approvalReason }) }, { package_id: "pkg-demo-v4", sha256: "82c12b65a8a03e1a6fd8c1a9aa3f079d" }, "本地演示包已生成，可下载本地 ZIP 和 manifest。"); return { ...result, data: { package_id: text(result.data.package_id ?? result.data.id, "pkg-demo-v4"), sha256: text(result.data.sha256) || undefined } }; },
+  buildPackage: async (projectId: string, approved: boolean, approvalReason: string): Promise<ActionResult<{ package_id: string; sha256?: string }>> => { const result = await mutate<AnyDto>(`/api/projects/${projectId}/package/build`, { method: "POST", body: JSON.stringify({ approved, approval_reason: approvalReason }) }, { package_id: "pkg-demo-v4", sha256: "82c12b65a8a03e1a6fd8c1a9aa3f079d" }, "本地演示包已生成，可下载本地 ZIP 和 manifest。"); if (result.failed) return result; return { ...result, data: { package_id: text(result.data.package_id ?? result.data.id, "pkg-demo-v4"), sha256: text(result.data.sha256) || undefined } }; },
   exportAudit: (projectId: string) => apiDownload(`/api/projects/${projectId}/audit/export`),
 };

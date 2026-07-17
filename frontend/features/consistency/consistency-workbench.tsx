@@ -23,6 +23,7 @@ import {
   type MutationResult,
 } from "@/components/feedback/mutation-feedback";
 import { phaseApi } from "@/lib/api/phase2";
+import { DataUnavailableState } from "@/components/feedback/data-unavailable-state";
 import type { ConsistencyIssue, DataSource } from "@/lib/phase-data/types";
 
 const statusText = {
@@ -36,10 +37,12 @@ export function ConsistencyWorkbench({
   projectId,
   initialIssues,
   source,
+  loadError,
 }: {
   projectId: string;
   initialIssues: ConsistencyIssue[];
   source: DataSource;
+  loadError?: string;
 }) {
   const [issues, setIssues] = useState(initialIssues);
   const [selectedId, setSelectedId] = useState(initialIssues[0]?.id);
@@ -125,6 +128,9 @@ export function ConsistencyWorkbench({
       selected.id,
     );
     setFeedback(toFeedback(result, source, "整改任务已创建"));
+  }
+  if (loadError) {
+    return <DataUnavailableState title="一致性检查 API 数据不可用" message={loadError} />;
   }
   if (!selected) return null;
   return (

@@ -16,6 +16,7 @@ import {
 import { RiskBadge } from "@/components/ui/badges";
 import type { AuditRecord, DataSource } from "@/lib/phase-data/types";
 import { phaseApi } from "@/lib/api/phase2";
+import { DataUnavailableState } from "@/components/feedback/data-unavailable-state";
 import {
   MutationFeedback,
   type MutationResult,
@@ -25,10 +26,12 @@ export function AuditCenter({
   projectId,
   initialRecords,
   source,
+  loadError,
 }: {
   projectId: string;
   initialRecords: AuditRecord[];
   source: DataSource;
+  loadError?: string;
 }) {
   const [view, setView] = useState<"timeline" | "table">("timeline");
   const [query, setQuery] = useState("");
@@ -107,6 +110,9 @@ export function AuditCenter({
       title: "演示审计已导出",
       message: "导出来自当前确定性演示视图，没有写入后端。",
     });
+  }
+  if (loadError) {
+    return <DataUnavailableState title="审计记录 API 数据不可用" message={loadError} />;
   }
   if (!selected) return null;
   return (

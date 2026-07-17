@@ -1,8 +1,8 @@
 import { disqualifications, projects, requirements } from "@/lib/demo/data";
 import type { DisqualificationItem, Project, Requirement } from "@/lib/types";
-import { apiRequest, isRemoteApiConfigured } from "./client";
+import { apiRequest, isDemoMode } from "./client";
 
-const useDemo = !isRemoteApiConfigured;
+const useDemo = isDemoMode;
 
 type ProjectDto = Partial<Project> & {
   buyer_name?: string;
@@ -91,12 +91,7 @@ export function mapDisqualificationDto(dto: DisqualificationDto): Disqualificati
 
 async function remoteOrFallback<TDto, TUi>(request: () => Promise<TDto[]>, fallback: TUi[], map: (dto: TDto) => TUi): Promise<TUi[]> {
   if (useDemo) return fallback;
-  try {
-    const result = await request();
-    return result.length > 0 ? result.map(map) : fallback;
-  } catch {
-    return fallback;
-  }
+  return (await request()).map(map);
 }
 
 export const projectApi = {
@@ -106,7 +101,7 @@ export const projectApi = {
   async get(projectId: string): Promise<Project> {
     const fallback = projects.find((project) => project.id === projectId) ?? projects[0];
     if (useDemo) return fallback;
-    try { return mapProjectDto(await apiRequest<ProjectDto>(`/api/projects/${projectId}`)); } catch { return fallback; }
+    return mapProjectDto(await apiRequest<ProjectDto>(`/api/projects/${projectId}`));
   },
   async requirements(projectId: string): Promise<Requirement[]> {
     return remoteOrFallback(() => apiRequest<RequirementDto[]>(`/api/projects/${projectId}/requirements`), requirements, mapRequirementDto);

@@ -1,7 +1,7 @@
 export type AgentDataSource = "api" | "demo" | "failure";
 
 export type AgentRunStatus = "queued" | "planning" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled";
-export type AgentStepStatus = "pending" | "running" | "completed" | "failed" | "blocked";
+export type AgentStepStatus = "pending" | "running" | "waiting_approval" | "completed" | "failed" | "blocked" | "cancelled";
 export type AgentApprovalStatus = "pending" | "approved" | "rejected";
 export type AgentOutputType = "requirement" | "risk" | "evidence" | "task" | "report" | "package";
 export type AgentOutputKind = "requirements" | "risk" | "evidence" | "consistency" | "amendment" | "task" | "package" | "audit";
@@ -99,7 +99,7 @@ export interface AgentRunBundle {
 }
 
 export interface AgentFailure {
-  code: "agent_aggregation_failed" | "invalid_agent_payload";
+  code: "agent_run_request_failed" | "invalid_agent_payload" | "demo_mode_disabled";
   message: string;
   retryable: boolean;
 }

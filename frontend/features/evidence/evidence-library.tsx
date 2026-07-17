@@ -54,9 +54,11 @@ const localFeedback = (message: string): MutationResult => ({
 export function EvidenceLibrary({
   initialAssets,
   source,
+  error,
 }: {
   initialAssets: EvidenceAsset[];
   source: DataSource;
+  error?: string;
 }) {
   const [assets, setAssets] = useState(initialAssets);
   const [selectedId, setSelectedId] = useState(initialAssets[0]?.id);
@@ -181,7 +183,48 @@ export function EvidenceLibrary({
     URL.revokeObjectURL(url);
   }
 
-  if (!selected) return null;
+  if (error && source === "api") {
+    return (
+      <div className="page evidence-page">
+        <header className="page-header">
+          <div className="page-title-group">
+            <h1>企业材料库</h1>
+            <p>将证书、主体、人员与项目案例维护为可复用、可验证的企业证据。</p>
+          </div>
+          <span className="data-source api">API 数据不可用</span>
+        </header>
+        <section className="panel empty-state" role="alert" aria-live="assertive">
+          <AlertTriangle size={20} aria-hidden="true" />
+          <strong>企业材料数据暂时不可用</strong>
+          <p>未能从 API 读取企业材料。请检查本地服务后重试；当前页面不会显示替代数据。</p>
+          <button className="button" type="button" onClick={() => window.location.reload()}>
+            重试读取
+          </button>
+        </section>
+      </div>
+    );
+  }
+
+  if (!selected) {
+    return (
+      <div className="page evidence-page">
+        <header className="page-header">
+          <div className="page-title-group">
+            <h1>企业材料库</h1>
+            <p>将证书、主体、人员与项目案例维护为可复用、可验证的企业证据。</p>
+          </div>
+          <span className={`data-source ${source}`}>
+            {source === "api" ? "API 数据" : "本地演示数据"}
+          </span>
+        </header>
+        <section className="panel empty-state">
+          <FileSearch size={20} aria-hidden="true" />
+          <strong>尚未上传企业材料</strong>
+          <p>上传材料后，可由后端解析并进入人工核验流程。</p>
+        </section>
+      </div>
+    );
+  }
   return (
     <div className="page evidence-page">
       <header className="page-header">

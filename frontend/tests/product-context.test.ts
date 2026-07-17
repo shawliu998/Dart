@@ -9,12 +9,19 @@ describe("product context", () => {
     expect(getProjectContext("/tasks")).toBeNull();
   });
 
-  it("derives demo metrics and exposes their source", () => {
-    const context = getProjectContext(`/projects/${DEMO_PROJECT_ID}/overview`);
+  it("derives demo metrics only when demo mode is explicitly enabled", () => {
+    const context = getProjectContext(`/projects/${DEMO_PROJECT_ID}/overview`, true);
     expect(context?.source).toBe("demo");
     expect(context?.fatalRiskCount).toBeGreaterThan(0);
     expect(context?.taskCount).toBeGreaterThan(0);
     expect(context?.packageBlockers).toBeGreaterThan(0);
+  });
+
+  it("does not derive demo context for a real project route", () => {
+    const context = getProjectContext(`/projects/${DEMO_PROJECT_ID}/overview`, false);
+    expect(context?.source).toBe("error");
+    expect(context?.sourceLabel).toContain("未回退演示");
+    expect(context?.taskCount).toBe(0);
   });
 
   it("calculates deadline labels from an explicit clock", () => {

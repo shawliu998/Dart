@@ -1,7 +1,8 @@
 import type { RequirementStatus, RiskLevel } from "@/lib/types";
 
 export type DataSource = "api" | "demo";
-export interface DataResult<T> { data: T; source: DataSource; }
+export interface DataResult<T> { data: T; source: DataSource; error?: string; }
+
 
 export interface EvidenceClaim {
   id: string;

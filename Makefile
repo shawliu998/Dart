@@ -1,7 +1,7 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
 
-.PHONY: help setup dev dev-infra down logs test lint seed demo generate-demo verify-demo acceptance acceptance-api verify clean
+.PHONY: help setup dev dev-infra down logs test lint seed demo generate-demo verify-demo acceptance acceptance-api verify desktop-dev desktop-build desktop-test verify-desktop clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "BidEvidence commands:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -47,6 +47,20 @@ acceptance-api: ## Validate a seeded running API and its real ZIP/audit artifact
 
 verify: ## Run the complete local delivery gate including E2E and production build
 	bash scripts/verify.sh
+
+desktop-dev: ## Build the local frontend if needed and start the Electron development host
+	bash scripts/desktop_dev.sh
+
+desktop-build: ## Build the Next standalone renderer and Electron host
+	cd frontend && npm run build
+	cd desktop && npm run build
+
+desktop-test: ## Run focused desktop backend, frontend, and Electron TypeScript checks
+	cd backend && .venv/bin/python -m pytest tests/test_desktop_local.py
+	cd frontend && npm run typecheck && npm run lint
+	cd desktop && npm run typecheck
+
+verify-desktop: desktop-test desktop-build ## Validate the P0 desktop development runtime
 
 clean: ## Remove disposable local caches (does not delete database volumes)
 	rm -rf backend/.pytest_cache backend/.ruff_cache frontend/.next frontend/coverage frontend/playwright-report frontend/test-results .data/acceptance .data/demo-delivery .data/service-acceptance .data/verify-runtime

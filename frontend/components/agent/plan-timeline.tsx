@@ -1,13 +1,15 @@
 import { CheckCircle2, CircleDashed, LoaderCircle, LockKeyhole, XCircle } from "lucide-react";
 import type { AgentStep, AgentStepStatus } from "@/lib/agent";
 
-const labels: Record<AgentStepStatus, string> = { pending: "未开始", running: "进行中", completed: "已完成", failed: "失败", blocked: "已阻塞" };
+const labels: Record<AgentStepStatus, string> = { pending: "未开始", running: "进行中", completed: "已完成", failed: "失败", blocked: "已阻塞", waiting_approval: "待审批", cancelled: "已取消" };
 const styles: Record<AgentStepStatus, string> = {
   pending: "border-slate-300 bg-slate-50 text-slate-500",
   running: "border-blue-300 bg-blue-50 text-blue-700",
   completed: "border-emerald-300 bg-emerald-50 text-emerald-700",
   failed: "border-red-300 bg-red-50 text-red-700",
   blocked: "border-amber-300 bg-amber-50 text-amber-800",
+  waiting_approval: "border-amber-300 bg-amber-50 text-amber-800",
+  cancelled: "border-slate-300 bg-slate-50 text-slate-500",
 };
 
 function Icon({ status }: { status: AgentStepStatus }) {

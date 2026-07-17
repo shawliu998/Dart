@@ -20,16 +20,19 @@ import {
   type MutationResult,
 } from "@/components/feedback/mutation-feedback";
 import { phaseApi } from "@/lib/api/phase2";
+import { DataUnavailableState } from "@/components/feedback/data-unavailable-state";
 import type { Amendment, DataSource } from "@/lib/phase-data/types";
 
 export function AmendmentWorkbench({
   projectId,
   initialAmendments,
   source,
+  loadError,
 }: {
   projectId: string;
   initialAmendments: Amendment[];
   source: DataSource;
+  loadError?: string;
 }) {
   const [items, setItems] = useState(initialAmendments);
   const [amendmentId, setAmendmentId] = useState(initialAmendments[0]?.id);
@@ -40,6 +43,9 @@ export function AmendmentWorkbench({
   const change =
     amendment?.changes.find((item) => item.id === changeId) ??
     amendment?.changes[0];
+  if (loadError) {
+    return <DataUnavailableState title="补充公告 API 数据不可用" message={loadError} />;
+  }
   if (!amendment || !change) return null;
 
   function exportReport() {

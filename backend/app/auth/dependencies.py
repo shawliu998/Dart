@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+import hmac
 from uuid import UUID
 
 from fastapi import Header, HTTPException, status
 
 from app.auth.tokens import decode_token
+from app.core.config import get_settings
 
 
 ROLES = {"admin", "bid_manager", "reviewer", "subject_matter_expert", "legal", "finance", "viewer"}
@@ -26,6 +28,23 @@ def get_principal(
     x_user_id: UUID | None = Header(default=None, alias="X-User-ID"),
     x_role: str | None = Header(default=None, alias="X-Role"),
 ) -> Principal:
+    settings = get_settings()
+    if settings.desktop_mode:
+        scheme, _, token = (authorization or "").partition(" ")
+        if (
+            scheme.lower() != "bearer"
+            or not token
+            or settings.desktop_bearer_token is None
+            or not hmac.compare_digest(token, settings.desktop_bearer_token)
+        ):
+            raise HTTPException(status_code=401, detail="desktop authorization required")
+        if settings.local_tenant_id is None or settings.local_user_id is None:
+            raise HTTPException(status_code=503, detail="desktop workspace is not initialized")
+        return Principal(
+            tenant_id=settings.local_tenant_id,
+            user_id=settings.local_user_id,
+            role="admin",
+        )
     if authorization:
         scheme, _, token = authorization.partition(" ")
         if scheme.lower() != "bearer" or not token:

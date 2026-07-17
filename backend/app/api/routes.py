@@ -28,7 +28,8 @@ from app.schemas.requirements import (
 )
 from app.services import documents as document_service
 from app.services import projects as project_service
-from app.services.extraction import detect_for_project, run_extraction_job
+from app.services.extraction import detect_for_project
+from app.services.jobs import process_next_job
 from app.services.review import (
     decide_disqualification,
     decide_requirement,
@@ -141,7 +142,7 @@ def parse_document(
     job = document_service.create_job(
         db, principal, job_type="document_parse", entity_id=document_id
     )
-    background.add_task(document_service.run_parse_job, job.id, principal)
+    background.add_task(process_next_job)
     return job
 
 
@@ -185,7 +186,7 @@ def extract_requirements(
     job = document_service.create_job(
         db, principal, job_type="requirement_extraction", entity_id=document.id
     )
-    background.add_task(run_extraction_job, job.id, principal)
+    background.add_task(process_next_job)
     return job
 
 

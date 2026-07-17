@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+import os
 from typing import Protocol, TypeVar
 
 from pydantic import BaseModel
@@ -12,6 +13,9 @@ T = TypeVar("T", bound=BaseModel)
 
 
 class LLMProvider(Protocol):
+    name: str
+    model: str
+
     async def structured_generate(
         self,
         *,
@@ -20,6 +24,10 @@ class LLMProvider(Protocol):
         output_schema: type[T],
         metadata: dict,
     ) -> T: ...
+
+
+class ProviderUnavailableError(RuntimeError):
+    """Raised before any model call when a provider is not explicitly available."""
 
 
 class MockLLMProvider:
@@ -118,3 +126,18 @@ class MockLLMProvider:
         if "证书" in text or "资质" in text:
             result.append("qualification_certificate")
         return result
+
+
+def get_requirement_provider(provider_name: str | None = None) -> LLMProvider:
+    """Return an explicitly approved provider for requirement extraction.
+
+    Live providers deliberately have no implicit implementation or credential lookup here.
+    A future adapter must be registered after explicit credential approval, schema validation,
+    source-evidence handling, and an auditable policy review.
+    """
+    selected = (provider_name or os.getenv("BIDEVIDENCE_LLM_PROVIDER") or "mock").strip().lower()
+    if selected == "mock":
+        return MockLLMProvider()
+    raise ProviderUnavailableError(
+        f"provider '{selected}' is not approved for local execution; use mock or register an approved adapter"
+    )

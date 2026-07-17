@@ -12,13 +12,11 @@ import {
   LoaderCircle,
   LockKeyhole,
   RefreshCw,
-  RotateCcw,
   ShieldAlert,
   ShieldCheck,
   UserCheck,
   XCircle,
 } from "lucide-react";
-import { agentApi } from "@/lib/api/agent";
 import type {
   AgentApproval,
   AgentDataResult,
@@ -28,6 +26,7 @@ import type {
   AgentStep,
   AgentStepStatus,
 } from "@/lib/agent";
+import { agentApi } from "@/lib/api/agent";
 import { SourceReference } from "./source-reference";
 
 const runLabels: Record<AgentRunStatus, string> = {
@@ -46,6 +45,8 @@ const stepLabels: Record<AgentStepStatus, string> = {
   completed: "已完成",
   failed: "执行失败",
   blocked: "已阻塞",
+  waiting_approval: "等待人工审批",
+  cancelled: "已取消",
 };
 
 const stepStyles: Record<AgentStepStatus, string> = {
@@ -54,6 +55,8 @@ const stepStyles: Record<AgentStepStatus, string> = {
   completed: "border-emerald-300 bg-emerald-50 text-emerald-800",
   failed: "border-red-300 bg-red-50 text-red-800",
   blocked: "border-amber-300 bg-amber-50 text-amber-900",
+  waiting_approval: "border-amber-300 bg-amber-50 text-amber-900",
+  cancelled: "border-slate-300 bg-slate-100 text-slate-500",
 };
 
 const severityStyles: Record<AgentOutput["severity"], string> = {
@@ -70,6 +73,7 @@ function StepIcon({ status }: { status: AgentStepStatus }) {
   if (status === "completed") return <CheckCircle2 aria-hidden="true" size={17} />;
   if (status === "running") return <LoaderCircle aria-hidden="true" size={17} />;
   if (status === "failed") return <XCircle aria-hidden="true" size={17} />;
+  if (status === "cancelled") return <XCircle aria-hidden="true" size={17} />;
   if (status === "blocked") return <LockKeyhole aria-hidden="true" size={17} />;
   return <CircleDashed aria-hidden="true" size={17} />;
 }
@@ -142,7 +146,29 @@ function StepTimeline({ steps }: { steps: AgentStep[] }) {
   );
 }
 
-function ApprovalQueue({ approvals }: { approvals: AgentApproval[] }) {
+function ApprovalQueue({ approvals, source }: { approvals: AgentApproval[]; source: "api" | "demo" }) {
+  const [reasonByApproval, setReasonByApproval] = useState<Record<string, string>>({});
+  const [submittingId, setSubmittingId] = useState<string | null>(null);
+  const [actionError, setActionError] = useState<string | null>(null);
+
+  async function decide(approval: AgentApproval, decision: "approve" | "reject") {
+    const reason = reasonByApproval[approval.id]?.trim();
+    if (!reason) {
+      setActionError("请填写审批理由后再提交；该理由会写入审计记录。");
+      return;
+    }
+    setActionError(null);
+    setSubmittingId(approval.id);
+    try {
+      await (decision === "approve" ? agentApi.approve(approval.id, { reason }) : agentApi.reject(approval.id, { reason }));
+      window.location.reload();
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "审批请求失败";
+      setActionError(`审批未提交：${message}`);
+      setSubmittingId(null);
+    }
+  }
+
   return (
     <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="agent-approvals-title">
       <div className="mb-4 flex items-center justify-between">
@@ -165,6 +191,23 @@ function ApprovalQueue({ approvals }: { approvals: AgentApproval[] }) {
               <div className="flex gap-4"><div><dt className="font-medium text-slate-800">所需角色</dt><dd className="mt-0.5 text-slate-600">{approval.requiredRole}</dd></div><div><dt className="font-medium text-slate-800">可逆性</dt><dd className="mt-0.5 text-slate-600">{approval.reversible ? "可撤销并保留审计" : "不可在运行中心撤销"}</dd></div></div>
             </dl>
             <div className="mt-3"><SourceReference source={approval.sourceReferences[0]} /></div>
+            {source === "api" && approval.status === "pending" && (
+              <div className="mt-4 rounded-lg border border-amber-200 bg-amber-50 p-3">
+                <label className="block text-xs font-semibold text-slate-900" htmlFor={`approval-reason-${approval.id}`}>审批理由</label>
+                <textarea
+                  id={`approval-reason-${approval.id}`}
+                  className="mt-2 min-h-20 w-full rounded-md border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  value={reasonByApproval[approval.id] ?? ""}
+                  onChange={(event) => setReasonByApproval((current) => ({ ...current, [approval.id]: event.target.value }))}
+                  placeholder="说明证据核验或拒绝原因；将写入不可变审计记录"
+                />
+                <div className="mt-3 flex flex-wrap gap-2">
+                  <button className="button bg-teal-700 text-white hover:bg-teal-800" type="button" disabled={submittingId === approval.id} onClick={() => decide(approval, "approve")}>{submittingId === approval.id ? "提交中…" : "批准"}</button>
+                  <button className="button border border-red-300 bg-white text-red-800 hover:bg-red-50" type="button" disabled={submittingId === approval.id} onClick={() => decide(approval, "reject")}>拒绝</button>
+                </div>
+                {actionError && <p className="mt-2 text-xs font-medium text-red-700" role="alert">{actionError}</p>}
+              </div>
+            )}
             <Link className="mt-3 inline-flex min-h-10 w-full items-center justify-center gap-2 rounded-md bg-teal-700 px-3 py-2 text-sm font-semibold text-white hover:bg-teal-800 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-2" href={approval.href}>
               {approval.destinationLabel}<ArrowRight aria-hidden="true" size={14} />
             </Link>
@@ -196,7 +239,7 @@ function OutputGrid({ outputs }: { outputs: AgentOutput[] }) {
   );
 }
 
-function FailureState({ result, onDemo }: { result: Extract<AgentDataResult<AgentRunBundle>, { source: "failure" }>; onDemo: () => void }) {
+function FailureState({ result }: { result: Extract<AgentDataResult<AgentRunBundle>, { source: "failure" }> }) {
   return (
     <section className="mx-auto max-w-2xl rounded-xl border border-red-200 bg-white p-8 text-center shadow-sm" role="alert">
       <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-red-50 text-red-700"><AlertOctagon aria-hidden="true" size={24} /></span>
@@ -205,15 +248,14 @@ function FailureState({ result, onDemo }: { result: Extract<AgentDataResult<Agen
       <p className="mt-2 text-xs font-medium text-red-700">为避免混淆生产数据，系统没有自动切换到演示结果。</p>
       <div className="mt-5 flex flex-wrap justify-center gap-3">
         <button className="button" type="button" onClick={() => window.location.reload()}><RefreshCw aria-hidden="true" size={14} />刷新重试</button>
-        <button className="button primary" type="button" onClick={onDemo}><RotateCcw aria-hidden="true" size={14} />显式打开本地演示</button>
       </div>
     </section>
   );
 }
 
-export function AgentWorkspace({ initialResult, projectId }: { initialResult: AgentDataResult<AgentRunBundle>; projectId: string }) {
-  const [result, setResult] = useState(initialResult);
-  if (result.source === "failure") return <FailureState result={result} onDemo={() => setResult(agentApi.getDemoRun(projectId))} />;
+export function AgentWorkspace({ initialResult }: { initialResult: AgentDataResult<AgentRunBundle> }) {
+  const result = initialResult;
+  if (result.source === "failure") return <FailureState result={result} />;
   return (
     <div className="page space-y-4 pb-8">
       <RunSummary bundle={result.data} source={result.source} />
@@ -230,7 +272,7 @@ export function AgentWorkspace({ initialResult, projectId }: { initialResult: Ag
       </section>
       <div className="grid items-start gap-4 xl:grid-cols-[minmax(0,1.45fr)_minmax(340px,.75fr)]">
         <StepTimeline steps={result.data.steps} />
-        <ApprovalQueue approvals={result.data.approvals} />
+        <ApprovalQueue approvals={result.data.approvals} source={result.source} />
       </div>
       <OutputGrid outputs={result.data.outputs} />
       <aside className="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4 text-xs leading-5 text-slate-600">

@@ -4,6 +4,22 @@
 
 BidEvidence 将招标文件转成可执行的合规矩阵，并把要求、企业证据、确定性规则、跨文件冲突、公告影响、整改任务、最终文件包和审计串成一个闭环。主界面是项目工作台和矩阵，不是聊天框。
 
+## 桌面开发闭环（P0）
+
+桌面宿主不需要 Docker。它在 Electron 内启动 loopback FastAPI 和 Next standalone，使用
+`userData/data/workspace.sqlite3` 与受控的本地文件目录；每次启动的 Bearer Token 仅在
+主进程、Next 服务端代理与 FastAPI 之间传递，不进入 renderer。
+
+```bash
+make desktop-test
+make desktop-build
+make desktop-dev
+```
+
+`desktop-dev` 使用仓库的 `backend/.venv`、`frontend/.next/standalone` 和 `desktop/`
+依赖，首次运行请先执行 `make setup` 以及 `cd desktop && npm install`。当前是开发宿主，
+尚未提供签名或可公开分发的安装包。
+
 ## 已实现的 MVP
 
 ```text

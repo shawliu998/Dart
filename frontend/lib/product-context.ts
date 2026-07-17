@@ -1,4 +1,3 @@
-import { createDemoAgentSnapshot } from "@/lib/agent";
 import { DEMO_PROJECT_ID, projects, requirements } from "@/lib/demo/data";
 import { packageChecks, remediationTasks } from "@/lib/phase-data/demo";
 import type { Project } from "@/lib/types";
@@ -35,14 +34,17 @@ export function formatDeadlineRemaining(deadline: string, now = DEMO_NOW) {
   return `${Math.floor(hours / 24)} 天 ${hours % 24} 小时`;
 }
 
-/** Synchronous shell context is transparently derived from the deterministic demo snapshot. */
-export function getProjectContext(pathname: string): ProjectContext | null {
+/**
+ * The synchronous context exists solely for the explicitly enabled demo.
+ * Production project context must be loaded from the local API instead.
+ */
+export function getProjectContext(pathname: string, demoMode = process.env.NEXT_PUBLIC_DEMO_MODE === "true"): ProjectContext | null {
   const id = projectIdFromPath(pathname);
   if (!id) return null;
+  if (!demoMode) return { id, project: null, name: "项目数据加载中", code: "API PENDING", stage: "等待本地 API", deadline: "待同步", deadlineLabel: "截止时间待同步", fatalRiskCount: 0, taskCount: 0, packageBlockers: 0, source: "error", sourceLabel: "等待 API 聚合 · 未回退演示" };
   const project = projects.find((item) => item.id === id) ?? null;
   if (!project) return { id, project: null, name: `项目 ${id.slice(0, 8)}`, code: "未同步编号", stage: "数据不可用", deadline: "待同步", deadlineLabel: "截止时间不可用", fatalRiskCount: 0, taskCount: 0, packageBlockers: 0, source: "error", sourceLabel: "项目聚合失败" };
   const isPrimaryDemo = id === DEMO_PROJECT_ID;
-  const snapshot = isPrimaryDemo ? createDemoAgentSnapshot() : null;
   return {
     id,
     project,
@@ -55,7 +57,7 @@ export function getProjectContext(pathname: string): ProjectContext | null {
     taskCount: isPrimaryDemo ? remediationTasks.filter((item) => item.status !== "done").length : project.taskCount,
     packageBlockers: isPrimaryDemo ? packageChecks.filter((item) => item.status === "failed").length : 0,
     source: "demo",
-    sourceLabel: snapshot ? `确定性演示 · ${snapshot.updatedAt}` : "项目清单演示 · 无阶段聚合",
+    sourceLabel: "确定性演示 · 项目清单聚合",
   };
 }
 

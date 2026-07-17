@@ -12,6 +12,10 @@ export default defineConfig({
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
     command: "npm run dev -- --port 3100",
+    env: {
+      ...process.env,
+      NEXT_PUBLIC_DEMO_MODE: "true",
+    },
     url: "http://localhost:3100/projects",
     reuseExistingServer: !process.env.CI,
     timeout: 120_000,

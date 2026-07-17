@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 from sqlalchemy import select
 
-from app.agents.provider import MockLLMProvider
+from app.agents.provider import get_requirement_provider
 from app.audit.service import append_event, stable_hash
 from app.auth.dependencies import Principal
 from app.db.session import SessionLocal
@@ -55,7 +55,7 @@ async def run_extraction_job(job_id: UUID, principal: Principal) -> None:
         )
         job.status, job.progress, job.current_step = "running", 5, "classifying_pages"
         db.commit()
-        provider = MockLLMProvider()
+        provider = get_requirement_provider()
         added = 0
         for index, page in enumerate(pages, start=1):
             batch = await provider.structured_generate(
@@ -111,12 +111,22 @@ async def run_extraction_job(job_id: UUID, principal: Principal) -> None:
                     tenant_id=principal.tenant_id,
                     project_id=document.project_id,
                     task_type="requirement_extraction",
-                    provider="mock",
+                    provider=provider.name,
                     model=provider.model,
                     prompt_version=PROMPT_VERSION,
                     input_hash=stable_hash(page.raw_text),
                     output_hash=stable_hash(batch.model_dump(mode="json")),
                     status="completed",
+                    output_schema=RequirementBatch.__name__,
+                    source_document_id=document.id,
+                    source_page=page.page_number,
+                    metadata_json={
+                        "schema": RequirementBatch.__name__,
+                        "source": {"document_id": str(document.id), "page": page.page_number},
+                        "result_count": len(batch.results),
+                        "manual_review_count": sum(item.confidence < 0.70 for item in batch.results),
+                        "content_stored": False,
+                    },
                 )
             )
             job.progress = 10 + int(80 * index / max(1, len(pages)))

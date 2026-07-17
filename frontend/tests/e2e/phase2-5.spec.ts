@@ -2,10 +2,8 @@ import { expect, test } from "@playwright/test";
 
 const projectId = "8b6b7330-8fe3-4a95-85df-2a5a9183fe01";
 
-test("explicit demo login opens the project portfolio", async ({ page }) => {
+test("legacy login route redirects to the project workbench", async ({ page }) => {
   await page.goto("/login");
-  await expect(page.getByRole("heading", { name: "登录工作台" })).toBeVisible();
-  await page.getByRole("button", { name: "进入本地演示" }).click();
   await expect(page.getByRole("heading", { name: "投标项目" })).toBeVisible();
 });
 

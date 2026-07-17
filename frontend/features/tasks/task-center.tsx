@@ -18,6 +18,7 @@ import {
   X,
 } from "lucide-react";
 import { phaseApi } from "@/lib/api/phase2";
+import { DataUnavailableState } from "@/components/feedback/data-unavailable-state";
 import {
   MutationFeedback,
   type MutationResult,
@@ -43,10 +44,12 @@ export function TaskCenter({
   projectId,
   initialTasks,
   source,
+  loadError,
 }: {
   projectId: string;
   initialTasks: RemediationTask[];
   source: DataSource;
+  loadError?: string;
 }) {
   const [tasks, setTasks] = useState(initialTasks);
   const [view, setView] = useState<"kanban" | "table">("kanban");
@@ -128,6 +131,9 @@ export function TaskCenter({
     setSelectedId(draft.id);
     setNewTitle("");
     setCreateOpen(false);
+  }
+  if (loadError) {
+    return <DataUnavailableState title="整改任务 API 数据不可用" message={loadError} />;
   }
   if (!selected) return null;
   return (

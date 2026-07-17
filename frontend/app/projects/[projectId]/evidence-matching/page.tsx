@@ -4,5 +4,12 @@ import { EvidenceMatchingWorkbench } from "@/features/evidence/evidence-matching
 export default async function EvidenceMatchingPage({ params }: { params: Promise<{ projectId: string }> }) {
   const { projectId } = await params;
   const result = await phaseApi.evidenceMatches(projectId);
-  return <EvidenceMatchingWorkbench projectId={projectId} initialGroups={result.data} source={result.source} />;
+  return (
+    <EvidenceMatchingWorkbench
+      projectId={projectId}
+      initialGroups={result.data}
+      source={result.source}
+      error={result.error}
+    />
+  );
 }

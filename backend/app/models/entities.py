@@ -2,16 +2,18 @@ from __future__ import annotations
 
 from datetime import date, datetime
 from decimal import Decimal
-from uuid import UUID
+from uuid import UUID, uuid4
 
 from sqlalchemy import (
     JSON,
     Boolean,
+    CheckConstraint,
     DateTime,
     Date,
     Float,
     ForeignKey,
     Integer,
+    Index,
     Numeric,
     String,
     Text,
@@ -137,6 +139,126 @@ class AsyncJob(UUIDAuditMixin, Base):
     current_step: Mapped[str] = mapped_column(String(200), default="queued")
     error: Mapped[str | None] = mapped_column(Text, nullable=True)
     retryable: Mapped[bool] = mapped_column(Boolean, default=True)
+    # Durable queue fields (P1 agent runtime); all additive and nullable/defaulted.
+    lease_owner: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    lease_expires_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    heartbeat_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    attempt_count: Mapped[int] = mapped_column(Integer, default=0)
+    max_attempts: Mapped[int] = mapped_column(Integer, default=3)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    input_revision: Mapped[int] = mapped_column(Integer, default=1)
+    result_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    next_retry_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AgentRun(UUIDAuditMixin, Base):
+    __tablename__ = "agent_runs"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('queued', 'planning', 'running', 'waiting_approval', 'completed', "
+            "'failed', 'cancelled')",
+            name="ck_agent_runs_status",
+        ),
+        Index("ix_agent_runs_tenant_project", "tenant_id", "project_id"),
+    )
+
+    project_id: Mapped[UUID] = mapped_column(ForeignKey("tender_projects.id"), index=True)
+    workflow_type: Mapped[str] = mapped_column(String(100))
+    goal: Mapped[str] = mapped_column(Text)
+    status: Mapped[str] = mapped_column(String(30), default="queued")
+    current_step: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    input_revision: Mapped[int] = mapped_column(Integer, default=1)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    cancel_requested: Mapped[bool] = mapped_column(Boolean, default=False)
+    error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AgentStepRun(UUIDAuditMixin, Base):
+    __tablename__ = "agent_step_runs"
+    __table_args__ = (
+        UniqueConstraint("run_id", "sequence", name="uq_agent_step_runs_run_sequence"),
+        CheckConstraint(
+            "status IN ('pending', 'running', 'waiting_approval', 'completed', 'failed', "
+            "'blocked', 'cancelled')",
+            name="ck_agent_step_runs_status",
+        ),
+        Index("ix_agent_step_runs_tenant_run", "tenant_id", "run_id"),
+    )
+
+    run_id: Mapped[UUID] = mapped_column(ForeignKey("agent_runs.id"), index=True)
+    step_key: Mapped[str] = mapped_column(String(100))
+    sequence: Mapped[int] = mapped_column(Integer)
+    status: Mapped[str] = mapped_column(String(30), default="pending")
+    attempt: Mapped[int] = mapped_column(Integer, default=1)
+    input_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    output_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+
+class AgentEvent(Base):
+    """Append-only runtime event; corrections are represented by a later event."""
+
+    __tablename__ = "agent_events"
+    __table_args__ = (
+        UniqueConstraint("run_id", "sequence", name="uq_agent_events_run_sequence"),
+        Index("ix_agent_events_tenant_run", "tenant_id", "run_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID] = mapped_column(index=True)
+    run_id: Mapped[UUID] = mapped_column(ForeignKey("agent_runs.id"), index=True)
+    step_run_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("agent_step_runs.id"), nullable=True, index=True
+    )
+    event_type: Mapped[str] = mapped_column(String(100))
+    sequence: Mapped[int] = mapped_column(Integer)
+    payload: Mapped[dict] = mapped_column(JSON, default=dict)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
+
+
+class ApprovalRequest(UUIDAuditMixin, Base):
+    __tablename__ = "approval_requests"
+    __table_args__ = (
+        CheckConstraint(
+            "status IN ('pending', 'approved', 'rejected', 'cancelled')",
+            name="ck_approval_requests_status",
+        ),
+        Index("ix_approval_requests_tenant_run", "tenant_id", "run_id"),
+    )
+
+    run_id: Mapped[UUID] = mapped_column(ForeignKey("agent_runs.id"), index=True)
+    step_run_id: Mapped[UUID] = mapped_column(ForeignKey("agent_step_runs.id"), index=True)
+    approval_type: Mapped[str] = mapped_column(String(100))
+    status: Mapped[str] = mapped_column(String(20), default="pending")
+    title: Mapped[str] = mapped_column(String(300))
+    description: Mapped[str] = mapped_column(Text)
+    impact_summary: Mapped[str] = mapped_column(Text)
+    reversible: Mapped[bool] = mapped_column(Boolean, default=True)
+    requested_role: Mapped[str] = mapped_column(String(40))
+    decision_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class AgentArtifact(UUIDAuditMixin, Base):
+    __tablename__ = "agent_artifacts"
+    __table_args__ = (Index("ix_agent_artifacts_tenant_run", "tenant_id", "run_id"),)
+
+    run_id: Mapped[UUID] = mapped_column(ForeignKey("agent_runs.id"), index=True)
+    step_run_id: Mapped[UUID | None] = mapped_column(
+        ForeignKey("agent_step_runs.id"), nullable=True, index=True
+    )
+    artifact_type: Mapped[str] = mapped_column(String(100))
+    title: Mapped[str] = mapped_column(String(300))
+    storage_key: Mapped[str] = mapped_column(String(500))
+    content_hash: Mapped[str] = mapped_column(String(64))
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
 
 
 class AuditEvent(Base):
@@ -171,6 +293,11 @@ class ModelRun(Base):
     input_hash: Mapped[str] = mapped_column(String(64))
     output_hash: Mapped[str] = mapped_column(String(64))
     status: Mapped[str] = mapped_column(String(20))
+    output_schema: Mapped[str | None] = mapped_column(String(120), nullable=True)
+    source_document_id: Mapped[UUID | None] = mapped_column(nullable=True)
+    source_page: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 

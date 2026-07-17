@@ -24,6 +24,7 @@ import {
   X,
 } from "lucide-react";
 import { phaseApi } from "@/lib/api/phase2";
+import { DataUnavailableState } from "@/components/feedback/data-unavailable-state";
 import { projectApi } from "@/lib/api/projects";
 import {
   MutationFeedback,
@@ -40,11 +41,13 @@ export function PackageCenter({
   initialTree,
   initialChecks,
   source,
+  loadError,
 }: {
   projectId: string;
   initialTree: PackageNode[];
   initialChecks: PackageCheck[];
   source: DataSource;
+  loadError?: string;
 }) {
   const [tree, setTree] = useState(initialTree);
   const [checks, setChecks] = useState(initialChecks);
@@ -277,6 +280,9 @@ export function PackageCenter({
       );
     }
     setBuildOpen(false);
+  }
+  if (loadError) {
+    return <DataUnavailableState title="文件封装 API 数据不可用" message={loadError} />;
   }
   if (!selected) return null;
   return (

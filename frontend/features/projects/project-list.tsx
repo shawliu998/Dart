@@ -8,7 +8,7 @@ import { RiskBadge } from "@/components/ui/badges";
 import type { Project } from "@/lib/types";
 import { DEMO_NOW } from "@/lib/product-context";
 
-export function ProjectList({ initialProjects }: { initialProjects: Project[] }) {
+export function ProjectList({ initialProjects, source }: { initialProjects: Project[]; source: "api" | "demo" }) {
   const [query, setQuery] = useState("");
   const [stage, setStage] = useState("all");
   const [risk, setRisk] = useState("all");
@@ -32,10 +32,10 @@ export function ProjectList({ initialProjects }: { initialProjects: Project[] })
 
       <section className="stats-grid" aria-label="项目统计">
         <Stat icon={<CheckSquare2 size={15} />} label="进行中项目" value={String(initialProjects.length)} note={`覆盖 ${stageCount} 个当前阶段`} />
-        <Stat icon={<CalendarDays size={15} />} label="7 天内截止" value={String(dueWithinSevenDays)} note="基于确定性演示时点计算" />
+        <Stat icon={<CalendarDays size={15} />} label="7 天内截止" value={String(dueWithinSevenDays)} note={source === "demo" ? "基于确定性演示时点计算" : "按本地项目截止时间计算"} />
         <Stat fatal icon={<AlertOctagon size={15} />} label="致命风险" value={String(fatalRisks)} note="按项目风险字段汇总" />
         <Stat icon={<Clock3 size={15} />} label="项目任务" value={String(taskCount)} note="来自项目清单快照" />
-        <Stat icon={<CheckSquare2 size={15} />} label="数据来源" value="Demo" note="确定性演示项目清单" />
+        <Stat icon={<CheckSquare2 size={15} />} label="数据来源" value={source === "demo" ? "Demo" : "本地 API"} note={source === "demo" ? "确定性演示项目清单" : "仅显示已持久化项目"} />
       </section>
 
       <section className="panel" aria-label="项目列表">

@@ -1,5 +1,10 @@
 from app.models.entities import (  # noqa: F401
     AsyncJob,
+    AgentArtifact,
+    AgentEvent,
+    AgentRun,
+    AgentStepRun,
+    ApprovalRequest,
     Amendment,
     AmendmentChange,
     AmendmentImpact,
