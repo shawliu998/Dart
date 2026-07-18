@@ -199,7 +199,9 @@ def list_requirements(
         db.scalars(
             select(Requirement)
             .where(
-                Requirement.project_id == project_id, Requirement.tenant_id == principal.tenant_id
+                Requirement.project_id == project_id,
+                Requirement.tenant_id == principal.tenant_id,
+                Requirement.is_current.is_(True),
             )
             .order_by(Requirement.source_page, Requirement.requirement_code)
         )
@@ -259,6 +261,7 @@ def list_disqualifications(
             .join(Requirement, Requirement.id == DisqualificationRule.requirement_id)
             .where(
                 Requirement.project_id == project_id,
+                Requirement.is_current.is_(True),
                 DisqualificationRule.tenant_id == principal.tenant_id,
             )
         )

@@ -67,7 +67,11 @@ def export_project_artifacts(db: Session, principal: Principal, project_id: UUID
     requirements = list(
         db.scalars(
             select(Requirement)
-            .where(Requirement.project_id == project_id, Requirement.tenant_id == principal.tenant_id)
+            .where(
+                Requirement.project_id == project_id,
+                Requirement.tenant_id == principal.tenant_id,
+                Requirement.is_current.is_(True),
+            )
             .order_by(Requirement.source_page, Requirement.requirement_code)
         )
     )

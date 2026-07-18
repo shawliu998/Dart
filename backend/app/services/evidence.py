@@ -329,6 +329,7 @@ def suggest_matches(
             select(Requirement).where(
                 Requirement.project_id == project_id,
                 Requirement.tenant_id == principal.tenant_id,
+                Requirement.is_current.is_(True),
             )
         )
     )
@@ -393,6 +394,7 @@ def suggest_matches(
             .join(Requirement, Requirement.id == EvidenceMatch.requirement_id)
             .where(
                 Requirement.project_id == project_id,
+                Requirement.is_current.is_(True),
                 EvidenceMatch.tenant_id == principal.tenant_id,
             )
         )

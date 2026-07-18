@@ -91,9 +91,12 @@ def run_compliance(
     """
     existing = list(
         db.scalars(
-            select(ComplianceCheck).where(
+            select(ComplianceCheck)
+            .join(Requirement, Requirement.id == ComplianceCheck.requirement_id, isouter=True)
+            .where(
                 ComplianceCheck.project_id == project_id,
                 ComplianceCheck.tenant_id == principal.tenant_id,
+                (ComplianceCheck.requirement_id.is_(None) | Requirement.is_current.is_(True)),
             )
         )
     )
@@ -105,6 +108,7 @@ def run_compliance(
             select(Requirement).where(
                 Requirement.project_id == project_id,
                 Requirement.tenant_id == principal.tenant_id,
+                Requirement.is_current.is_(True),
             )
         )
     )
@@ -112,12 +116,14 @@ def run_compliance(
         check.requirement_id for check in existing if check.reviewed_by is not None
     }
     if force_recompute:
+        current_requirement_ids = [item.id for item in requirements]
         db.execute(
             delete(ComplianceCheck).where(
                 ComplianceCheck.project_id == project_id,
                 ComplianceCheck.tenant_id == principal.tenant_id,
                 ComplianceCheck.check_type == "evidence_presence",
                 ComplianceCheck.reviewed_by.is_(None),
+                ComplianceCheck.requirement_id.in_(current_requirement_ids),
             )
         )
         db.flush()
@@ -197,9 +203,12 @@ def run_compliance(
     db.commit()
     return list(
         db.scalars(
-            select(ComplianceCheck).where(
+            select(ComplianceCheck)
+            .join(Requirement, Requirement.id == ComplianceCheck.requirement_id, isouter=True)
+            .where(
                 ComplianceCheck.project_id == project_id,
                 ComplianceCheck.tenant_id == principal.tenant_id,
+                (ComplianceCheck.requirement_id.is_(None) | Requirement.is_current.is_(True)),
             )
         )
     )

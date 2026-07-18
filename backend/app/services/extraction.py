@@ -183,7 +183,9 @@ def detect_for_project(db, principal: Principal, project_id: UUID) -> int:
     requirements = list(
         db.scalars(
             select(Requirement).where(
-                Requirement.project_id == project_id, Requirement.tenant_id == principal.tenant_id
+                Requirement.project_id == project_id,
+                Requirement.tenant_id == principal.tenant_id,
+                Requirement.is_current.is_(True),
             )
         )
     )

@@ -712,7 +712,15 @@ def process_agent_run(run_id: UUID) -> bool:
                     for document in completed_documents:
                         job = create_job(db, principal, job_type="requirement_extraction", entity_id=document.id)
                         asyncio.run(run_extraction_job(job.id, principal))
-                    count = db.scalar(select(func.count()).select_from(Requirement).where(Requirement.project_id == run.project_id, Requirement.tenant_id == run.tenant_id)) or 0
+                    count = db.scalar(
+                        select(func.count())
+                        .select_from(Requirement)
+                        .where(
+                            Requirement.project_id == run.project_id,
+                            Requirement.tenant_id == run.tenant_id,
+                            Requirement.is_current.is_(True),
+                        )
+                    ) or 0
                     db.add(AgentArtifact(tenant_id=run.tenant_id, run_id=run.id, step_run_id=step.id, artifact_type="requirements", title="要求候选清单", storage_key=f"runtime://{run.id}/requirements", content_hash=stable_hash({"count": count}), metadata_json={"count": count, "review_state": "manual_review"}, created_by=principal.user_id))
                     _complete(db, run, step, {"requirement_count": count})
                     if autonomous and count == 0:
@@ -731,6 +739,7 @@ def process_agent_run(run_id: UUID) -> bool:
                                 select(Requirement).where(
                                     Requirement.project_id == run.project_id,
                                     Requirement.tenant_id == run.tenant_id,
+                                    Requirement.is_current.is_(True),
                                     Requirement.human_verified.is_(False),
                                     Requirement.extraction_confidence >= Decimal("0.800"),
                                     Requirement.source_document_id.is_not(None),

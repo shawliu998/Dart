@@ -65,6 +65,7 @@ def build_agent_context(db: Session, run: AgentRun) -> AgentContext:
             select(Requirement).where(
                 Requirement.project_id == run.project_id,
                 Requirement.tenant_id == run.tenant_id,
+                Requirement.is_current.is_(True),
             )
         )
     )
@@ -86,9 +87,12 @@ def build_agent_context(db: Session, run: AgentRun) -> AgentContext:
     }
     responses = list(
         db.scalars(
-            select(ResponseItem).where(
+            select(ResponseItem)
+            .join(Requirement, Requirement.id == ResponseItem.requirement_id)
+            .where(
                 ResponseItem.project_id == run.project_id,
                 ResponseItem.tenant_id == run.tenant_id,
+                Requirement.is_current.is_(True),
             )
         )
     )
@@ -137,9 +141,12 @@ def build_agent_context(db: Session, run: AgentRun) -> AgentContext:
     claimed_asset_ids = set(claim_asset_ids)
     checks = list(
         db.scalars(
-            select(ComplianceCheck).where(
+            select(ComplianceCheck)
+            .join(Requirement, Requirement.id == ComplianceCheck.requirement_id, isouter=True)
+            .where(
                 ComplianceCheck.project_id == run.project_id,
                 ComplianceCheck.tenant_id == run.tenant_id,
+                (ComplianceCheck.requirement_id.is_(None) | Requirement.is_current.is_(True)),
             )
         )
     )

@@ -212,6 +212,7 @@ def generate_project_responses(
     requirement_filters = [
         Requirement.project_id == project_id,
         Requirement.tenant_id == principal.tenant_id,
+        Requirement.is_current.is_(True),
     ]
     if not allow_provisional:
         requirement_filters.append(Requirement.human_verified.is_(True))
@@ -317,7 +318,12 @@ def generate_project_responses(
     return list(
         db.scalars(
             select(ResponseItem)
-            .where(ResponseItem.project_id == project_id, ResponseItem.tenant_id == principal.tenant_id)
+            .join(Requirement, Requirement.id == ResponseItem.requirement_id)
+            .where(
+                ResponseItem.project_id == project_id,
+                ResponseItem.tenant_id == principal.tenant_id,
+                Requirement.is_current.is_(True),
+            )
             .order_by(ResponseItem.created_at)
         )
     )

@@ -156,6 +156,7 @@ def list_evidence_matches(
             .where(
                 EvidenceMatch.tenant_id == principal.tenant_id,
                 Requirement.project_id == project_id,
+                Requirement.is_current.is_(True),
             )
         )
     )
@@ -205,9 +206,11 @@ def list_responses(
     items = list(
         db.scalars(
             select(ResponseItem)
+            .join(Requirement, Requirement.id == ResponseItem.requirement_id)
             .where(
                 ResponseItem.project_id == project_id,
                 ResponseItem.tenant_id == principal.tenant_id,
+                Requirement.is_current.is_(True),
             )
             .order_by(ResponseItem.created_at)
         )
@@ -276,9 +279,12 @@ def list_compliance(
     return [
         model_dict(item)
         for item in db.scalars(
-            select(ComplianceCheck).where(
+            select(ComplianceCheck)
+            .join(Requirement, Requirement.id == ComplianceCheck.requirement_id, isouter=True)
+            .where(
                 ComplianceCheck.project_id == project_id,
                 ComplianceCheck.tenant_id == principal.tenant_id,
+                (ComplianceCheck.requirement_id.is_(None) | Requirement.is_current.is_(True)),
             )
         )
     ]

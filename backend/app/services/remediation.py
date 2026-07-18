@@ -156,6 +156,7 @@ def create_agent_remediation_tasks(
         .where(
             ResponseItem.project_id == project_id,
             ResponseItem.tenant_id == principal.tenant_id,
+            Requirement.is_current.is_(True),
             ResponseItem.status.in_(("missing_evidence", "needs_review")),
         )
     ).all()
