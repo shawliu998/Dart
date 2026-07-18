@@ -9,7 +9,14 @@ from sqlalchemy.orm import Session
 
 from app.audit.service import append_event
 from app.auth.dependencies import Principal
-from app.models.entities import ComplianceCheck, RemediationTask, Requirement, ResponseItem
+from app.models.entities import (
+    ComplianceCheck,
+    Document,
+    DocumentPage,
+    RemediationTask,
+    Requirement,
+    ResponseItem,
+)
 
 
 def _existing_source_ids(
@@ -29,13 +36,86 @@ def _existing_source_ids(
     )
 
 
+def _persist_created_tasks(
+    db: Session,
+    principal: Principal,
+    project_id: UUID,
+    tasks: list[RemediationTask],
+) -> None:
+    db.flush()
+    for task in tasks:
+        append_event(
+            db,
+            principal,
+            action="task.created_by_agent",
+            entity_type="task",
+            entity_id=task.id,
+            project_id=project_id,
+            after={
+                "source_type": task.source_type,
+                "source_id": str(task.source_id),
+                "priority": task.priority,
+                "status": task.status,
+            },
+        )
+    db.commit()
+
+
+def create_ocr_remediation_tasks(
+    db: Session,
+    principal: Principal,
+    project_id: UUID,
+) -> list[RemediationTask]:
+    """Create one source-bound task per document that still needs OCR."""
+    created: list[RemediationTask] = []
+    existing_ocr = _existing_source_ids(db, principal, project_id, "agent_ocr_required")
+    document_pages = db.execute(
+        select(Document, DocumentPage)
+        .join(DocumentPage, DocumentPage.document_id == Document.id)
+        .where(
+            Document.project_id == project_id,
+            Document.tenant_id == principal.tenant_id,
+            Document.deleted_at.is_(None),
+        )
+        .order_by(Document.filename, DocumentPage.page_number)
+    ).all()
+    ocr_pages: dict[UUID, tuple[Document, list[int]]] = {}
+    for document, page in document_pages:
+        if page.layout_json.get("ocr_required") is not True:
+            continue
+        entry = ocr_pages.setdefault(document.id, (document, []))
+        entry[1].append(page.page_number)
+    for document_id, (document, pages) in ocr_pages.items():
+        if document_id in existing_ocr:
+            continue
+        page_list = "、".join(str(page) for page in pages)
+        task = RemediationTask(
+            tenant_id=principal.tenant_id,
+            created_by=principal.user_id,
+            project_id=project_id,
+            source_type="agent_ocr_required",
+            source_id=document.id,
+            title=f"补充OCR文本：{document.filename}",
+            description=f"第{page_list}页未提取到文本；请运行OCR或上传可检索文本版本后重新分析。",
+            priority="high" if document.document_type == "tender_main" else "medium",
+            status="todo",
+            assignee_id=principal.user_id,
+        )
+        db.add(task)
+        created.append(task)
+    _persist_created_tasks(db, principal, project_id, created)
+    return created
+
+
 def create_agent_remediation_tasks(
     db: Session,
     principal: Principal,
     project_id: UUID,
 ) -> list[RemediationTask]:
     """Create missing tasks without changing existing human task state."""
-    created: list[RemediationTask] = []
+    created = create_ocr_remediation_tasks(db, principal, project_id)
+    new_tasks: list[RemediationTask] = []
+
     existing_checks = _existing_source_ids(
         db, principal, project_id, "agent_compliance_check"
     )
@@ -65,6 +145,7 @@ def create_agent_remediation_tasks(
         )
         db.add(task)
         created.append(task)
+        new_tasks.append(task)
 
     existing_responses = _existing_source_ids(
         db, principal, project_id, "agent_response_gap"
@@ -96,22 +177,7 @@ def create_agent_remediation_tasks(
         )
         db.add(task)
         created.append(task)
+        new_tasks.append(task)
 
-    db.flush()
-    for task in created:
-        append_event(
-            db,
-            principal,
-            action="task.created_by_agent",
-            entity_type="task",
-            entity_id=task.id,
-            project_id=project_id,
-            after={
-                "source_type": task.source_type,
-                "source_id": str(task.source_id),
-                "priority": task.priority,
-                "status": task.status,
-            },
-        )
-    db.commit()
+    _persist_created_tasks(db, principal, project_id, new_tasks)
     return created

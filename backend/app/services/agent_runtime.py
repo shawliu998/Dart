@@ -39,7 +39,10 @@ from app.services.evidence import extract_claims, list_assets, suggest_matches
 from app.services.exports import export_project_artifacts
 from app.services.project_profile import build_project_profile_candidates
 from app.services.projects import get_project
-from app.services.remediation import create_agent_remediation_tasks
+from app.services.remediation import (
+    create_agent_remediation_tasks,
+    create_ocr_remediation_tasks,
+)
 from app.services.response_quality import run_response_quality_checks
 from app.services.responses import generate_project_responses
 from app.services.review_workflows import run_compliance
@@ -693,6 +696,11 @@ def process_agent_run(run_id: UUID) -> bool:
                         "failed_files": failures,
                         "warning": "部分附件未解析，已跳过" if failures else None,
                     }
+                    ocr_tasks = create_ocr_remediation_tasks(
+                        db, principal, run.project_id
+                    )
+                    parse_summary["ocr_task_count"] = len(ocr_tasks)
+                    parse_summary["ocr_task_ids"] = [str(item.id) for item in ocr_tasks]
                     db.add(AgentArtifact(tenant_id=run.tenant_id, run_id=run.id, step_run_id=step.id, artifact_type="parse_summary", title="文件解析结果", storage_key=f"runtime://{run.id}/parse-summary", content_hash=stable_hash(parse_summary), metadata_json=parse_summary, created_by=principal.user_id))
                     _complete(db, run, step, parse_summary)
                 elif step.step_key == "extract_project_profile":

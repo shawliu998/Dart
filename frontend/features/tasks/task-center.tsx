@@ -510,7 +510,13 @@ function toFeedback(
 }
 function taskSourceHref(projectId: string, task: RemediationTask) {
   const route =
-    task.sourceType === "consistency"
+    task.sourceType === "agent_ocr_required"
+      ? "overview"
+      : task.sourceType === "agent_compliance_check" || task.sourceType === "evidence"
+        ? "evidence-matching"
+        : task.sourceType === "agent_response_gap"
+          ? "responses"
+          : task.sourceType === "consistency"
       ? "consistency"
       : task.sourceType === "amendment"
         ? "amendments"

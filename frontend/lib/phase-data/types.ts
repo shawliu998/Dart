@@ -116,7 +116,17 @@ export interface RemediationTask {
   owner: string;
   reviewer: string;
   dueDate: string;
-  sourceType: "requirement" | "disqualification" | "consistency" | "amendment" | "package" | "manual";
+  sourceType:
+    | "requirement"
+    | "evidence"
+    | "disqualification"
+    | "consistency"
+    | "amendment"
+    | "package"
+    | "manual"
+    | "agent_ocr_required"
+    | "agent_compliance_check"
+    | "agent_response_gap";
   sourceLabel: string;
   reason: string;
   evidence: string;

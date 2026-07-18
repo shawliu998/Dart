@@ -8,7 +8,7 @@ from sqlalchemy import select
 from app.auth.dependencies import Principal
 from app.db.base import utcnow
 from app.db.session import SessionLocal
-from app.models.entities import AgentArtifact, ComplianceCheck, DocumentPage
+from app.models.entities import AgentArtifact, ComplianceCheck, DocumentPage, RemediationTask
 from app.services.review_workflows import run_compliance
 
 
@@ -240,3 +240,12 @@ def test_parse_summary_counts_persisted_ocr_required_pages(client, demo) -> None
         assert artifact is not None
         assert artifact.metadata_json["ocr_required_count"] == 1
         assert pdf_path.name in artifact.metadata_json["ocr_files"]
+        assert artifact.metadata_json["ocr_task_count"] == 1
+        task = db.scalar(
+            select(RemediationTask).where(
+                RemediationTask.project_id == UUID(project_id),
+                RemediationTask.source_type == "agent_ocr_required",
+            )
+        )
+        assert task is not None
+        assert task.source_id == UUID(document_id)
