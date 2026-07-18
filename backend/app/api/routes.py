@@ -27,6 +27,7 @@ from app.schemas.requirements import (
     RequirementVerify,
 )
 from app.services import documents as document_service
+from app.services import reanalysis as reanalysis_service
 from app.services import projects as project_service
 from app.services.extraction import detect_for_project
 from app.services.jobs import process_next_job
@@ -146,19 +147,39 @@ def parse_document(
     return job
 
 
+@router.post("/documents/{document_id}/reanalyze", response_model=JobRead, status_code=202)
+def reanalyze_document(
+    document_id: UUID,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+):
+    require_write(principal)
+    document = document_service.get_document(db, principal, document_id)
+    try:
+        job = reanalysis_service.create_reanalysis_job(db, principal, document)
+    except reanalysis_service.ReanalysisConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    background.add_task(process_next_job)
+    return job
+
+
 @router.get("/documents/{document_id}/pages/{page_number}", response_model=PageRead)
 def get_page(
     document_id: UUID,
     page_number: int,
+    revision: int | None = None,
     db: Session = Depends(get_db),
     principal: Principal = Depends(get_principal),
 ):
-    document_service.get_document(db, principal, document_id)
+    document = document_service.get_document(db, principal, document_id)
+    selected_revision = revision if revision is not None else document.parse_revision
     page = db.scalar(
         select(DocumentPage).where(
             DocumentPage.document_id == document_id,
             DocumentPage.page_number == page_number,
             DocumentPage.tenant_id == principal.tenant_id,
+            DocumentPage.parse_revision == selected_revision,
         )
     )
     if page is None:

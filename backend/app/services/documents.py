@@ -156,7 +156,12 @@ def run_parse_job(job_id: UUID, principal: Principal) -> None:
             get_ocr_adapter(settings.ocr_mode, settings.ocr_languages),
         )
         job.progress, job.current_step = 55, "saving_pages"
-        db.execute(delete(DocumentPage).where(DocumentPage.document_id == document.id))
+        db.execute(
+            delete(DocumentPage).where(
+                DocumentPage.document_id == document.id,
+                DocumentPage.parse_revision == document.parse_revision,
+            )
+        )
         for page in pages:
             db.add(
                 DocumentPage(
@@ -164,6 +169,7 @@ def run_parse_job(job_id: UUID, principal: Principal) -> None:
                     created_by=principal.user_id,
                     document_id=document.id,
                     page_number=page.page_number,
+                    parse_revision=document.parse_revision,
                     raw_text=page.raw_text,
                     markdown=page.raw_text,
                     layout_json=page.layout_json,

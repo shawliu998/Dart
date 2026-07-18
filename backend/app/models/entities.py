@@ -79,9 +79,12 @@ class Document(UUIDAuditMixin, SoftDeleteMixin, Base):
 
 class DocumentPage(UUIDAuditMixin, Base):
     __tablename__ = "document_pages"
-    __table_args__ = (UniqueConstraint("document_id", "page_number", name="uq_document_page"),)
+    __table_args__ = (
+        UniqueConstraint("document_id", "page_number", "parse_revision", name="uq_document_page"),
+    )
     document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id"), index=True)
     page_number: Mapped[int]
+    parse_revision: Mapped[int] = mapped_column(Integer, default=1)
     raw_text: Mapped[str] = mapped_column(Text)
     markdown: Mapped[str] = mapped_column(Text)
     layout_json: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -152,6 +155,20 @@ class AsyncJob(UUIDAuditMixin, Base):
             ),
             postgresql_where=text(
                 "job_type = 'agent_run' AND status IN ('queued', 'running', 'retrying')"
+            ),
+        ),
+        Index(
+            "uq_async_jobs_active_document_analysis",
+            "tenant_id",
+            "entity_id",
+            unique=True,
+            sqlite_where=text(
+                "job_type IN ('document_parse', 'requirement_extraction', "
+                "'document_reanalysis') AND status IN ('queued', 'running', 'retrying')"
+            ),
+            postgresql_where=text(
+                "job_type IN ('document_parse', 'requirement_extraction', "
+                "'document_reanalysis') AND status IN ('queued', 'running', 'retrying')"
             ),
         ),
     )

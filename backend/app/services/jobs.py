@@ -16,6 +16,7 @@ from app.db.session import SessionLocal
 from app.db.base import utcnow
 from app.models.entities import AgentRun, AsyncJob
 from app.services.documents import run_parse_job
+from app.services.reanalysis import run_document_reanalysis_job
 from app.services.evidence import suggest_matches
 from app.services.extraction import run_extraction_job
 from app.services.packaging import validate_package
@@ -299,6 +300,11 @@ def dispatch_job(job_id: UUID, worker_id: str | None = None) -> bool:
                 error = job.error if job else "job not found"
         elif job_type == "requirement_extraction":
             asyncio.run(run_extraction_job(job_id, principal))
+            with SessionLocal() as db:
+                succeeded = (job := db.get(AsyncJob, job_id)) is not None and job.status == "completed"
+                error = job.error if job else "job not found"
+        elif job_type == "document_reanalysis":
+            asyncio.run(run_document_reanalysis_job(job_id, principal))
             with SessionLocal() as db:
                 succeeded = (job := db.get(AsyncJob, job_id)) is not None and job.status == "completed"
                 error = job.error if job else "job not found"
