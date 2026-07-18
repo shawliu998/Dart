@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 from decimal import Decimal
+from typing import Callable
 from uuid import UUID, uuid4
 
 from sqlalchemy import func, select
@@ -29,6 +30,21 @@ class ReanalysisConflict(ValueError):
 
 _ACTIVE_ANALYSIS_JOB_TYPES = ("document_parse", "requirement_extraction", "document_reanalysis")
 _ACTIVE_JOB_STATUSES = ("queued", "running", "retrying")
+
+
+def _assert_publish_rights(
+    db,
+    job: AsyncJob,
+    worker_id: str | None,
+    lease_valid: Callable[[], bool] | None,
+) -> None:
+    db.refresh(job)
+    if job.cancel_requested:
+        raise ReanalysisConflict("document reanalysis was cancelled")
+    if worker_id is not None and (job.status != "running" or job.lease_owner != worker_id):
+        raise ReanalysisConflict("document reanalysis lease was lost")
+    if lease_valid is not None and not lease_valid():
+        raise ReanalysisConflict("document reanalysis lease was lost")
 
 
 def create_reanalysis_job(db, principal: Principal, document: Document) -> AsyncJob:
@@ -58,7 +74,13 @@ def create_reanalysis_job(db, principal: Principal, document: Document) -> Async
     return job
 
 
-async def run_document_reanalysis_job(job_id: UUID, principal: Principal) -> None:
+async def run_document_reanalysis_job(
+    job_id: UUID,
+    principal: Principal,
+    *,
+    worker_id: str | None = None,
+    lease_valid: Callable[[], bool] | None = None,
+) -> None:
     """Replace pages/current requirements only after parsing and every extraction call succeeds."""
     db = SessionLocal()
     try:
@@ -74,6 +96,7 @@ async def run_document_reanalysis_job(job_id: UUID, principal: Principal) -> Non
 
         job.status, job.progress, job.current_step = "running", 5, "loading_document"
         db.commit()
+        _assert_publish_rights(db, job, worker_id, lease_valid)
 
         data = get_storage_adapter().read(document.storage_key)
         settings = get_settings()
@@ -94,6 +117,7 @@ async def run_document_reanalysis_job(job_id: UUID, principal: Principal) -> Non
             )
             if any(item.source_page != page.page_number for item in batch.results):
                 raise ValueError("provider returned a nonexistent source page")
+            _assert_publish_rights(db, job, worker_id, lease_valid)
             batches.append((page, batch))
             job.progress = 10 + int(55 * index / max(1, len(pages)))
             job.current_step = f"extracting_page_{page.page_number}"
@@ -104,6 +128,10 @@ async def run_document_reanalysis_job(job_id: UUID, principal: Principal) -> Non
         # Publish from a fresh transaction and reject a concurrent successful revision.
         db.rollback()
         with db.begin():
+            job = db.get(AsyncJob, job_id)
+            if job is None:
+                raise ValueError("job not found")
+            _assert_publish_rights(db, job, worker_id, lease_valid)
             document = db.get(Document, job.entity_id)
             if document is None:
                 raise ValueError("document not found")
@@ -202,6 +230,11 @@ async def run_document_reanalysis_job(job_id: UUID, principal: Principal) -> Non
             document.page_count = len(pages)
             document.parse_status = "completed"
             job.status, job.progress, job.current_step, job.retryable = "completed", 100, "completed", False
+            job.error = None
+            if worker_id is not None:
+                job.lease_owner = None
+                job.lease_expires_at = None
+                job.heartbeat_at = utcnow()
             append_event(
                 db,
                 principal,
@@ -222,7 +255,18 @@ async def run_document_reanalysis_job(job_id: UUID, principal: Principal) -> Non
         db.rollback()
         job = db.get(AsyncJob, job_id)
         if job is not None:
-            job.status, job.current_step, job.error, job.retryable = "failed", "failed", str(exc)[:1000], False
-            db.commit()
+            # A claimed worker leaves terminal/retry selection to the queue's
+            # compare-and-set finalizer. Never overwrite a successor's lease.
+            if worker_id is None:
+                job.status, job.current_step, job.error, job.retryable = (
+                    "failed",
+                    "failed",
+                    str(exc)[:1000],
+                    False,
+                )
+                db.commit()
+            elif job.status == "running" and job.lease_owner == worker_id:
+                job.error = str(exc)[:1000]
+                db.commit()
     finally:
         db.close()

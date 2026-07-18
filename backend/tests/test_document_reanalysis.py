@@ -10,7 +10,7 @@ from app.auth.dependencies import Principal
 from app.db.session import SessionLocal
 from app.models.entities import AsyncJob, Document, DocumentPage, Requirement
 from app.schemas.requirements import RequirementBatch
-from app.services import documents, reanalysis
+from app.services import documents, jobs, reanalysis
 
 
 def _parsed_document(client, demo) -> tuple[str, str]:
@@ -164,3 +164,66 @@ def test_document_reanalysis_rejects_active_parse_or_extraction_job(client, demo
 
     response = client.post(f"/api/documents/{document_id}/reanalyze", headers=demo["auth_headers"])
     assert response.status_code == 409
+
+
+def test_document_reanalysis_does_not_publish_after_lease_loss(client, demo) -> None:
+    _, document_id = _parsed_document(client, demo)
+    principal = Principal(
+        tenant_id=UUID(demo["tenant_id"]), user_id=UUID(demo["user_id"]), role="admin"
+    )
+    with SessionLocal() as db:
+        document = db.get(Document, UUID(document_id))
+        assert document is not None
+        base_revision = document.parse_revision
+        job = reanalysis.create_reanalysis_job(db, principal, document)
+        job.status = "running"
+        job.lease_owner = "worker-old"
+        db.commit()
+
+    asyncio.run(
+        reanalysis.run_document_reanalysis_job(
+            job.id,
+            principal,
+            worker_id="worker-old",
+            lease_valid=lambda: False,
+        )
+    )
+
+    with SessionLocal() as db:
+        document = db.get(Document, UUID(document_id))
+        stale_job = db.get(AsyncJob, job.id)
+        assert document is not None and document.parse_revision == base_revision
+        assert stale_job is not None and stale_job.status == "running"
+        assert stale_job.error == "document reanalysis lease was lost"
+
+
+def test_document_reanalysis_cancellation_stops_before_publish(client, demo) -> None:
+    _, document_id = _parsed_document(client, demo)
+    principal = Principal(
+        tenant_id=UUID(demo["tenant_id"]), user_id=UUID(demo["user_id"]), role="admin"
+    )
+    with SessionLocal() as db:
+        document = db.get(Document, UUID(document_id))
+        assert document is not None
+        base_revision = document.parse_revision
+        job = reanalysis.create_reanalysis_job(db, principal, document)
+        job.status = "running"
+        job.lease_owner = "worker-cancel"
+        job.cancel_requested = True
+        db.commit()
+
+    asyncio.run(
+        reanalysis.run_document_reanalysis_job(
+            job.id,
+            principal,
+            worker_id="worker-cancel",
+            lease_valid=lambda: True,
+        )
+    )
+    assert jobs._finish_claim(job.id, "worker-cancel", False) is True
+
+    with SessionLocal() as db:
+        document = db.get(Document, UUID(document_id))
+        cancelled_job = db.get(AsyncJob, job.id)
+        assert document is not None and document.parse_revision == base_revision
+        assert cancelled_job is not None and cancelled_job.status == "cancelled"

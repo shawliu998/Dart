@@ -304,7 +304,18 @@ def dispatch_job(job_id: UUID, worker_id: str | None = None) -> bool:
                 succeeded = (job := db.get(AsyncJob, job_id)) is not None and job.status == "completed"
                 error = job.error if job else "job not found"
         elif job_type == "document_reanalysis":
-            asyncio.run(run_document_reanalysis_job(job_id, principal))
+            if worker_id is None:
+                asyncio.run(run_document_reanalysis_job(job_id, principal))
+            else:
+                with maintain_job_lease(job_id, worker_id) as checkpoint:
+                    asyncio.run(
+                        run_document_reanalysis_job(
+                            job_id,
+                            principal,
+                            worker_id=worker_id,
+                            lease_valid=checkpoint,
+                        )
+                    )
             with SessionLocal() as db:
                 succeeded = (job := db.get(AsyncJob, job_id)) is not None and job.status == "completed"
                 error = job.error if job else "job not found"
