@@ -3,6 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { FileText, LoaderCircle, RefreshCw } from "lucide-react";
+import { agentApi } from "@/lib/api/agent";
 import { projectApi, type ProjectDocument } from "@/lib/api/projects";
 
 const statusLabel: Record<string, string> = {
@@ -37,7 +38,16 @@ export function DocumentAnalysisPanel({ projectId, initialDocuments }: { project
       }
       if (status !== "completed") throw new Error(status === "cancelled" ? "分析任务已取消" : "分析未完成，请稍后重试");
       setDocuments(await projectApi.documents(projectId));
-      setFeedback({ tone: "success", text: `${document.filename} 已完成新版本分析，历史版本仍可追溯。` });
+      const downstream = await agentApi.createRun(projectId, {
+        goal: `基于 ${document.filename} 的最新分析版本刷新证据匹配、合规检查和响应草稿。`,
+        mode: "autonomous_draft",
+        scope: "amendment_reanalysis",
+        maxIterations: 20,
+      });
+      const downstreamNote = downstream.data
+        ? "增量 Agent 已启动，将继续刷新证据、合规和响应草稿。"
+        : "新版本已生效；增量 Agent 暂未启动，请在当前 Agent 结束后重试。";
+      setFeedback({ tone: "success", text: `${document.filename} 已完成新版本分析，历史版本仍可追溯。${downstreamNote}` });
       router.refresh();
     } catch (error) {
       const message = error instanceof Error && error.message === "API_409"
@@ -51,7 +61,7 @@ export function DocumentAnalysisPanel({ projectId, initialDocuments }: { project
   }
 
   return <section className="panel document-analysis-panel" aria-label="文档分析版本">
-    <div className="panel-header"><div><h2>文档分析版本</h2><p>重新分析仅在完整成功后切换当前版本，失败不会影响现有结果</p></div><span>{documents.length} 份文档</span></div>
+    <div className="panel-header"><div><h2>文档分析版本</h2><p>成功后自动启动增量 Agent；失败不会影响现有结果</p></div><span>{documents.length} 份文档</span></div>
     {feedback && <div className={`mutation-feedback ${feedback.tone}`} role={feedback.tone === "error" ? "alert" : "status"}>{feedback.text}</div>}
     {documents.length === 0 ? <p className="document-analysis-empty">当前项目还没有上传文档。</p> : <div className="document-analysis-list">
       {documents.map((document) => {
