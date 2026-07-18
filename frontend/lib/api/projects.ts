@@ -48,6 +48,47 @@ type JobDto = {
   status?: string;
 };
 
+export type ProjectDocument = {
+  id: string;
+  projectId: string;
+  filename: string;
+  documentType: string;
+  mimeType: string;
+  size: number;
+  parseRevision: number;
+  parseStatus: string;
+  pageCount: number;
+  createdAt: string;
+};
+
+type DocumentDto = {
+  id: string;
+  project_id: string;
+  filename: string;
+  document_type: string;
+  mime_type: string;
+  size: number;
+  parse_revision: number;
+  parse_status: string;
+  page_count: number;
+  created_at: string;
+};
+
+export function mapDocumentDto(dto: DocumentDto): ProjectDocument {
+  return {
+    id: dto.id,
+    projectId: dto.project_id,
+    filename: dto.filename,
+    documentType: dto.document_type,
+    mimeType: dto.mime_type,
+    size: dto.size,
+    parseRevision: dto.parse_revision,
+    parseStatus: dto.parse_status,
+    pageCount: dto.page_count,
+    createdAt: dto.created_at,
+  };
+}
+
 const reviewStatusMap: Record<string, Requirement["status"]> = {
   satisfied: "met", missing_evidence: "missing", manual_review: "review", unreviewed: "review", not_satisfied: "failed", conflict: "conflict",
 };
@@ -109,6 +150,10 @@ export const projectApi = {
   async disqualifications(projectId: string): Promise<DisqualificationItem[]> {
     return remoteOrFallback(() => apiRequest<DisqualificationDto[]>(`/api/projects/${projectId}/disqualifications`), disqualifications, mapDisqualificationDto);
   },
+  async documents(projectId: string): Promise<ProjectDocument[]> {
+    if (useDemo) return [];
+    return (await apiRequest<DocumentDto[]>(`/api/projects/${projectId}/documents`)).map(mapDocumentDto);
+  },
   async create(input: { name: string; projectCode?: string; buyerName?: string }): Promise<Project> {
     const dto = await apiRequest<ProjectDto>("/api/projects", { method: "POST", body: JSON.stringify({ name: input.name, project_code: input.projectCode || "待提取", buyer_name: input.buyerName || "待提取", status: "draft", current_stage: "ingesting" }) });
     return mapProjectDto(dto);
@@ -119,6 +164,10 @@ export const projectApi = {
   },
   async parseDocument(documentId: string): Promise<{ job_id?: string; status?: string }> {
     const job = await apiRequest<JobDto>(`/api/documents/${documentId}/parse`, { method: "POST" });
+    return { job_id: job.job_id ?? job.id, status: job.status };
+  },
+  async reanalyzeDocument(documentId: string): Promise<{ job_id?: string; status?: string }> {
+    const job = await apiRequest<JobDto>(`/api/documents/${documentId}/reanalyze`, { method: "POST" });
     return { job_id: job.job_id ?? job.id, status: job.status };
   },
   async extractRequirements(projectId: string, documentId: string): Promise<{ job_id?: string; status?: string }> {
