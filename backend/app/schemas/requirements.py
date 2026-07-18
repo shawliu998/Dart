@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+from datetime import datetime
 from decimal import Decimal
 from typing import Literal
 from uuid import UUID
@@ -70,6 +71,9 @@ class RequirementRead(ORMModel):
     source_bbox: dict | None
     clause_number: str | None
     extraction_confidence: Decimal
+    extraction_revision: int
+    is_current: bool
+    superseded_at: datetime | None
     review_status: str
     human_verified: bool
     review_reason: str | None

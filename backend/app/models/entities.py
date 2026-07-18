@@ -71,6 +71,7 @@ class Document(UUIDAuditMixin, SoftDeleteMixin, Base):
     size: Mapped[int]
     sha256: Mapped[str] = mapped_column(String(64), index=True)
     version_number: Mapped[int] = mapped_column(Integer, default=1)
+    parse_revision: Mapped[int] = mapped_column(Integer, default=1)
     parse_status: Mapped[str] = mapped_column(String(30), default="pending")
     page_count: Mapped[int] = mapped_column(Integer, default=0)
     uploaded_by: Mapped[UUID]
@@ -95,6 +96,7 @@ class Requirement(UUIDAuditMixin, Base):
             "source_document_id",
             "source_page",
             "original_hash",
+            "extraction_revision",
             name="uq_requirement_source",
         ),
     )
@@ -113,6 +115,11 @@ class Requirement(UUIDAuditMixin, Base):
     source_bbox: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     clause_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     extraction_confidence: Mapped[Decimal] = mapped_column(Numeric(4, 3))
+    extraction_revision: Mapped[int] = mapped_column(Integer, default=1)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    superseded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     review_status: Mapped[str] = mapped_column(String(30), default="unreviewed")
     human_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)

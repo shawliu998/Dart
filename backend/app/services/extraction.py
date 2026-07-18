@@ -74,6 +74,7 @@ async def run_extraction_job(job_id: UUID, principal: Principal) -> None:
                         Requirement.source_document_id == document.id,
                         Requirement.source_page == item.source_page,
                         Requirement.original_hash == original_hash,
+                        Requirement.extraction_revision == document.parse_revision,
                     )
                 )
                 if existing:
@@ -98,6 +99,7 @@ async def run_extraction_job(job_id: UUID, principal: Principal) -> None:
                     source_bbox=item.source_bbox.model_dump() if item.source_bbox else None,
                     clause_number=item.clause_number,
                     extraction_confidence=Decimal(str(item.confidence)),
+                    extraction_revision=document.parse_revision,
                     review_status="manual_review" if item.confidence < 0.70 else "unreviewed",
                     review_reason=item.manual_review_reason,
                 )
