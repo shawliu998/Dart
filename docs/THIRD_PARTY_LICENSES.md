@@ -13,11 +13,13 @@
 | FastAPI / Pydantic / Uvicorn | API 与 Schema | MIT / MIT / BSD-3-Clause | 保留许可证 |
 | SQLAlchemy / Alembic / psycopg | ORM、迁移、驱动 | MIT / MIT / LGPL-3.0（psycopg，按版本核实） | 分发二进制驱动前核实对应条款 |
 | pypdf | PDF 读取 | BSD-3-Clause | 保留许可证 |
+| Tesseract OCR | 可选本地 OCR 命令 | Apache-2.0 | 仅显式本地调用；分发时登记二进制及语言数据来源 |
+| Poppler `pdftoppm` | 扫描 PDF 页渲染 | GPL-2.0-or-later（按发行版核实） | 当前仅调用系统命令；若随应用分发须单独完成 GPL 合规评估 |
 | PostgreSQL / pgvector | 数据库与向量 | PostgreSQL License | 记录镜像、扩展版本和修改 |
 | Redis | 队列/进度 | 版本相关 | 固定具体版本，按该版本许可法务复核 |
 | MinIO | 本地 S3-compatible | AGPL-3.0（版本相关） | 网络部署/修改/分发前法务复核；StorageAdapter 可替换 |
 | Docling | 文档解析 adapter 规划 | MIT（版本相关） | 实际引入后核实解析模型和资源 |
-| PaddleOCR | OCR adapter 规划 | Apache-2.0（代码，模型另核） | 权重、字体和训练数据单独登记 |
+| PaddleOCR | 可替换 OCR adapter 规划 | Apache-2.0（代码，模型另核） | 实际引入时对权重、字体和训练数据单独登记 |
 
 ## 资产来源
 

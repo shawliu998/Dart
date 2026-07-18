@@ -10,6 +10,7 @@ from sqlalchemy.orm import Session
 
 from app import models as _models  # noqa: F401
 from app.agents.provider import ProviderUnavailableError, get_requirement_provider
+from app.parsers.ocr import get_ocr_adapter
 from app.api.routes import router
 from app.api.domain_routes import router as domain_router
 from app.api.auth_routes import router as auth_router
@@ -84,6 +85,14 @@ def health() -> dict:
     except ProviderUnavailableError:
         provider_status = "unavailable"
         provider_model = None
+    ocr_adapter = get_ocr_adapter(settings.ocr_mode, settings.ocr_languages)
+    ocr_status = (
+        "disabled"
+        if settings.ocr_mode == "disabled"
+        else "available"
+        if ocr_adapter
+        else "unavailable"
+    )
     return {
         "status": "ok",
         "service": "bidevidence-api",
@@ -91,6 +100,9 @@ def health() -> dict:
         "llm_provider": settings.llm_provider,
         "llm_provider_status": provider_status,
         "llm_model": provider_model,
+        "ocr_mode": settings.ocr_mode,
+        "ocr_status": ocr_status,
+        "ocr_engine": ocr_adapter.name if ocr_adapter else None,
         "mode": "desktop" if settings.desktop_mode else "server",
     }
 

@@ -201,5 +201,5 @@ cd frontend; npm test; npm run lint; npm run typecheck; npm run test:e2e; npm ru
 - 本地演示仍允许可信请求头；生产必须只使用正式身份提供方和强密钥。
 - 本地测试默认使用受控目录；Compose 已将 StorageAdapter 接入 MinIO/S3-compatible，并通过短期签名 URL 下载。生产仍需配置独立凭证、TLS、生命周期和备份策略。
 - Worker 有独立入口；部分本地耗时任务仍可由 API background task 执行。
-- 扫描 PDF 的生产 OCR、病毒扫描和真实消息通知仍需要部署适配器。
+- 本地可自动调用已安装的 Tesseract/Poppler 处理图片与扫描 PDF；容器或桌面发行包仍需自行提供并登记对应二进制和中文语言数据。OCR 不可用或无结果时会生成补救任务。病毒扫描和真实消息通知仍需要部署适配器。
 - 签字/盖章检查是候选提示，最终法律资格、CA、付款和外部提交始终由授权人员在系统外完成。

@@ -25,6 +25,8 @@ class Settings:
     local_user_id: UUID | None
     app_data_dir: Path | None
     llm_provider: str
+    ocr_mode: str
+    ocr_languages: str
 
 
 def get_settings() -> Settings:
@@ -78,4 +80,6 @@ def get_settings() -> Settings:
         # This is a provider identifier only. Credentials stay external to settings
         # and unsupported providers are rejected by the provider registry.
         llm_provider=os.getenv("BIDEVIDENCE_LLM_PROVIDER", "mock").strip().lower(),
+        ocr_mode=os.getenv("BIDEVIDENCE_OCR_MODE", "auto").strip().lower(),
+        ocr_languages=os.getenv("BIDEVIDENCE_OCR_LANGUAGES", "chi_sim+eng").strip(),
     )
