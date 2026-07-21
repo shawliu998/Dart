@@ -32,6 +32,9 @@ class Settings:
 
 def get_settings() -> Settings:
     backend_root = Path(__file__).resolve().parents[2]
+    max_upload_bytes = int(os.getenv("MAX_UPLOAD_BYTES", str(20 * 1024 * 1024)))
+    if max_upload_bytes <= 0:
+        raise ValueError("MAX_UPLOAD_BYTES must be positive")
     desktop_mode = os.getenv("BIDEVIDENCE_DESKTOP_MODE", "").lower() in {"1", "true", "yes"}
     app_data_value = os.getenv("BIDEVIDENCE_APP_DATA_DIR")
     app_data_dir = Path(app_data_value).expanduser() if app_data_value else None
@@ -58,7 +61,7 @@ def get_settings() -> Settings:
         # UPLOAD_DIR and accidentally write user documents outside its user-data root.
         database_url=database_default if desktop_mode else os.getenv("DATABASE_URL", database_default),
         upload_dir=upload_default if desktop_mode else Path(os.getenv("UPLOAD_DIR", upload_default)),
-        max_upload_bytes=int(os.getenv("MAX_UPLOAD_BYTES", str(20 * 1024 * 1024))),
+        max_upload_bytes=max_upload_bytes,
         cors_origins=cors_origins,
         app_env=os.getenv("APP_ENV", "development"),
         auth_secret=os.getenv("AUTH_SECRET")

@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import Principal, get_principal, require_review, require_write
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.entities import (
     AsyncJob,
@@ -39,6 +40,31 @@ from app.services.review import (
 )
 
 router = APIRouter(prefix="/api")
+UPLOAD_READ_CHUNK_BYTES = 64 * 1024
+
+
+async def read_upload_with_limit(file: UploadFile, max_bytes: int) -> bytes:
+    """Bound application-side reads before data reaches ingestion or storage.
+
+    Starlette may already have parsed multipart data into a spooled temporary
+    file. Network request-body limits remain the responsibility of the ASGI
+    server or reverse proxy.
+    """
+    if max_bytes < 0:
+        raise ValueError("max_bytes must not be negative")
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        # Request only one byte beyond the remaining allowance. This keeps the
+        # endpoint from materializing an unbounded upload as Python bytes before
+        # rejecting it or handing it to ingestion.
+        chunk = await file.read(min(UPLOAD_READ_CHUNK_BYTES, max_bytes - total + 1))
+        if not chunk:
+            return b"".join(chunks)
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(status_code=413, detail="file is too large")
+        chunks.append(chunk)
 
 
 @router.post("/projects", response_model=ProjectRead, status_code=201)
@@ -96,7 +122,7 @@ async def upload_document(
 ):
     require_write(principal)
     project_service.get_project(db, principal, project_id)
-    data = await file.read()
+    data = await read_upload_with_limit(file, get_settings().max_upload_bytes)
     return document_service.ingest_document(
         db,
         principal,
