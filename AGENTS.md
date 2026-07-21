@@ -9,10 +9,12 @@ This monorepo implements 标证通 BidEvidence, a Chinese tender-compliance and 
 Until the user explicitly changes this phase, the repository is in **competitor workflow and UI capability parity**, not general release hardening.
 
 - Read and follow `docs/CURRENT_PRODUCT_PRIORITY.md` before selecting or delegating work.
+- Read `docs/EXISTING_CAPABILITY_MAP.md` before proposing a new route, component, API, schema, state model, service, fixture, or design system. Extend the listed implementation anchor instead of creating a parallel replacement.
 - Choose work only when it reproduces a named competitor capability, closes a visible gap in a core tender workflow, or is strictly required to make that capability function end to end.
 - Do not proactively select security hardening, audit enrichment, request correlation, local/desktop packaging, deployment, observability, performance tuning, license work, or infrastructure cleanup as the next task. These remain engineering constraints and may be changed only when the user explicitly requests them or when a demonstrated blocker prevents the currently selected product capability from working.
 - Do not make local/demo/security/audit/Agent-runtime messaging a primary navigation item, page headline, hero message, or product selling point unless the current reference workflow requires it.
 - UI work must name its reference screenshot or competitor source, the user task being reproduced, and visible acceptance evidence. "Production readiness" or "completeness" alone is not sufficient justification.
+- Every execution package must include a reuse decision: existing anchors reused, the precise missing layer, and why each new file is necessary. A new `V2`, `new`, `replacement`, parallel adapter, or duplicate workbench is prohibited without an explicit migration plan approved by the user.
 - Preserve existing safety boundaries, but do not expand them opportunistically during product capability work.
 - If a proposed task does not satisfy these rules, stop and return to competitor capability gap selection instead of implementing it.
 
