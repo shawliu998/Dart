@@ -51,12 +51,12 @@
 - 项目响应列表、人工编辑、人工批准 API；
 - 编辑后重新进入复核、版本递增、理由和人工动作审计；
 - `ResponseItem`、`ResponseEvidenceLink` 和确定性草稿生成服务；
-- 列表投影已经批量返回 requirement、requirement source、evidence sources；
+- Requirement、Source、Document、EvidenceClaim 与 ResponseEvidenceLink 已有底层关系，可供原响应列表端点聚合；基线响应 DTO 只暴露 Claim ID，尚未完整暴露要求原文和证据来源；
 - 对应实现：`backend/app/api/domain_routes.py`、`backend/app/schemas/domain.py`、`backend/app/services/responses.py`。
 
 ### 本批只允许增量补齐
 
-- 把后端已有 requirement/source/evidence projection 映射到前端；
+- 在现有响应列表端点和 DTO 上增量补充 requirement/source/evidence projection，并映射到前端；不得新建平行端点；
 - 在原 `ResponseWorkbench` 内形成左侧大纲、中间正文、右侧来源/证据的高密度布局；
 - 增加状态筛选和窄屏面板切换；
 - 让确定性演示展示已有响应状态，而不是在前端另造一套数据；
