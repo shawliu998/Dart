@@ -27,6 +27,7 @@ class Settings:
     llm_provider: str
     ocr_mode: str
     ocr_languages: str
+    local_worker_enabled: bool
 
 
 def get_settings() -> Settings:
@@ -82,4 +83,6 @@ def get_settings() -> Settings:
         llm_provider=os.getenv("BIDEVIDENCE_LLM_PROVIDER", "mock").strip().lower(),
         ocr_mode=os.getenv("BIDEVIDENCE_OCR_MODE", "auto").strip().lower(),
         ocr_languages=os.getenv("BIDEVIDENCE_OCR_LANGUAGES", "chi_sim+eng").strip(),
+        local_worker_enabled=os.getenv("BIDEVIDENCE_LOCAL_WORKER_ENABLED", "true").lower()
+        in {"1", "true", "yes"},
     )

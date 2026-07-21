@@ -47,14 +47,15 @@ async def lifespan(_: FastAPI):
         with Session(bind=engine) as db:
             bootstrap_local_workspace(db, settings)
     stop = asyncio.Event()
-    worker = asyncio.create_task(_local_worker(stop))
+    worker = asyncio.create_task(_local_worker(stop)) if settings.local_worker_enabled else None
     try:
         yield
     finally:
         stop.set()
-        worker.cancel()
-        with suppress(asyncio.CancelledError):
-            await worker
+        if worker is not None:
+            worker.cancel()
+            with suppress(asyncio.CancelledError):
+                await worker
 
 
 app = FastAPI(title="BidEvidence API", version="0.1.0", lifespan=lifespan)

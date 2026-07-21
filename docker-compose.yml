@@ -86,7 +86,9 @@ services:
     volumes:
       - ./backend:/workspace/backend
       - ./demo:/workspace/demo:ro
-    environment: *backend-environment
+    environment:
+      <<: *backend-environment
+      BIDEVIDENCE_LOCAL_WORKER_ENABLED: "false"
     command: >-
       sh -c '
       pip install --disable-pip-version-check -r requirements-dev.txt &&
