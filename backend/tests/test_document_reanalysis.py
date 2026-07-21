@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import time
 from pathlib import Path
 from uuid import UUID, uuid4
 
@@ -11,6 +12,18 @@ from app.db.session import SessionLocal
 from app.models.entities import AsyncJob, Document, DocumentPage, Requirement
 from app.schemas.requirements import RequirementBatch
 from app.services import documents, jobs, reanalysis
+
+
+def _wait_for_job(client, headers: dict[str, str], job_id: str) -> dict:
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        response = client.get(f"/api/jobs/{job_id}", headers=headers)
+        assert response.status_code == 200, response.text
+        job = response.json()
+        if job["status"] in {"completed", "failed", "cancelled"}:
+            return job
+        time.sleep(0.02)
+    raise AssertionError(f"job {job_id} did not finish before timeout")
 
 
 def _parsed_document(client, demo) -> tuple[str, str]:
@@ -34,13 +47,18 @@ def _parsed_document(client, demo) -> tuple[str, str]:
             files={"file": (pdf_path.name, pdf, "application/pdf")},
         )
     document_id = uploaded.json()["id"]
-    assert client.post(f"/api/documents/{document_id}/parse", headers=headers).status_code == 202
+    parsed = client.post(f"/api/documents/{document_id}/parse", headers=headers)
+    assert parsed.status_code == 202, parsed.text
+    parsed_job = _wait_for_job(client, headers, parsed.json()["id"])
+    assert parsed_job["status"] == "completed", parsed_job
     extracted = client.post(
         f"/api/projects/{project_id}/requirements/extract",
         headers=headers,
         json={"document_id": document_id},
     )
     assert extracted.status_code == 202
+    extracted_job = _wait_for_job(client, headers, extracted.json()["id"])
+    assert extracted_job["status"] == "completed", extracted_job
     return project_id, document_id
 
 
@@ -67,8 +85,8 @@ def test_document_reanalysis_atomically_switches_current_requirements(client, de
 
     response = client.post(f"/api/documents/{document_id}/reanalyze", headers=demo["auth_headers"])
     assert response.status_code == 202, response.text
-    job = client.get(f"/api/jobs/{response.json()['id']}", headers=demo["auth_headers"])
-    assert job.status_code == 200 and job.json()["status"] == "completed"
+    job = _wait_for_job(client, demo["auth_headers"], response.json()["id"])
+    assert job["status"] == "completed", job
 
     with SessionLocal() as db:
         document = db.get(Document, UUID(document_id))
