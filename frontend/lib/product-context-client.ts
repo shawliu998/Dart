@@ -10,7 +10,7 @@ import { formatDeadlineRemaining, getProjectContext, projectIdFromPath, type Pro
 interface ShellContextState { status: "loading" | "ready" | "error"; context: ProjectContext | null; agent: AgentRunBundle | null; source: ProductDataSource; error: string | null; }
 
 export function useShellProductContext(pathname: string): ShellContextState {
-  const [state, setState] = useState<ShellContextState>(() => ({ status: isRemoteApiConfigured ? "loading" : "ready", context: getProjectContext(pathname), agent: null, source: isRemoteApiConfigured ? "api" : "demo", error: null }));
+  const [state, setState] = useState<ShellContextState>(() => ({ status: isRemoteApiConfigured && projectIdFromPath(pathname) ? "loading" : "ready", context: getProjectContext(pathname), agent: null, source: isRemoteApiConfigured ? "api" : "demo", error: null }));
   useEffect(() => {
     let live = true;
     const pathProjectId = projectIdFromPath(pathname);
@@ -31,7 +31,7 @@ export function useShellProductContext(pathname: string): ShellContextState {
         fatalRiskCount: agentResult?.data?.approvals.filter((item) => item.status === "pending" && item.risk === "fatal").length ?? 0,
         taskCount: agentResult?.data?.outputs.find((item) => item.kind === "task")?.count ?? 0,
         packageBlockers: agentResult?.data?.outputs.find((item) => item.kind === "package")?.count ?? 0,
-        source: agentUnavailable ? "error" : "api", sourceLabel: agentUnavailable ? "Agent 运行不可用 · 未回退演示" : `API 聚合 · ${agentResult?.data?.run.updatedAt ?? "项目数据"}`,
+        source: agentUnavailable ? "error" : "api", sourceLabel: agentUnavailable ? "Agent 运行不可用 · 未回退演示" : agentResult?.source === "empty" ? "API 聚合 · Agent 尚未运行" : `API 聚合 · ${agentResult?.data?.run.updatedAt ?? "项目数据"}`,
       } : null;
       setState({ status: agentUnavailable ? "error" : "ready", context, agent: agentResult?.data ?? null, source: agentUnavailable ? "error" : "api", error: agentUnavailable ? agentResult?.error.message ?? "未找到 Agent 运行记录" : null });
     }).catch((error) => { if (live) setState({ status: "error", context: pathProjectId ? { id: pathProjectId, project: null, name: "项目数据不可用", code: "API ERROR", stage: "聚合失败", deadline: "不可用", deadlineLabel: "截止时间不可用", fatalRiskCount: 0, taskCount: 0, packageBlockers: 0, source: "error", sourceLabel: "API 聚合失败 · 未回退演示" } : null, agent: null, source: "error", error: error instanceof Error ? error.message : "未知聚合错误" }); });

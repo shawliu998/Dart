@@ -7,7 +7,6 @@ import {
   AlertOctagon,
   AlertTriangle,
   Check,
-  CheckCircle2,
   ChevronDown,
   Download,
   File,
@@ -319,21 +318,18 @@ export function PackageCenter({
       </header>
       <section className="package-summary">
         <article className="failed">
-          <AlertOctagon size={16} />
           <span>
             <strong>{failed.length}</strong>
             <small>阻塞问题</small>
           </span>
         </article>
         <article className="warning">
-          <AlertTriangle size={16} />
           <span>
             <strong>{warnings.length}</strong>
             <small>待确认警告</small>
           </span>
         </article>
         <article className="passed">
-          <CheckCircle2 size={16} />
           <span>
             <strong>
               {checks.filter((item) => item.status === "passed").length}
@@ -488,15 +484,7 @@ export function PackageCenter({
                     onClick={() => setSelectedId(check.id)}
                   >
                     <td>
-                      <span className={`check-icon ${check.status}`}>
-                        {check.status === "passed" ? (
-                          <Check size={11} />
-                        ) : check.status === "warning" ? (
-                          <AlertTriangle size={11} />
-                        ) : (
-                          <X size={11} />
-                        )}
-                      </span>
+                      <i className={`check-dot ${check.status}`} aria-hidden="true" />
                       <span>
                         <strong>{check.label}</strong>
                         <small>{check.message}</small>

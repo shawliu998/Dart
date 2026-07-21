@@ -53,11 +53,11 @@ export function createAgentRunBundle(projectId: string, snapshot: AgentSnapshot 
       runId,
       stepId: "step-requirements",
       type: "compliance_override",
-      title: "复核致命要求与低置信度提取",
+      title: "复核阻断性要求与低置信度提取",
       description: "对照原文确认要求是否准确，以及风险候选是否需要进入整改。",
       impactSummary: "确认后会更新要求复核状态；不会自动形成法律资格结论。",
       reversible: true,
-      reason: `${snapshot.fatalRequirementCount} 项致命要求未满足；任何否决结论必须由人工确认。`,
+      reason: `${snapshot.fatalRequirementCount} 项阻断性要求待确认；任何否决结论必须由人工确认。`,
       risk: "fatal",
       status: "pending",
       requiredRole: "投标负责人 / 法务复核人",
@@ -123,7 +123,7 @@ export function createAgentRunBundle(projectId: string, snapshot: AgentSnapshot 
 
   const steps: AgentStep[] = [
     { id: "step-ingest", runId, sequence: 1, title: "文档接收与解析", description: "验证文件、版本和解析状态。", status: "completed", actor: "deterministic_rule", tool: "DocumentIngestionService", startedAt: "2026-07-16 14:12", finishedAt: "2026-07-16 14:13", outputIds: [], approvalIds: [], message: "主招标文件与补充公告已进入受控版本链。" },
-    { id: "step-requirements", runId, sequence: 2, title: "要求提取与人工门禁", description: "结构化候选要求；低置信度与致命项必须人工复核。", status: "blocked", actor: "mock_model", tool: "RequirementExtractionAgent / MockLLMProvider", sources: [sourceFor(snapshot)], startedAt: "2026-07-16 14:13", finishedAt: "2026-07-16 14:15", outputIds: ["output-requirements"], approvalIds: ["approval-fatal-requirement"], message: `${snapshot.reviewRequirementCount} 项要求等待复核。` },
+    { id: "step-requirements", runId, sequence: 2, title: "要求提取与人工门禁", description: "结构化候选要求；低置信度与阻断性要求必须人工复核。", status: "blocked", actor: "mock_model", tool: "RequirementExtractionAgent / MockLLMProvider", sources: [sourceFor(snapshot)], startedAt: "2026-07-16 14:13", finishedAt: "2026-07-16 14:15", outputIds: ["output-requirements"], approvalIds: ["approval-fatal-requirement"], message: `${snapshot.reviewRequirementCount} 项要求等待复核。` },
     { id: "step-evidence", runId, sequence: 3, title: "证据候选匹配", description: "只推荐可解释候选，不自动接受匹配。", status: "blocked", actor: "mock_model", tool: "EvidenceMatchingAgent / MockLLMProvider", sources: [sourceFor(snapshot)], startedAt: "2026-07-16 14:15", finishedAt: "2026-07-16 14:17", outputIds: ["output-evidence"], approvalIds: ["approval-evidence-match"], message: `${snapshot.pendingMatchCount} 个候选待决定。` },
     { id: "step-evidence-claims", runId, sequence: 4, title: "抽取企业材料 Claim", description: "从企业材料抽取可回溯的证据 Claim；失败的材料单独隔离。", status: "completed", actor: "deterministic_rule", tool: "EvidenceClaimExtraction", startedAt: "2026-07-16 14:17", finishedAt: "2026-07-16 14:18", outputIds: ["output-evidence-claims"], approvalIds: [], message: `已处理 ${snapshot.evidenceAssetCount} 份材料，新增 ${snapshot.evidenceClaimCount} 条 Claim。` },
     { id: "step-response-drafts", runId, sequence: 5, title: "生成投标响应草稿", description: "根据已接受证据生成可编辑的响应草稿。", status: "completed", actor: "mock_model", tool: "ResponseDraftService", startedAt: "2026-07-16 14:18", finishedAt: "2026-07-16 14:20", outputIds: ["output-response-drafts"], approvalIds: [], message: `已生成 ${snapshot.responseCount} 条响应草稿。` },

@@ -143,7 +143,7 @@ function mapApproval(value: unknown, runId: string, projectId: string): AgentApp
     id: text(item.id), runId: text(item.run_id ?? item.runId, runId), stepId: text(item.step_run_id ?? item.stepRunId ?? item.step_id ?? item.stepId),
     type: approvalType,
     title: text(item.title), description: text(item.description), impactSummary, reversible: Boolean(item.reversible), reason: text(item.decision_reason ?? item.decisionReason),
-    risk: oneOf(item.risk, ["fatal", "high", "medium", "low"] as const, "medium"), status: oneOf(item.status, ["pending", "approved", "rejected"] as const, "pending"),
+    risk: oneOf(item.risk, ["fatal", "high", "medium", "low"] as const, "medium"), status: oneOf(item.status, ["pending", "approved", "rejected", "cancelled"] as const, "pending"),
     requiredRole: text(item.requested_role ?? item.required_role ?? item.requiredRole, "项目负责人"), destinationLabel: text(item.destination_label ?? item.destinationLabel, destination), href: text(item.href, impactSummary.startsWith("/projects/") ? impactSummary : defaultHref), sourceReferences: sourceRows(item),
   };
 }
@@ -321,7 +321,7 @@ export async function getLatestAgentRun(projectId: string, request: AgentRequest
   try {
     const payload = await request<AgentRunListPayload | unknown>(`/api/projects/${projectId}/agent-runs`);
     const list = rows(payload, ["items", "runs", "agent_runs"]);
-    if (!list.length) throw new Error("未找到 Agent 运行记录");
+    if (!list.length) return { source: "empty", data: null, error: null };
     return { source: "api", data: agentRunBundleFromApiPayload(list[0], projectId), error: null };
   } catch (error) { return failure(error); }
 }

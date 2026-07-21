@@ -83,14 +83,14 @@ const severityStyles: Record<AgentOutput["severity"], string> = {
   info: "border-slate-200 bg-slate-50 text-slate-700",
 };
 const severityLabels: Record<AgentOutput["severity"], string> = {
-  fatal: "致命阻塞",
+  fatal: "阻断",
   high: "高风险",
   medium: "需跟进",
   low: "低风险",
   info: "信息",
 };
 
-const riskLabel = { fatal: "致命", high: "高", medium: "中", low: "低" };
+const riskLabel = { fatal: "阻断项", high: "高", medium: "中", low: "低" };
 const triggerLabels: Record<AgentRunBundle["run"]["trigger"], string> = {
   project_opened: "打开项目后启动",
   document_updated: "文档更新后启动",
@@ -115,7 +115,7 @@ function StepIcon({ status }: { status: AgentStepStatus }) {
 function RunSummary({ bundle, source }: { bundle: AgentRunBundle; source: "api" | "demo" }) {
   const { run } = bundle;
   return (
-    <header className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
+    <header className="agent-run-summary rounded-xl border border-slate-200 bg-white p-5 shadow-sm">
       <div className="flex flex-col gap-5 xl:flex-row xl:items-start xl:justify-between">
         <div className="max-w-3xl">
           <div className="flex flex-wrap items-center gap-2">
@@ -163,7 +163,7 @@ const planStageStyles: Record<AgentPlanStageStatus, string> = {
 function AutonomousCommandCenter({ bundle }: { bundle: AgentRunBundle }) {
   const { run } = bundle;
   return (
-    <section className="rounded-xl border border-teal-200 bg-teal-50/60 p-5 shadow-sm" aria-labelledby="autonomous-plan-title">
+    <section className="agent-plan-panel rounded-xl border border-teal-200 bg-teal-50/60 p-5 shadow-sm" aria-labelledby="autonomous-plan-title">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div><h2 id="autonomous-plan-title" className="text-base font-semibold text-slate-950">自主执行计划</h2><p className="mt-1 text-xs text-slate-600">有限循环只调用受控工具；当前产物均为内部草稿，须经最终人工复核。</p></div>
         <span className="rounded-full border border-teal-200 bg-white px-2.5 py-1 text-xs font-semibold text-teal-900">第 {run.iteration} / {run.maxIterations} 次迭代</span>
@@ -239,7 +239,7 @@ function eventBadges(event: AgentEvent): string[] {
 }
 
 function EventTimeline({ events, error }: { events: AgentEvent[]; error: string | null }) {
-  return <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="agent-events-title">
+  return <section className="agent-event-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="agent-events-title">
     <div className="mb-4 flex items-center justify-between"><div><h2 id="agent-events-title" className="text-base font-semibold text-slate-950">最近运行事件</h2><p className="mt-1 text-xs text-slate-500">来自后端追加式事件流；按持久化序号展示。</p></div><GitBranch aria-hidden="true" className="text-slate-400" size={19} /></div>
     {error && <p className="mb-3 rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800" role="alert">事件流刷新失败：{error}。运行状态仍会继续刷新。</p>}
     {events.length ? <ol className="space-y-3" aria-label="最近运行事件列表">{events.slice(-8).reverse().map((event) => <li key={`${event.sequence}-${event.timestamp}`} className="rounded-lg border border-slate-200 p-3"><div className="flex flex-wrap items-center justify-between gap-2"><h3 className="text-sm font-medium text-slate-900"><span className="mr-2 text-xs text-slate-400">#{event.sequence}</span>{eventTitle(event)}</h3><time className="text-[11px] text-slate-500" dateTime={event.timestamp}>{event.timestamp}</time></div>{eventDetail(event) && <p className="mt-1 text-xs leading-5 text-slate-600">{eventDetail(event)}</p>}<div className="mt-2 flex flex-wrap gap-1">{eventBadges(event).map((badge) => <span key={badge} className="rounded-full border border-slate-200 bg-slate-50 px-2 py-0.5 text-[11px] text-slate-700">{badge}</span>)}</div></li>)}</ol> : <p className="text-sm text-slate-600">暂未收到可展示的持久化事件。</p>}
@@ -248,7 +248,7 @@ function EventTimeline({ events, error }: { events: AgentEvent[]; error: string 
 
 function StepTimeline({ steps }: { steps: AgentStep[] }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="agent-steps-title">
+    <section className="agent-step-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="agent-steps-title">
       <div className="mb-4 flex items-center justify-between">
         <div><h2 id="agent-steps-title" className="text-base font-semibold text-slate-950">运行步骤</h2><p className="mt-1 text-xs text-slate-500">固定编排，不通过多 Agent 自由讨论作出裁决。</p></div>
         <GitBranch aria-hidden="true" className="text-slate-400" size={19} />
@@ -301,7 +301,7 @@ function ApprovalQueue({ approvals, source }: { approvals: AgentApproval[]; sour
   }
 
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="agent-approvals-title">
+    <section className="agent-approval-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="agent-approvals-title">
       <div className="mb-4 flex items-center justify-between">
         <div><h2 id="agent-approvals-title" className="text-base font-semibold text-slate-950">待人工处理</h2><p className="mt-1 text-xs text-slate-500">在具备完整上下文的业务工作台内完成决定。</p></div>
         <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-900">{approvals.filter((item) => item.status === "pending").length} 项</span>
@@ -366,7 +366,7 @@ function metricChips(output: AgentOutput): { label: string; value: string | numb
 
 function OutputGrid({ outputs }: { outputs: AgentOutput[] }) {
   return (
-    <section className="rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="agent-outputs-title">
+    <section className="agent-output-panel rounded-xl border border-slate-200 bg-white p-5 shadow-sm" aria-labelledby="agent-outputs-title">
       <div className="mb-4 flex items-center justify-between"><div><h2 id="agent-outputs-title" className="text-base font-semibold text-slate-950">运行输出</h2><p className="mt-1 text-xs text-slate-500">摘要用于定位；正式复核仍回到原文和业务工作台。</p></div><FileCheck2 aria-hidden="true" className="text-slate-400" size={19} /></div>
       <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
         {outputs.map((output) => {
@@ -407,9 +407,19 @@ function FailureState({ result }: { result: Extract<AgentDataResult<AgentRunBund
   );
 }
 
+function EmptyState() {
+  return (
+    <section className="mx-auto max-w-2xl rounded-xl border border-slate-200 bg-white p-8 text-center shadow-sm" role="status">
+      <span className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-teal-50 text-teal-700"><CircleDashed aria-hidden="true" size={24} /></span>
+      <h2 className="mt-4 text-xl font-semibold text-slate-950">尚无 Agent 运行记录</h2>
+      <p className="mt-2 text-sm leading-6 text-slate-600">使用上方项目分析操作创建首次运行；创建后会在这里持续显示步骤、人工门禁和产物。</p>
+    </section>
+  );
+}
+
 export function AgentWorkspace({ initialResult }: { initialResult: AgentDataResult<AgentRunBundle> }) {
   const [result, setResult] = useState(initialResult);
-  const [events, setEvents] = useState<AgentEvent[]>(initialResult.source === "failure" ? [] : initialResult.data.events);
+  const [events, setEvents] = useState<AgentEvent[]>(initialResult.data?.events ?? []);
   const [eventError, setEventError] = useState<string | null>(null);
   const [runRefreshError, setRunRefreshError] = useState<string | null>(null);
   const apiRun = result.source === "api" ? result.data.run : null;
@@ -434,8 +444,8 @@ export function AgentWorkspace({ initialResult }: { initialResult: AgentDataResu
     const refresh = async () => {
       const [runResult] = await Promise.all([agentApi.getRunById(apiRunId, apiProjectId), refreshEvents()]);
       if (disposed) return lastKnownStatus;
-      if (runResult.source === "failure") {
-        setRunRefreshError(runResult.error.message);
+      if (runResult.source === "failure" || runResult.source === "empty") {
+        setRunRefreshError(runResult.source === "failure" ? runResult.error.message : "当前运行记录已不可用");
       } else {
         setResult(runResult);
         setRunRefreshError(null);
@@ -466,12 +476,13 @@ export function AgentWorkspace({ initialResult }: { initialResult: AgentDataResu
   }, [apiProjectId, apiRunId, apiRunStatus]);
 
   if (result.source === "failure") return <FailureState result={result} />;
+  if (result.source === "empty") return <EmptyState />;
   return (
-    <div className="page space-y-4 pb-8">
+    <div className="page agent-workspace-v4 space-y-4 pb-8">
       <RunSummary bundle={result.data} source={result.source} />
       {runRefreshError && <p className="rounded-lg border border-red-200 bg-red-50 p-3 text-xs text-red-800" role="alert">运行状态刷新失败：{runRefreshError}。当前显示上次成功读取的状态。</p>}
       {result.data.run.mode === "autonomous_draft" && <AutonomousCommandCenter bundle={result.data} />}
-      <section className="rounded-xl border border-slate-200 bg-white p-4 shadow-sm" aria-labelledby="agent-run-list-title">
+      <section className="agent-run-history rounded-xl border border-slate-200 bg-white p-4 shadow-sm" aria-labelledby="agent-run-list-title">
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
           <div><h2 id="agent-run-list-title" className="text-sm font-semibold text-slate-950">运行记录</h2><p className="mt-1 text-xs text-slate-500">当前项目：{result.data.run.projectName}</p></div>
           <ol className="min-w-0 flex-1 sm:max-w-xl">

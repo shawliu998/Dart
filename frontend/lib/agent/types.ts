@@ -1,11 +1,11 @@
-export type AgentDataSource = "api" | "demo" | "failure";
+export type AgentDataSource = "api" | "demo" | "empty" | "failure";
 export type AgentMode = "autonomous_draft" | "supervised";
 export type AgentScope = "full_bid_draft" | "risk_review" | "material_gap_analysis" | "response_improvement" | "amendment_reanalysis" | "work_package_check";
 export type AgentOutcome = "success" | "partial" | "blocked" | "no_result";
 
 export type AgentRunStatus = "queued" | "planning" | "running" | "waiting_approval" | "completed" | "failed" | "cancelled";
 export type AgentStepStatus = "pending" | "running" | "waiting_approval" | "completed" | "failed" | "blocked" | "cancelled";
-export type AgentApprovalStatus = "pending" | "approved" | "rejected";
+export type AgentApprovalStatus = "pending" | "approved" | "rejected" | "cancelled";
 export type AgentOutputType = "requirement" | "risk" | "evidence" | "task" | "report" | "package";
 export type AgentOutputKind = "requirements" | "risk" | "evidence" | "consistency" | "amendment" | "task" | "package" | "audit";
 export type AgentActorKind = "deterministic_rule" | "mock_model" | "human_gate";
@@ -165,6 +165,7 @@ export interface AgentFailure {
 export type AgentDataResult<T> =
   | { source: "api"; data: T; error: null }
   | { source: "demo"; data: T; error: null }
+  | { source: "empty"; data: null; error: null }
   | { source: "failure"; data: null; error: AgentFailure };
 
 export interface AgentSnapshot {

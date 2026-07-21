@@ -3,23 +3,15 @@
 import { useMemo, useState } from "react";
 import {
   AlertTriangle,
-  CalendarClock,
   CheckCircle2,
   ChevronRight,
-  Clock3,
   Download,
   FileSearch,
   FileText,
-  Folder,
-  History,
   LoaderCircle,
   Play,
   Search,
-  ShieldAlert,
-  Tag,
   Upload,
-  UsersRound,
-  XCircle,
 } from "lucide-react";
 import { ConfidenceIndicator } from "@/components/ui/badges";
 import { DocumentViewer } from "@/components/documents/document-viewer";
@@ -254,7 +246,6 @@ export function EvidenceLibrary({
       </header>
       <section className="evidence-alerts" aria-label="材料提醒">
         <EvidenceAlert
-          icon={<CalendarClock />}
           value={String(
             assets.filter(
               (item) => item.expiryDays >= 0 && item.expiryDays <= 30,
@@ -265,7 +256,6 @@ export function EvidenceLibrary({
           onClick={() => setStatus("review")}
         />
         <EvidenceAlert
-          icon={<Clock3 />}
           value={String(
             assets.filter(
               (item) => item.expiryDays > 30 && item.expiryDays <= 90,
@@ -275,7 +265,6 @@ export function EvidenceLibrary({
           onClick={() => setStatus("review")}
         />
         <EvidenceAlert
-          icon={<UsersRound />}
           value={String(
             assets.filter((item) => item.legalEntity === "主体待确认").length,
           )}
@@ -283,7 +272,6 @@ export function EvidenceLibrary({
           onClick={() => setQuery("主体待确认")}
         />
         <EvidenceAlert
-          icon={<FileSearch />}
           value={String(
             assets.filter((item) => item.status === "review").length,
           )}
@@ -291,7 +279,6 @@ export function EvidenceLibrary({
           onClick={() => setStatus("review")}
         />
         <EvidenceAlert
-          icon={<ShieldAlert />}
           value={String(
             assets.filter((item) => item.status === "conflict").length,
           )}
@@ -300,7 +287,6 @@ export function EvidenceLibrary({
           onClick={() => setStatus("conflict")}
         />
         <EvidenceAlert
-          icon={<History />}
           value={String(
             assets.filter((item) => item.lastReviewed === "未复核").length,
           )}
@@ -372,7 +358,6 @@ export function EvidenceLibrary({
           </label>
           <section>
             <h3>
-              <Folder size={13} />
               材料类型
             </h3>
             <button
@@ -397,7 +382,6 @@ export function EvidenceLibrary({
           </section>
           <section>
             <h3>
-              <Tag size={13} />
               状态
             </h3>
             {Object.entries(statusLabel).map(([key, label]) => (
@@ -462,19 +446,16 @@ export function EvidenceLibrary({
                     onClick={() => setSelectedId(asset.id)}
                   >
                     <td>
-                      <span className="asset-icon">
-                        <FileText size={15} />
-                      </span>
                       <span>
-                        <strong>{asset.name}</strong>
+                        <strong title={asset.name}>{asset.name}</strong>
                         <small>
                           {asset.type} · {asset.version} · {asset.size}
                         </small>
                       </span>
                     </td>
                     <td>
-                      <strong>{asset.legalEntity}</strong>
-                      <small>{asset.department}</small>
+                      <strong title={asset.legalEntity}>{asset.legalEntity}</strong>
+                      <small title={asset.department}>{asset.department}</small>
                     </td>
                     <td>
                       <strong>{asset.validUntil}</strong>
@@ -490,14 +471,6 @@ export function EvidenceLibrary({
                     </td>
                     <td>
                       <span className={`asset-status ${asset.status}`}>
-                        {asset.status === "verified" ? (
-                          <CheckCircle2 size={11} />
-                        ) : asset.status === "expired" ||
-                          asset.status === "conflict" ? (
-                          <XCircle size={11} />
-                        ) : (
-                          <AlertTriangle size={11} />
-                        )}
                         {statusLabel[asset.status]}
                       </span>
                     </td>
@@ -665,13 +638,11 @@ export function EvidenceLibrary({
 }
 
 function EvidenceAlert({
-  icon,
   value,
   label,
   tone = "",
   onClick,
 }: {
-  icon: React.ReactNode;
   value: string;
   label: string;
   tone?: string;
@@ -679,10 +650,8 @@ function EvidenceAlert({
 }) {
   return (
     <button className={tone} type="button" onClick={onClick}>
-      <span>{icon}</span>
       <strong>{value}</strong>
       <small>{label}</small>
-      <ChevronRight size={13} />
     </button>
   );
 }

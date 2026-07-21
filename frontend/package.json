@@ -1,6 +1,7 @@
 {
   "name": "bidevidence-frontend",
   "version": "0.1.0",
+  "license": "AGPL-3.0-only",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -14,6 +15,7 @@
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
+    "@phosphor-icons/react": "^2.1.10",
     "@tanstack/react-table": "^8.20.5",
     "fflate": "^0.8.2",
     "lucide-react": "^0.468.0",

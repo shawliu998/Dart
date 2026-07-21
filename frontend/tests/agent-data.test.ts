@@ -163,12 +163,26 @@ describe("Agent run API adapter", () => {
     expect(bundle.approvals[0].type).toBe("unknown");
   });
 
+  it("preserves the backend cancelled approval state instead of reopening it as pending", () => {
+    const bundle = agentRunBundleFromApiPayload({
+      ...persistedRun,
+      approvals: [{ id: "approval-cancelled", step_run_id: "step-1", approval_type: "evidence_match", status: "cancelled" }],
+    }, "project-1");
+
+    expect(bundle.approvals[0].status).toBe("cancelled");
+  });
+
   it("gets the latest persisted run from the project endpoint", async () => {
     const request = vi.fn(async () => ({ items: [persistedRun] }));
     const result = await getLatestAgentRun("project-1", request as AgentRequest);
     expect(result.source).toBe("api");
     if (result.source === "api") expect(result.data.run.id).toBe("run-1");
     expect(request).toHaveBeenCalledWith("/api/projects/project-1/agent-runs");
+  });
+
+  it("treats a project without runs as an empty first-run state", async () => {
+    const result = await getLatestAgentRun("project-1", vi.fn(async () => ({ items: [] })) as AgentRequest);
+    expect(result).toEqual({ source: "empty", data: null, error: null });
   });
 
   it("reports API errors without falling back to demo data", async () => {

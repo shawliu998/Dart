@@ -1,11 +1,11 @@
-import { AlertOctagon, AlertTriangle, CheckCircle2, CircleHelp, Eye, ShieldAlert, XCircle } from "lucide-react";
+import { AlertTriangle, CheckCircle2, CircleHelp, Eye, XCircle } from "lucide-react";
 import type { RequirementStatus, RiskLevel } from "@/lib/types";
 
-const riskMap: Record<RiskLevel, { label: string; icon: typeof AlertTriangle }> = {
-  fatal: { label: "致命", icon: AlertOctagon },
-  high: { label: "高风险", icon: ShieldAlert },
-  medium: { label: "中风险", icon: AlertTriangle },
-  low: { label: "低风险", icon: CircleHelp },
+const riskMap: Record<RiskLevel, string> = {
+  fatal: "否决风险",
+  high: "高风险",
+  medium: "中风险",
+  low: "低风险",
 };
 
 const statusMap: Record<RequirementStatus, { label: string; icon: typeof CheckCircle2 }> = {
@@ -17,8 +17,7 @@ const statusMap: Record<RequirementStatus, { label: string; icon: typeof CheckCi
 };
 
 export function RiskBadge({ level }: { level: RiskLevel }) {
-  const { label, icon: Icon } = riskMap[level];
-  return <span className={`badge risk-${level}`}><Icon size={13} aria-hidden="true" />{label}</span>;
+  return <span className={`badge risk-${level}`}>{riskMap[level]}</span>;
 }
 
 export function StatusBadge({ status }: { status: RequirementStatus }) {

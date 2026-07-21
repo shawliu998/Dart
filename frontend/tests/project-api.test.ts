@@ -2,8 +2,8 @@ import { mapDisqualificationDto, mapDocumentDto, mapProjectDto, mapRequirementDt
 
 describe("backend DTO adapters", () => {
   it("maps snake_case project fields into the UI model", () => {
-    const project = mapProjectDto({ id: "p-1", name: "测试项目", buyer_name: "采购人", project_code: "ZB-01", current_stage: "parsed", completion_percentage: 35, risk_level: "high", updated_at: "2026-07-16" });
-    expect(project).toMatchObject({ buyerName: "采购人", projectCode: "ZB-01", stage: "parsed", progress: 35, risk: "high", updatedAt: "2026-07-16" });
+    const project = mapProjectDto({ id: "p-1", name: "测试项目", buyer_name: "采购人", project_code: "ZB-01", current_stage: "remediation", completion_percentage: 35, risk_level: "high", deadline: "2026-07-30T09:00:00Z", updated_at: "2026-07-21T02:37:16Z" });
+    expect(project).toMatchObject({ buyerName: "采购人", projectCode: "ZB-01", stage: "整改处理", progress: 35, risk: "high", deadline: "2026-07-30 17:00", updatedAt: "2026-07-21 10:37" });
   });
 
   it("maps requirement source and review-safe defaults", () => {

@@ -15,7 +15,7 @@ const statusLabel: Record<string, string> = {
 
 const wait = (milliseconds: number) => new Promise((resolve) => setTimeout(resolve, milliseconds));
 
-export function DocumentAnalysisPanel({ projectId, initialDocuments }: { projectId: string; initialDocuments: ProjectDocument[] }) {
+export function DocumentAnalysisPanel({ projectId, initialDocuments, emptyState = "当前项目还没有上传文档。" }: { projectId: string; initialDocuments: ProjectDocument[]; emptyState?: string }) {
   const router = useRouter();
   const [documents, setDocuments] = useState(initialDocuments);
   const [runningId, setRunningId] = useState<string | null>(null);
@@ -63,7 +63,7 @@ export function DocumentAnalysisPanel({ projectId, initialDocuments }: { project
   return <section className="panel document-analysis-panel" aria-label="文档分析版本">
     <div className="panel-header"><div><h2>文档分析版本</h2><p>成功后自动启动增量 Agent；失败不会影响现有结果</p></div><span>{documents.length} 份文档</span></div>
     {feedback && <div className={`mutation-feedback ${feedback.tone}`} role={feedback.tone === "error" ? "alert" : "status"}>{feedback.text}</div>}
-    {documents.length === 0 ? <p className="document-analysis-empty">当前项目还没有上传文档。</p> : <div className="document-analysis-list">
+    {documents.length === 0 ? <p className="document-analysis-empty">{emptyState}</p> : <div className="document-analysis-list">
       {documents.map((document) => {
         const running = runningId === document.id;
         return <article key={document.id}>

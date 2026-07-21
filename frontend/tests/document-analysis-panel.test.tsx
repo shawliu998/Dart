@@ -11,6 +11,11 @@ const document: ProjectDocument = { id: "doc-1", projectId: "project-1", filenam
 describe("DocumentAnalysisPanel", () => {
   afterEach(() => vi.restoreAllMocks());
 
+  it("uses the supplied empty-state explanation", () => {
+    render(<DocumentAnalysisPanel projectId="project-1" initialDocuments={[]} emptyState="演示结果来自固定 fixtures。" />);
+    expect(screen.getByText("演示结果来自固定 fixtures。")).toBeInTheDocument();
+  });
+
   it("shows the published version and refreshes after a completed reanalysis", async () => {
     vi.spyOn(projectApi, "reanalyzeDocument").mockResolvedValue({ job_id: "job-1", status: "completed" });
     vi.spyOn(projectApi, "documents").mockResolvedValue([{ ...document, parseRevision: 2 }]);

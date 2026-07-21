@@ -129,6 +129,13 @@ describe("AgentWorkspace", () => {
     expect(screen.queryByRole("link", { name: /打开要求复核工作台/ })).not.toBeInTheDocument();
   });
 
+  it("shows a neutral first-run state instead of an API failure", () => {
+    render(<AgentWorkspace initialResult={{ source: "empty", data: null, error: null }} />);
+    expect(screen.getByRole("status")).toHaveTextContent("尚无 Agent 运行记录");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "刷新重试" })).not.toBeInTheDocument();
+  });
+
   it("submits an API-only pending approval with its audited reason", async () => {
     const user = userEvent.setup();
     const approve = vi.spyOn(agentApi, "approve").mockResolvedValue({ ok: true });

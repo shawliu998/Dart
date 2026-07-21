@@ -22,7 +22,7 @@ const agentActions: AgentAction[] = [
   { id: "tasks", label: "生成整改任务", summary: "把已确认问题映射为负责人、期限和复核人。", scope: "当前项目 / 已确认问题", data: "风险、负责人目录、项目截止时间", modifiesState: true, risk: "high", icon: ListTodo, destination: "tasks" },
   { id: "package", label: "运行封装检查", summary: "检查缺件、证书时效、命名、元数据与一致性。", scope: "当前项目 / 预览包", data: "受控文件树与封装规则", modifiesState: false, risk: "normal", icon: PackageCheck, destination: "package" },
   { id: "risk-summary", label: "生成风险摘要", summary: "汇总可回溯风险、负责人和下游影响。", scope: "当前项目 / 当前快照", data: "要求、证据、任务、封装结果与审计", modifiesState: false, risk: "normal", icon: ShieldAlert, destination: "overview" },
-  { id: "approval", label: "提交人工审批", summary: "将致命结论或交付门禁提交给指定角色。", scope: "当前项目 / 待审批输出", data: "来源证据、影响、可逆性与理由", modifiesState: true, risk: "high", icon: ClipboardCheck, destination: "audit" },
+  { id: "approval", label: "提交人工审批", summary: "将需要暂停交付的结论提交给指定角色复核。", scope: "当前项目 / 待审批输出", data: "来源证据、影响、可逆性与理由", modifiesState: true, risk: "high", icon: ClipboardCheck, destination: "audit" },
 ];
 
 export function CommandPalette({ open, project, onClose }: { open: boolean; project: ProjectContext | null; onClose: () => void }) {

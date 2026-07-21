@@ -29,7 +29,7 @@ export function AgentLaunchPanel({ projectId }: { projectId: string }) {
   }
 
   return (
-    <section className="rounded-xl border border-teal-200 bg-teal-50 p-4" aria-label="项目分析操作">
+    <section className="agent-launch-panel-v4 rounded-xl border border-teal-200 bg-teal-50 p-4" aria-label="项目分析操作">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <h1 className="flex items-center gap-2 text-base font-semibold text-slate-950"><Bot size={18} />项目分析 Agent</h1>

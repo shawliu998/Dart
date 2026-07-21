@@ -2,25 +2,25 @@
 
 import { KeyboardEvent, useMemo, useRef, useState } from "react";
 import {
-  AlertTriangle,
-  ArrowDownToLine,
-  Bot,
+  Warning as AlertTriangle,
+  DownloadSimple as ArrowDownToLine,
+  Robot as Bot,
   Check,
-  ChevronDown,
-  ChevronLeft,
-  ChevronRight,
-  Clipboard,
-  FileCheck2,
+  CaretDown as ChevronDown,
+  CaretLeft as ChevronLeft,
+  CaretRight as ChevronRight,
+  Copy as Clipboard,
+  File as FileCheck2,
   FileText,
-  Filter,
-  ListChecks,
-  MessageSquareText,
-  Save,
-  Search,
+  Funnel as Filter,
+  Checks as ListChecks,
+  ChatText as MessageSquareText,
+  FloppyDisk as Save,
+  MagnifyingGlass as Search,
   ShieldCheck,
-  Upload,
+  UploadSimple as Upload,
   X,
-} from "lucide-react";
+} from "@phosphor-icons/react";
 import {
   ConfidenceIndicator,
   RiskBadge,
@@ -375,24 +375,17 @@ export function RequirementsWorkbench({
       className="page-workbench requirements-page"
       data-project-id={projectId}
     >
-      <header className="workbench-heading">
+      <header className="workbench-heading v4-review-heading">
         <div>
-          <span className="workbench-kicker">
-            <ShieldCheck size={13} />
-            要求确认阶段
-          </span>
-          <h1>招标要求工作台</h1>
-          <p>
-            {items.length} 条要求 ·{" "}
-            {items.filter((item) => item.disqualification).length} 个否决候选 ·{" "}
-            {
-              items.filter(
-                (item) => item.status === "review" || item.confidence < 0.7,
-              ).length
-            }{" "}
-            条待人工确认 ·{" "}
-            {new Set(items.map((item) => item.sourceDocument)).size} 份来源文档
-          </p>
+          <span className="workbench-kicker"><ShieldCheck size={13} />合规工作区</span>
+          <h1>合规审阅</h1>
+          <p>逐条核对招标要求、原文与企业证据</p>
+        </div>
+        <div className="v4-review-stats" aria-label="合规审阅统计">
+          <span><small>全部要求</small><strong>{items.length}</strong></span>
+          <span><small>否决候选</small><strong className="danger">{items.filter((item) => item.disqualification).length}</strong></span>
+          <span><small>待人工确认</small><strong className="warning">{items.filter((item) => item.status === "review" || item.confidence < 0.7).length}</strong></span>
+          <span><small>来源文档</small><strong>{new Set(items.map((item) => item.sourceDocument)).size}</strong></span>
         </div>
         <div className="header-actions">
           <span className={`data-source ${source}`}>
@@ -417,7 +410,7 @@ export function RequirementsWorkbench({
         </div>
       </header>
 
-      <section className="workbench-alert" role="status">
+      <section className="workbench-alert v4-review-alert" role="status">
         <AlertTriangle size={15} />
         <span>
           <strong>

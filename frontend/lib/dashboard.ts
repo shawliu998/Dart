@@ -11,7 +11,7 @@ export async function getDashboardData() {
   const cutoff = now + 14 * 24 * 60 * 60 * 1000;
   const dueToday = taskResult.data.filter((task) => task.status !== "done" && new Date(`${task.dueDate}T23:59:59+08:00`).toDateString() === DEMO_NOW.toDateString()).length;
   const nearestProject = [...projects].filter((project) => !Number.isNaN(new Date(project.deadline.replace(" ", "T") + "+08:00").getTime())).sort((a, b) => a.deadline.localeCompare(b.deadline))[0] ?? null;
-  const source = agentResult.source === "failure" ? "error" as const : taskResult.source === "api" && auditResult.source === "api" && agentResult.source === "api" ? "api" as const : "demo" as const;
+  const source = agentResult.source === "failure" ? "error" as const : taskResult.source === "api" && auditResult.source === "api" && (agentResult.source === "api" || agentResult.source === "empty") ? "api" as const : "demo" as const;
   return {
     projects, tasks: taskResult.data, audit: auditResult.data, source, agent, agentError: agentResult.error,
     nowLabel: new Intl.DateTimeFormat("zh-CN", { dateStyle: "full", timeZone: "Asia/Shanghai" }).format(DEMO_NOW),

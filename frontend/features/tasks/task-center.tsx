@@ -3,7 +3,6 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
-  AlertOctagon,
   CalendarClock,
   Check,
   ChevronRight,
@@ -31,7 +30,7 @@ const columns: { key: RemediationTask["status"]; label: string }[] = [
   { key: "review", label: "待复核" },
   { key: "done", label: "已完成" },
 ];
-const priorityLabel = { critical: "致命", high: "高", medium: "中", low: "低" };
+const priorityLabel = { critical: "紧急", high: "高", medium: "中", low: "低" };
 const nextStatus: Record<RemediationTask["status"], RemediationTask["status"]> =
   {
     todo: "in_progress",
@@ -161,7 +160,6 @@ export function TaskCenter({
       </header>
       <section className="task-overview">
         <article>
-          <AlertOctagon size={15} />
           <span>
             <strong>
               {
@@ -171,11 +169,10 @@ export function TaskCenter({
                 ).length
               }
             </strong>
-            <small>致命优先级</small>
+            <small>紧急优先级</small>
           </span>
         </article>
         <article>
-          <CalendarClock size={15} />
           <span>
             <strong>
               {
@@ -189,7 +186,6 @@ export function TaskCenter({
           </span>
         </article>
         <article>
-          <Check size={15} />
           <span>
             <strong>
               {tasks.filter((item) => item.status === "done").length}
@@ -213,7 +209,7 @@ export function TaskCenter({
             onChange={(event) => setPriority(event.target.value)}
           >
             <option value="all">全部优先级</option>
-            <option value="critical">致命</option>
+            <option value="critical">紧急</option>
             <option value="high">高</option>
             <option value="medium">中</option>
           </select>

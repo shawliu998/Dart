@@ -1,25 +1,211 @@
 "use client";
 
 import Link from "next/link";
-import { AlertOctagon, ArrowRight, Bot, CalendarClock, CheckCircle2, ClipboardCheck, Clock3, FileWarning, FolderKanban, PackageCheck, Plus, ShieldCheck, Sparkles } from "lucide-react";
+import { useState } from "react";
+import { Bot, CalendarClock, Download, Plus, RefreshCw } from "lucide-react";
 import type { AwaitedReturn } from "./types";
-import { RiskBadge } from "@/components/ui/badges";
-import { ProgressBar } from "@/components/ui/progress";
+import styles from "./dashboard-view.module.css";
 import { useFeedback } from "@/components/feedback/feedback-provider";
+import { RiskBadge } from "@/components/ui/badges";
+import { DataTable, type DataTableColumn } from "@/components/ui/data-table";
+import { ProgressBar } from "@/components/ui/progress";
 
 export function DashboardView({ data }: { data: AwaitedReturn }) {
   const { notify } = useFeedback();
+  const [period, setPeriod] = useState("14d");
+  const [refreshing, setRefreshing] = useState(false);
   const priorityRank = { critical: 0, high: 1, medium: 2, low: 3 } as const;
-  const urgentTasks = data.tasks.filter((task) => task.status !== "done").sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority] || a.dueDate.localeCompare(b.dueDate)).slice(0, 4);
-  return <div className="page v2-page dashboard-page"><header className="v2-page-header"><div><span className="v2-eyebrow">{data.nowLabel}</span><h1>今日投标态势</h1><p>从项目、任务、审计与 Agent 运行结果动态聚合。</p></div><div className="header-actions"><span className={`data-source ${data.source}`}>{data.sourceLabel}</span><Link className="button" href="/agent"><Bot size={15} />查看 Agent 运行</Link><Link className="button primary" href="/projects/new"><Plus size={15} />新建项目</Link></div></header>
-    <section className="v2-metric-grid" aria-label="全局工作统计"><Metric icon={<FolderKanban />} label="进行中项目" value={data.metrics.activeProjects} note={`覆盖 ${data.metrics.stageCount} 个当前阶段`} href="/projects" /><Metric icon={<CalendarClock />} label="14 天内截止" value={data.metrics.dueSoon} note={`最近截止 ${data.metrics.nearestDeadline}`} href="/projects" /><Metric icon={<AlertOctagon />} label="致命风险" value={data.metrics.fatalRisks} note="按项目风险字段动态汇总" href={`/projects/${data.projects[0]?.id}/disqualifications`} tone="fatal" /><Metric icon={<ClipboardCheck />} label="待处理任务" value={data.metrics.openTasks} note={`${data.metrics.dueToday} 项演示时点当天到期`} href="/tasks" /><Metric icon={<ShieldCheck />} label="待人工审批" value={data.metrics.pendingApprovals} note="来自当前 Agent 运行门禁" href="/agent" tone="review" /></section>
-    <div className="dashboard-grid"><section className="panel dashboard-attention"><div className="panel-header"><div><h2>优先处理</h2><p>按优先级与截止时间动态排序</p></div><Link href="/tasks">查看全部 <ArrowRight size={14} /></Link></div><div className="attention-list">{urgentTasks.slice(0, 3).map((task) => <Attention key={task.id} tone={task.priority === "critical" ? "fatal" : task.priority === "high" ? "warning" : "review"} icon={task.sourceType === "package" ? <PackageCheck /> : task.sourceType === "consistency" ? <FileWarning /> : <ClipboardCheck />} title={task.title} detail={task.reason} meta={`${task.owner} · ${task.dueDate}`} href="/tasks" />)}{urgentTasks.length === 0 && <div className="empty-state compact">当前没有未完成任务。</div>}</div></section>
-      <section className="panel dashboard-agent"><div className="panel-header"><div><h2>Agent 运行状态</h2><p>结构化工作流与人工门禁</p></div><span className="agent-live"><i />{data.agent ? "运行已聚合" : "聚合失败"}</span></div>{data.agent ? <><div className="agent-run-summary"><span className="agent-orb"><Sparkles size={20} /></span><div><strong>{data.agent.run.title}</strong><small>{data.agent.run.summary}</small></div><span>{data.agent.run.progress}%</span></div><ProgressBar value={data.agent.run.progress} label="Agent 工作流完成度" /><div className="agent-gates"><p><span><AlertOctagon size={14} />人工审批门禁</span><strong>{data.metrics.pendingApprovals}</strong></p><p><span><Clock3 size={14} />当前运行步骤</span><strong>{data.agent.steps.find((step) => step.id === data.agent?.run.currentStepId)?.title ?? "等待"}</strong></p><p><span><FileWarning size={14} />封装阻塞</span><strong>{data.metrics.packageBlockers}</strong></p></div></> : <div className="agent-error"><AlertOctagon size={18} /><strong>Agent API 数据不可用</strong><small>{data.agentError?.message ?? "未返回运行数据，未自动切换为演示结果。"}</small></div>}<Link className="button full-width" href="/agent">打开 Agent 运行中心<ArrowRight size={14} /></Link></section>
-      <section className="panel dashboard-portfolio"><div className="panel-header"><div><h2>项目组合</h2><p>进度、截止时间与当前风险</p></div><Link href="/projects">管理项目 <ArrowRight size={14} /></Link></div><div>{data.projects.map((project) => <Link className="dashboard-project-row" key={project.id} href={`/projects/${project.id}/overview`}><span className="dashboard-project-mark">{project.name.slice(0, 1)}</span><span><strong>{project.name}</strong><small>{project.projectCode} · {project.buyerName}</small></span><span><small>阶段</small><strong>{project.stage}</strong></span><span><small>完成度</small><ProgressBar value={project.progress} /></span><RiskBadge level={project.risk} /><ArrowRight size={14} /></Link>)}</div></section>
-      <section className="panel dashboard-tasks"><div className="panel-header"><div><h2>我的整改任务</h2><p>当前用户负责或复核</p></div><Link href="/tasks">任务中心 <ArrowRight size={14} /></Link></div><div>{urgentTasks.map((task) => <Link key={task.id} href="/tasks"><span className={`task-priority ${task.priority}`}>{task.priority === "critical" ? "致命" : task.priority === "high" ? "高" : "中"}</span><span><strong>{task.title}</strong><small>{task.sourceLabel}</small></span><span><small>负责人</small><strong>{task.owner}</strong></span><time>{task.dueDate.slice(5)}</time></Link>)}</div></section>
-      <section className="panel dashboard-activity"><div className="panel-header"><div><h2>最近活动</h2><p>规则、模型与人工操作</p></div><Link href="/audit">全局审计 <ArrowRight size={14} /></Link></div><ol>{data.audit.slice(0, 5).map((record) => <li key={record.id}><span className={`activity-type ${record.actorType}`}>{record.actorType === "human" ? "人" : record.actorType === "agent" ? "AI" : "规"}</span><span><strong>{record.action}</strong><small>{record.actor} · {record.entityLabel}</small></span><time>{record.timestamp.slice(5, 16)}</time></li>)}</ol><button className="dashboard-copy-summary" type="button" onClick={() => { void navigator.clipboard.writeText(`标证通今日摘要：${data.metrics.fatalRisks} 个致命风险，${data.metrics.openTasks} 个待处理任务。`); notify({ title: "今日摘要已复制", description: "可粘贴到内部协作工具中。", tone: "success" }); }}><CheckCircle2 size={14} />复制今日摘要</button></section></div>
-  </div>;
+  const urgentTasks = data.tasks
+    .filter((task) => task.status !== "done")
+    .sort((a, b) => priorityRank[a.priority] - priorityRank[b.priority] || a.dueDate.localeCompare(b.dueDate))
+    .slice(0, 4);
+
+  const projectColumns: DataTableColumn<(typeof data.projects)[number]>[] = [
+    {
+      key: "project",
+      header: "项目",
+      render: (project) => (
+        <Link className={styles.primaryCell} href={`/projects/${project.id}/overview`}>
+          <strong>{project.name}</strong>
+          <small>{project.projectCode} · {project.buyerName}</small>
+        </Link>
+      ),
+    },
+    { key: "stage", header: "阶段", render: (project) => project.stage },
+    { key: "deadline", header: "截止时间", render: (project) => <time className={styles.deadline}>{project.deadline}</time> },
+    { key: "progress", header: "完成度", render: (project) => <ProgressBar value={project.progress} /> },
+    { key: "risk", header: "风险", render: (project) => <RiskBadge level={project.risk} /> },
+    { key: "action", header: <span className="sr-only">操作</span>, render: (project) => <Link className={styles.rowAction} href={`/projects/${project.id}/overview`}>打开</Link> },
+  ];
+
+  const taskColumns: DataTableColumn<(typeof urgentTasks)[number]>[] = [
+    {
+      key: "priority",
+      header: "优先级",
+      render: (task) => <span className={`${styles.priority} ${styles[task.priority]}`}>{priorityLabel(task.priority)}</span>,
+    },
+    {
+      key: "task",
+      header: "整改任务",
+      render: (task) => (
+        <Link className={styles.primaryCell} href="/tasks">
+          <strong>{task.title}</strong>
+          <small>{task.sourceLabel}</small>
+        </Link>
+      ),
+    },
+    { key: "owner", header: "负责人", render: (task) => task.owner },
+    { key: "due", header: "截止", render: (task) => <time className={styles.deadline}>{task.dueDate}</time> },
+    { key: "action", header: <span className="sr-only">操作</span>, render: () => <Link className={styles.rowAction} href="/tasks">处理</Link> },
+  ];
+
+  function refreshDashboard() {
+    setRefreshing(true);
+    window.setTimeout(() => {
+      setRefreshing(false);
+      notify({
+        title: "工作台已刷新",
+        description: `已按${period === "7d" ? "近 7 天" : period === "30d" ? "近 30 天" : "近 14 天"}重新聚合当前演示数据。`,
+        tone: "success",
+      });
+    }, 450);
+  }
+
+  function exportDashboard() {
+    const rows = [
+      ["项目", "项目编号", "阶段", "完成度", "风险"],
+      ...data.projects.map((project) => [project.name, project.projectCode, project.stage, `${project.progress}%`, project.risk]),
+    ];
+    const csv = `\uFEFF${rows.map((row) => row.map((value) => `"${String(value).replaceAll('"', '""')}"`).join(",")).join("\n")}`;
+    const url = URL.createObjectURL(new Blob([csv], { type: "text/csv;charset=utf-8" }));
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = "标证通-项目态势.csv";
+    document.body.append(anchor);
+    anchor.click();
+    anchor.remove();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1_000);
+    notify({ title: "项目态势已导出", description: "CSV 文件包含当前项目阶段、完成度与风险。", tone: "success" });
+  }
+
+  return (
+    <div className={`page v2-page ${styles.page}`}>
+      <header className={`v2-page-header ${styles.header}`}>
+        <div>
+          <h1>今日投标态势</h1>
+          <p>{data.nowLabel} · 项目、任务、审计与 Agent 运行汇总</p>
+        </div>
+        <div className={`header-actions ${styles.actions}`}>
+          <span className={`data-source ${data.source}`}>{data.sourceLabel}</span>
+          <label className={styles.period}>
+            <span className="sr-only">统计范围</span>
+            <CalendarClock size={14} />
+            <select aria-label="统计范围" value={period} onChange={(event) => setPeriod(event.target.value)}>
+              <option value="7d">近 7 天</option>
+              <option value="14d">近 14 天</option>
+              <option value="30d">近 30 天</option>
+            </select>
+          </label>
+          <button className="button" type="button" disabled={refreshing} onClick={refreshDashboard}>
+            <RefreshCw className={refreshing ? "is-spinning" : undefined} size={14} />{refreshing ? "刷新中" : "刷新"}
+          </button>
+          <button className="button" type="button" onClick={exportDashboard}><Download size={14} />导出</button>
+          <Link className="button" href="/agent"><Bot size={14} />Agent 运行</Link>
+          <Link className="button primary" href="/projects/new"><Plus size={14} />新建项目</Link>
+        </div>
+      </header>
+
+      <nav className={styles.summary} aria-label="工作统计">
+        <SummaryItem label="进行中项目" value={data.metrics.activeProjects} href="/projects" />
+        <SummaryItem label="14 天内截止" value={data.metrics.dueSoon} href="/projects" />
+        <SummaryItem label="否决风险" value={data.metrics.fatalRisks} href={`/projects/${data.projects[0]?.id}/disqualifications`} />
+        <SummaryItem label="待处理任务" value={data.metrics.openTasks} href="/tasks" />
+        <SummaryItem label="待人工审批" value={data.metrics.pendingApprovals} href="/agent" />
+      </nav>
+
+      <div className={styles.workspace}>
+        <main className={styles.primary}>
+          <section className={styles.section}>
+            <SectionHeader title="项目组合" description="按截止时间、完成度与风险集中查看" action="管理项目" href="/projects" />
+            <DataTable caption="当前项目组合" data={data.projects} columns={projectColumns} keyExtractor={(project) => project.id} />
+          </section>
+
+          <section className={styles.section}>
+            <SectionHeader title="我的整改任务" description="当前用户负责或复核的未完成事项" action="任务中心" href="/tasks" />
+            <DataTable caption="我的整改任务" data={urgentTasks} columns={taskColumns} keyExtractor={(task) => task.id} emptyState="当前没有未完成任务" />
+          </section>
+        </main>
+
+        <aside className={styles.rail} aria-label="工作台侧栏">
+          <section className={styles.section}>
+            <SectionHeader title="优先处理" description="按优先级与截止时间排序" action="查看全部" href="/tasks" />
+            <div className={styles.attentionList}>
+              {urgentTasks.slice(0, 3).map((task) => (
+                <Link key={task.id} href="/tasks" className={styles.attentionItem}>
+                  <span className={`${styles.priority} ${styles[task.priority]}`}>{priorityLabel(task.priority)}</span>
+                  <span><strong>{task.title}</strong><small>{task.reason}</small><em>{task.owner} · {task.dueDate}</em></span>
+                </Link>
+              ))}
+              {urgentTasks.length === 0 && <p className={styles.muted}>当前没有未完成任务。</p>}
+            </div>
+          </section>
+
+          <section className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <div><h2>Agent 运行状态</h2><p>当前项目工作流</p></div>
+              <span className={styles.agentStatus}><i />{data.agent ? "运行中" : "聚合失败"}</span>
+            </div>
+            {data.agent ? (
+              <>
+                <div className={styles.agentSummary}>
+                  <div><strong>{data.agent.run.title}</strong><small>{data.agent.run.summary}</small></div>
+                  <span>{data.agent.run.progress}%</span>
+                </div>
+                <ProgressBar value={data.agent.run.progress} label="Agent 工作流完成度" />
+                <dl className={styles.gates}>
+                  <div><dt>人工审批</dt><dd>{data.metrics.pendingApprovals}</dd></div>
+                  <div><dt>当前步骤</dt><dd>{data.agent.steps.find((step) => step.id === data.agent?.run.currentStepId)?.title ?? "等待"}</dd></div>
+                  <div><dt>封装阻塞</dt><dd>{data.metrics.packageBlockers}</dd></div>
+                </dl>
+              </>
+            ) : (
+              <div className={styles.agentError}><strong>Agent API 数据不可用</strong><small>{data.agentError?.message ?? "未返回运行数据，未自动切换为演示结果。"}</small></div>
+            )}
+            <Link className={`button ${styles.agentLink}`} href="/agent">打开 Agent 运行中心</Link>
+          </section>
+
+          <section className={styles.section}>
+            <div className={styles.sectionHeader}>
+              <div><h2>最近活动</h2><p>规则、模型与人工操作</p></div>
+              <button type="button" onClick={() => {
+                void navigator.clipboard.writeText(`标证通今日摘要：${data.metrics.fatalRisks} 个否决风险，${data.metrics.openTasks} 个待处理任务。`);
+                notify({ title: "今日摘要已复制", description: "可粘贴到内部协作工具中。", tone: "success" });
+              }}>复制摘要</button>
+            </div>
+            <ol className={styles.activityList}>
+              {data.audit.slice(0, 5).map((record) => (
+                <li className={styles.activityItem} key={record.id}>
+                  <span className={styles.activityType}>{record.actorType === "human" ? "人工" : record.actorType === "agent" ? "Agent" : "规则"}</span>
+                  <span className={styles.primaryCell}><strong>{record.action}</strong><small>{record.actor} · {record.entityLabel}</small></span>
+                  <time>{record.timestamp.slice(5, 16)}</time>
+                </li>
+              ))}
+            </ol>
+          </section>
+        </aside>
+      </div>
+    </div>
+  );
 }
 
-function Metric({ icon, label, value, note, href, tone = "" }: { icon: React.ReactNode; label: string; value: number; note: string; href: string; tone?: string }) { return <Link className={`v2-metric ${tone}`} href={href}><span>{icon}</span><div><small>{label}</small><strong>{value}</strong><p>{note}</p></div><ArrowRight size={14} /></Link>; }
-function Attention({ icon, title, detail, meta, href, tone }: { icon: React.ReactNode; title: string; detail: string; meta: string; href: string; tone: string }) { return <Link href={href} className={`attention-item ${tone}`}><span>{icon}</span><span><strong>{title}</strong><small>{detail}</small></span><em>{meta}</em><ArrowRight size={14} /></Link>; }
+function SummaryItem({ label, value, href }: { label: string; value: number; href: string }) {
+  return <Link className={styles.summaryItem} href={href}><span>{label}</span><strong>{value}</strong></Link>;
+}
+
+function SectionHeader({ title, description, action, href }: { title: string; description: string; action: string; href: string }) {
+  return <div className={styles.sectionHeader}><div><h2>{title}</h2><p>{description}</p></div><Link href={href}>{action}</Link></div>;
+}
+
+function priorityLabel(priority: "critical" | "high" | "medium" | "low") {
+  return priority === "critical" ? "阻断" : priority === "high" ? "高" : priority === "medium" ? "普通" : "低";
+}
