@@ -468,7 +468,8 @@ def test_migration_revision_linkage() -> None:
     assert revisions["0008_agent_run_scope_outcome"].down_revision == "0007_unique_active_agent_job"
     assert revisions["0009_document_analysis_revisions"].down_revision == "0008_agent_run_scope_outcome"
     assert revisions["0010_document_page_revisions"].down_revision == "0009_document_analysis_revisions"
-    assert tuple(script.get_heads()) == ("0010_document_page_revisions",)
+    assert revisions["0011_audit_request_ids"].down_revision == "0010_document_page_revisions"
+    assert tuple(script.get_heads()) == ("0011_audit_request_ids",)
 
 
 def _load_migration_module() -> ModuleType:

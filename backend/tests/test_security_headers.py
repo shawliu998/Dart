@@ -90,6 +90,7 @@ def test_unhandled_500_response_has_generic_body_and_security_headers() -> None:
     assert response.headers["content-security-policy"] == _API_CSP
     assert response.headers["x-content-type-options"] == "nosniff"
     assert response.headers["access-control-allow-origin"] == "http://localhost:3000"
+    assert response.headers["access-control-expose-headers"] == "X-Request-ID"
 
 
 @pytest.mark.parametrize("environment", ["production", "staging"])

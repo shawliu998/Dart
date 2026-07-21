@@ -19,6 +19,7 @@ from app.models.entities import (
     Requirement,
 )
 from app.schemas.common import DecisionRequest, JobRead
+from app.schemas.audit import AuditEventRead
 from app.schemas.documents import DocumentRead, PageRead
 from app.schemas.projects import ProjectCreate, ProjectRead, ProjectUpdate
 from app.schemas.requirements import (
@@ -349,7 +350,7 @@ def get_job(
     return job
 
 
-@router.get("/projects/{project_id}/audit")
+@router.get("/projects/{project_id}/audit", response_model=list[AuditEventRead])
 def list_audit(
     project_id: UUID, db: Session = Depends(get_db), principal: Principal = Depends(get_principal)
 ):
@@ -364,6 +365,8 @@ def list_audit(
     return [
         {
             "id": str(e.id),
+            "request_id": str(e.request_id),
+            "project_id": str(e.project_id) if e.project_id else None,
             "action": e.action,
             "entity_type": e.entity_type,
             "entity_id": str(e.entity_id),
@@ -377,7 +380,7 @@ def list_audit(
     ]
 
 
-@router.get("/audit/{audit_id}")
+@router.get("/audit/{audit_id}", response_model=AuditEventRead)
 def audit_detail(
     audit_id: UUID,
     db: Session = Depends(get_db),
@@ -392,6 +395,7 @@ def audit_detail(
         raise HTTPException(status_code=404, detail="audit event not found")
     return {
         "id": str(event.id),
+        "request_id": str(event.request_id),
         "project_id": str(event.project_id) if event.project_id else None,
         "action": event.action,
         "entity_type": event.entity_type,

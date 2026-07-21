@@ -339,6 +339,7 @@ class AgentArtifact(UUIDAuditMixin, Base):
 class AuditEvent(Base):
     __tablename__ = "audit_events"
     id: Mapped[UUID] = mapped_column(primary_key=True)
+    request_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
     tenant_id: Mapped[UUID] = mapped_column(index=True)
     project_id: Mapped[UUID | None] = mapped_column(index=True, nullable=True)
     actor_type: Mapped[str] = mapped_column(String(20))

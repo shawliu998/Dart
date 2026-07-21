@@ -17,6 +17,7 @@ from app.api.routes import router
 from app.api.domain_routes import router as domain_router
 from app.api.auth_routes import router as auth_router
 from app.api.agent_routes import router as agent_router
+from app.audit.context import bind_http_request_id, reset_http_request_id
 from app.auth.dependencies import Principal, get_principal
 from app.core.config import get_settings
 from app.db.base import Base
@@ -24,6 +25,7 @@ from app.db.session import engine, get_db
 from app.services.seed import seed_demo
 from app.services.local_workspace import bootstrap_local_workspace
 from app.services.jobs import process_next_job
+from uuid import UUID, uuid4
 
 
 async def _local_worker(stop: asyncio.Event) -> None:
@@ -103,6 +105,21 @@ class SecurityHeadersMiddleware(BaseHTTPMiddleware):
         return apply_security_headers(response, request.url.path)
 
 
+class RequestIdMiddleware(BaseHTTPMiddleware):
+    """Generate an untrusted-client-independent ID for every HTTP request."""
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        request_id = uuid4()
+        request.state.request_id = request_id
+        token = bind_http_request_id(request_id)
+        try:
+            response = await call_next(request)
+            response.headers["X-Request-ID"] = str(request_id)
+            return response
+        finally:
+            reset_http_request_id(token)
+
+
 async def internal_server_error(request: Request, _: Exception) -> Response:
     """Keep 500 responses generic and protected when they bypass middleware."""
     response = apply_security_headers(
@@ -112,7 +129,10 @@ async def internal_server_error(request: Request, _: Exception) -> Response:
     settings = get_settings()
     if origin and (origin in settings.cors_origins or "*" in settings.cors_origins):
         response.headers["Access-Control-Allow-Origin"] = "*" if "*" in settings.cors_origins else origin
+        response.headers["Access-Control-Expose-Headers"] = "X-Request-ID"
         response.headers.append("Vary", "Origin")
+    request_id = getattr(request.state, "request_id", None)
+    response.headers["X-Request-ID"] = str(request_id if isinstance(request_id, UUID) else uuid4())
     return response
 
 
@@ -123,6 +143,7 @@ app.add_middleware(
     allow_origins=list(settings.cors_origins),
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
+    expose_headers=["X-Request-ID"],
     allow_headers=(
         ["Content-Type", "Authorization"]
         if settings.desktop_mode or settings.app_env != "development"
@@ -132,6 +153,7 @@ app.add_middleware(
 # Middleware is LIFO: this must be registered after CORS so OPTIONS responses
 # that CORS short-circuits still receive the security headers.
 app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(RequestIdMiddleware)
 app.include_router(router)
 app.include_router(domain_router)
 app.include_router(auth_router)

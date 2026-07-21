@@ -8,6 +8,7 @@ from uuid import UUID, uuid4
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import Principal
+from app.audit.context import audit_request_id
 from app.models.entities import AuditEvent
 
 
@@ -40,6 +41,7 @@ def append_event(
     safe_after = json_safe(after) if after is not None else None
     event = AuditEvent(
         id=uuid4(),
+        request_id=audit_request_id(),
         tenant_id=principal.tenant_id,
         project_id=project_id,
         actor_type="human" if model_name is None else "agent",

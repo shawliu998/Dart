@@ -12,6 +12,7 @@ from sqlalchemy import and_, or_, select, update
 from sqlalchemy.engine import CursorResult
 
 from app.auth.dependencies import Principal
+from app.audit.context import detached_audit_context
 from app.db.session import SessionLocal
 from app.db.base import utcnow
 from app.models.entities import AgentRun, AsyncJob
@@ -274,6 +275,11 @@ def _finish_claim(job_id: UUID, worker_id: str | None, succeeded: bool, error: s
 
 
 def dispatch_job(job_id: UUID, worker_id: str | None = None) -> bool:
+    with detached_audit_context():
+        return _dispatch_job(job_id, worker_id)
+
+
+def _dispatch_job(job_id: UUID, worker_id: str | None = None) -> bool:
     with SessionLocal() as db:
         job = db.get(AsyncJob, job_id)
         if job is None or job.status not in {"queued", "retrying", "running"}:
