@@ -13,6 +13,14 @@ from fastapi import HTTPException
 from app.core.config import get_settings
 
 PBKDF2_ITERATIONS = 210_000
+DEVELOPMENT_AUTH_SECRET = "development-only-change-me"
+
+
+def _require_safe_server_secret() -> None:
+    """Fail closed outside local development when the public demo secret remains."""
+    settings = get_settings()
+    if settings.app_env != "development" and settings.auth_secret == DEVELOPMENT_AUTH_SECRET:
+        raise HTTPException(status_code=503, detail="non-development auth secret is not configured")
 
 
 def hash_password(password: str, *, salt: str | None = None) -> str:
@@ -46,6 +54,7 @@ def _unb64(value: str) -> bytes:
 
 def create_token(payload: dict[str, Any], ttl_seconds: int = 1800) -> str:
     settings = get_settings()
+    _require_safe_server_secret()
     body = {**payload, "exp": int(time.time()) + ttl_seconds}
     encoded = _b64(json.dumps(body, sort_keys=True, separators=(",", ":")).encode())
     signature = _b64(
@@ -56,8 +65,7 @@ def create_token(payload: dict[str, Any], ttl_seconds: int = 1800) -> str:
 
 def decode_token(token: str) -> dict[str, Any]:
     settings = get_settings()
-    if settings.app_env == "production" and settings.auth_secret == "development-only-change-me":
-        raise HTTPException(status_code=503, detail="production auth secret is not configured")
+    _require_safe_server_secret()
     try:
         encoded, signature = token.split(".", 1)
         expected = _b64(

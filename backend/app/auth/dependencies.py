@@ -55,6 +55,10 @@ def get_principal(
             user_id=UUID(payload["user_id"]),
             role=payload["role"],
         )
+    # Demo headers exist only to make the local deterministic fixture easy to
+    # exercise. They must never become a server-side authentication mechanism.
+    if settings.app_env != "development":
+        raise HTTPException(status_code=401, detail="bearer authorization required")
     if x_tenant_id is None or x_user_id is None or x_role is None:
         raise HTTPException(status_code=401, detail="authentication required")
     if x_role not in ROLES:

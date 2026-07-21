@@ -6,7 +6,7 @@
 
 ## 2. 身份、租户与最小权限
 
-生产 tenant/user/roles 来自服务端认证；任何客户端 tenant_id 不能作为授权。Repository 查询和外键解析强制 tenant scope；项目成员与 admin/bid_manager/reviewer/legal/finance/viewer 权限在 service 层检查。敏感 EvidenceAsset 限制预览和下载，下载同样审计。演示可信请求头只允许本地开发，不能部署到公网。
+生产 tenant/user/roles 来自服务端认证；任何客户端 tenant_id 不能作为授权。Repository 查询和外键解析强制 tenant scope；项目成员与 admin/bid_manager/reviewer/legal/finance/viewer 权限在 service 层检查。敏感 EvidenceAsset 限制预览和下载，下载同样审计。演示可信请求头只允许 `APP_ENV=development` 的本地开发，不能部署到公网或其他服务环境。
 
 ## 3. 上传、解析和对象存储
 

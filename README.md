@@ -63,7 +63,7 @@ make demo
 - API 健康：<http://localhost:8000/health>
 - MinIO 控制台：<http://localhost:9001>
 
-本地演示登录：`admin@demo.local` / `demo1234`。该固定账号只在 `APP_ENV=development` 的 seed 中存在；production 禁止 demo seed 和默认密码。
+本地演示登录：`admin@demo.local` / `demo1234`。该固定账号只在 `APP_ENV=development` 的 seed 中存在；所有非 development 环境均禁止 demo seed，且必须配置非默认签名密钥。
 
 停止：
 

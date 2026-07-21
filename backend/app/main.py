@@ -4,8 +4,10 @@ import asyncio
 from contextlib import suppress
 from contextlib import asynccontextmanager
 
-from fastapi import Depends, FastAPI, HTTPException
+from fastapi import Depends, FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
+from starlette.responses import JSONResponse, Response
 from sqlalchemy.orm import Session
 
 from app import models as _models  # noqa: F401
@@ -59,17 +61,77 @@ async def lifespan(_: FastAPI):
 
 
 app = FastAPI(title="BidEvidence API", version="0.1.0", lifespan=lifespan)
+
+_API_CSP = "default-src 'none'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'"
+_SWAGGER_CSP = (
+    "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; "
+    "connect-src 'self'; img-src 'self' data: https://fastapi.tiangolo.com; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' https://cdn.jsdelivr.net"
+)
+_REDOC_CSP = (
+    "default-src 'self'; base-uri 'none'; frame-ancestors 'none'; form-action 'none'; "
+    "connect-src 'self'; img-src 'self' data: https://cdn.redoc.ly https://fastapi.tiangolo.com; "
+    "font-src 'self' data: https://fonts.gstatic.com; "
+    "script-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net; "
+    "style-src 'self' 'unsafe-inline' https://cdn.jsdelivr.net https://fonts.googleapis.com; "
+    "worker-src 'self' blob:"
+)
+
+
+def apply_security_headers(response: Response, path: str) -> Response:
+    """Add baseline browser protections without breaking FastAPI's local docs."""
+    csp = _SWAGGER_CSP if path == "/docs" else _REDOC_CSP if path == "/redoc" else _API_CSP
+    response.headers.setdefault("Content-Security-Policy", csp)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "no-referrer")
+    response.headers.setdefault("Permissions-Policy", "camera=(), geolocation=(), microphone=()")
+    return response
+
+
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    """Apply baseline browser protections to every API response.
+
+    API routes deny all subresources. FastAPI's documentation pages receive a
+    narrower policy that permits only their known CDN assets and same-origin
+    OpenAPI request.
+    """
+
+    async def dispatch(self, request: Request, call_next) -> Response:
+        response = await call_next(request)
+        return apply_security_headers(response, request.url.path)
+
+
+async def internal_server_error(request: Request, _: Exception) -> Response:
+    """Keep 500 responses generic and protected when they bypass middleware."""
+    response = apply_security_headers(
+        JSONResponse(status_code=500, content={"detail": "internal server error"}), request.url.path
+    )
+    origin = request.headers.get("origin")
+    settings = get_settings()
+    if origin and (origin in settings.cors_origins or "*" in settings.cors_origins):
+        response.headers["Access-Control-Allow-Origin"] = "*" if "*" in settings.cors_origins else origin
+        response.headers.append("Vary", "Origin")
+    return response
+
+
+app.add_exception_handler(Exception, internal_server_error)
+settings = get_settings()
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=list(get_settings().cors_origins),
+    allow_origins=list(settings.cors_origins),
     allow_credentials=False,
     allow_methods=["GET", "POST", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=(
         ["Content-Type", "Authorization"]
-        if get_settings().desktop_mode
+        if settings.desktop_mode or settings.app_env != "development"
         else ["Content-Type", "Authorization", "X-Tenant-ID", "X-User-ID", "X-Role"]
     ),
 )
+# Middleware is LIFO: this must be registered after CORS so OPTIONS responses
+# that CORS short-circuits still receive the security headers.
+app.add_middleware(SecurityHeadersMiddleware)
 app.include_router(router)
 app.include_router(domain_router)
 app.include_router(auth_router)
@@ -110,8 +172,9 @@ def health() -> dict:
 
 @app.post("/api/dev/seed")
 def seed(db: Session = Depends(get_db), principal: Principal = Depends(get_principal)) -> dict:
-    if get_settings().desktop_mode:
-        raise HTTPException(status_code=404, detail="demo seed is unavailable in desktop mode")
+    settings = get_settings()
+    if settings.desktop_mode or settings.app_env != "development":
+        raise HTTPException(status_code=404, detail="demo seed is available only in local development")
     if principal.role != "admin":
         raise HTTPException(status_code=403, detail="admin permission required")
     return seed_demo(db)

@@ -23,8 +23,8 @@ provider in this phase is deterministic `MockLLMProvider`; it does not inspect k
 make network calls.
 
 Local login is `admin@demo.local` / `demo1234`. The stored value is PBKDF2-SHA256,
-tokens expire after 30 minutes, and the default password/secret are rejected for
-`APP_ENV=production`. `Authorization: Bearer ...` takes precedence over compatibility
+tokens expire after 30 minutes, and the default signing secret is rejected for every
+non-`development` environment. `Authorization: Bearer ...` takes precedence over compatibility
 headers.
 
 When `S3_ENDPOINT_URL`/`S3_BUCKET` (or MinIO aliases) are configured, document and
