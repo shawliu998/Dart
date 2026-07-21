@@ -153,7 +153,7 @@ export function DashboardView({ data }: { data: AwaitedReturn }) {
           <section className={styles.section}>
             <div className={styles.sectionHeader}>
               <div><h2>Agent 运行状态</h2><p>当前项目工作流</p></div>
-              <span className={styles.agentStatus}><i />{data.agent ? "运行中" : "聚合失败"}</span>
+              <span className={styles.agentStatus}><i />{data.agentState === "running" ? "运行中" : data.agentState === "idle" ? "未运行" : "聚合失败"}</span>
             </div>
             {data.agent ? (
               <>
@@ -168,6 +168,8 @@ export function DashboardView({ data }: { data: AwaitedReturn }) {
                   <div><dt>封装阻塞</dt><dd>{data.metrics.packageBlockers}</dd></div>
                 </dl>
               </>
+            ) : data.agentState === "idle" ? (
+              <div className={styles.agentError}><strong>尚未启动 Agent</strong><small>当前项目还没有运行记录，可从 Agent 运行中心发起受控草稿任务。</small></div>
             ) : (
               <div className={styles.agentError}><strong>Agent API 数据不可用</strong><small>{data.agentError?.message ?? "未返回运行数据，未自动切换为演示结果。"}</small></div>
             )}
