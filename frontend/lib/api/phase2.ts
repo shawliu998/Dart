@@ -91,8 +91,13 @@ export function mapConsistencyDto(dto: AnyDto): ConsistencyIssue {
 
 export function mapTaskDto(dto: AnyDto): RemediationTask {
   const rawStatus = text(dto.status, "todo");
-  const sourceType = text(dto.sourceType ?? dto.source_type, "requirement") as RemediationTask["sourceType"];
-  return { id: text(dto.id), title: text(dto.title, "未命名任务"), priority: (text(dto.priority, "medium") === "fatal" ? "critical" : text(dto.priority, "medium")) as RemediationTask["priority"], status: ({ ready_for_review: "review", pending: "todo", ...Object.fromEntries(columnsForMapping.map((item) => [item, item])) }[rawStatus] ?? "todo") as RemediationTask["status"], owner: text(dto.owner ?? dto.owner_name, "未分配"), reviewer: text(dto.reviewer ?? dto.reviewer_name, "未分配"), dueDate: text(dto.dueDate ?? dto.due_at ?? dto.due_date, "待确定"), sourceType, sourceLabel: text(dto.sourceLabel ?? dto.source_label, sourceType), reason: text(dto.reason ?? dto.description), evidence: text(dto.evidence), steps: list(dto.steps ?? dto.suggested_steps), attachments: num(dto.attachments ?? dto.attachment_count), comments: num(dto.comments ?? dto.comment_count) };
+  const rawSourceType = text(dto.sourceType ?? dto.source_type, "requirement");
+  const sourceType = ({ package_validation: "package", amendment_change: "amendment", compliance_check: "requirement" }[rawSourceType] ?? rawSourceType) as RemediationTask["sourceType"];
+  const sourceLabel = ({ package_validation: "封装检查", amendment_change: "补充公告", compliance_check: "合规检查", requirement: "招标要求", evidence: "企业材料", disqualification: "否决风险", consistency: "一致性检查", amendment: "补充公告", package: "文件封装", manual: "人工创建", agent_ocr_required: "OCR 补救", agent_compliance_check: "Agent 合规检查", agent_response_gap: "响应缺口" }[rawSourceType] ?? rawSourceType);
+  const rawDueDate = text(dto.dueDate ?? dto.due_at ?? dto.due_date, "待确定");
+  const parsedDueDate = new Date(rawDueDate);
+  const dueDate = Number.isNaN(parsedDueDate.getTime()) ? rawDueDate : new Intl.DateTimeFormat("zh-CN", { timeZone: "Asia/Shanghai", year: "numeric", month: "2-digit", day: "2-digit" }).format(parsedDueDate).replaceAll("/", "-");
+  return { id: text(dto.id), title: text(dto.title, "未命名任务"), priority: (text(dto.priority, "medium") === "fatal" ? "critical" : text(dto.priority, "medium")) as RemediationTask["priority"], status: ({ ready_for_review: "review", pending: "todo", ...Object.fromEntries(columnsForMapping.map((item) => [item, item])) }[rawStatus] ?? "todo") as RemediationTask["status"], owner: text(dto.owner ?? dto.owner_name, "未分配"), reviewer: text(dto.reviewer ?? dto.reviewer_name, "未分配"), dueDate, sourceType, sourceLabel: text(dto.sourceLabel ?? dto.source_label, sourceLabel), reason: text(dto.reason ?? dto.description), evidence: text(dto.evidence), steps: list(dto.steps ?? dto.suggested_steps), attachments: num(dto.attachments ?? dto.attachment_count), comments: num(dto.comments ?? dto.comment_count) };
 }
 const columnsForMapping = ["todo", "in_progress", "review", "done"];
 

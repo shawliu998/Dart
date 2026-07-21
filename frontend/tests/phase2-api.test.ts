@@ -9,10 +9,10 @@ describe("Phase 2-5 DTO adapters", () => {
   });
 
   it("maps task fatal priority, review state and due_at", () => {
-    const task = mapTaskDto({ id: "t-1", title: "复核证书", priority: "fatal", status: "ready_for_review", due_at: "2026-07-20", source_type: "evidence", description: "证书过期" });
-    expect(task).toMatchObject({ priority: "critical", status: "review", dueDate: "2026-07-20", reason: "证书过期" });
+    const task = mapTaskDto({ id: "t-1", title: "复核证书", priority: "fatal", status: "ready_for_review", due_at: "2026-07-20T00:00:00Z", source_type: "package_validation", description: "证书过期" });
+    expect(task).toMatchObject({ priority: "critical", status: "review", dueDate: "2026-07-20", sourceType: "package", sourceLabel: "封装检查", reason: "证书过期" });
     const ocrTask = mapTaskDto({ id: "t-2", title: "补充OCR文本", source_type: "agent_ocr_required" });
-    expect(ocrTask).toMatchObject({ sourceType: "agent_ocr_required", sourceLabel: "agent_ocr_required" });
+    expect(ocrTask).toMatchObject({ sourceType: "agent_ocr_required", sourceLabel: "OCR 补救" });
   });
 
   it("maps match candidates and amendment changes explicitly", () => {
