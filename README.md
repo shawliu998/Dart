@@ -203,3 +203,9 @@ cd frontend; npm test; npm run lint; npm run typecheck; npm run test:e2e; npm ru
 - Worker 有独立入口；部分本地耗时任务仍可由 API background task 执行。
 - 本地可自动调用已安装的 Tesseract/Poppler 处理图片与扫描 PDF；容器或桌面发行包仍需自行提供并登记对应二进制和中文语言数据。OCR 不可用或无结果时会生成补救任务。病毒扫描和真实消息通知仍需要部署适配器。
 - 签字/盖章检查是候选提示，最终法律资格、CA、付款和外部提交始终由授权人员在系统外完成。
+
+## 开源许可证
+
+标证通 BidEvidence 以 [GNU Affero General Public License v3.0](LICENSE)（SPDX：`AGPL-3.0-only`）发布。
+
+如果你修改本项目并通过网络向用户提供服务，AGPL-3.0 要求你向这些用户提供对应版本的完整源代码。再分发时请保留许可证、版权声明及第三方归属信息。第三方依赖和上游代码的许可证记录见 [第三方许可证清单](docs/THIRD_PARTY_LICENSES.md)。

@@ -1,6 +1,6 @@
 # 第三方软件与许可证清单
 
-本清单覆盖完整 MVP 的直接依赖类别，不替代包内许可证。发布以 lockfile、安装版本、镜像摘要和随附 LICENSE/NOTICE 为准，必须生成 SBOM。
+标证通 BidEvidence 自身以 `AGPL-3.0-only` 发布，完整条款见仓库根目录 `LICENSE`。本清单覆盖完整 MVP 的直接依赖类别，不替代包内许可证。发布以 lockfile、安装版本、镜像摘要和随附 LICENSE/NOTICE 为准，必须生成 SBOM。
 
 | 组件 | 用途 | 常见许可证 | 合规注意 |
 |---|---|---|---|
@@ -21,6 +21,12 @@
 | Docling | 文档解析 adapter 规划 | MIT（版本相关） | 实际引入后核实解析模型和资源 |
 | PaddleOCR | 可替换 OCR adapter 规划 | Apache-2.0（代码，模型另核） | 实际引入时对权重、字体和训练数据单独登记 |
 
+## 上游代码归属
+
+| 上游项目 | 使用范围 | 固定版本 | 许可证与归属 |
+|---|---|---|---|
+| [Plane](https://github.com/makeplane/plane) | `frontend/components/ui/data-table.tsx` 表格原语及对应样式结构 | `7cef741c29cf61d3bca18dc892e6af11a1e7becc` | AGPL-3.0-only；保留 Plane Software, Inc. 原版权头和 SPDX 标识 |
+
 ## 资产来源
 
 演示 PDF/DOCX/XLSX 由仓库 stdlib 脚本生成，只包含虚构企业/项目数据。未使用竞品品牌、文案、图片或真实企业证照。若引入字体、图标包外资源、OCR/Embedding 权重、模板或测试文档，必须建立独立资产台账。
@@ -29,6 +35,6 @@
 
 1. 锁定 Python/npm 依赖和容器镜像摘要，生成 SPDX 或 CycloneDX SBOM。
 2. 使用 `pip-licenses`、npm license 工具和容器扫描器盘点直接/传递依赖。
-3. 阻止未知许可证、商业限制或未经批准的 GPL/AGPL 风险进入发布。
+3. 阻止未知许可证和未经批准的商业限制进入发布；GPL/AGPL 组件须确认版本兼容性并履行源码提供、归属与修改声明义务。
 4. 随发行物提供所需 LICENSE/NOTICE，记录修改和来源代码提供义务。
 5. 每次依赖升级重新扫描漏洞和许可证；不能沿用旧版结论。

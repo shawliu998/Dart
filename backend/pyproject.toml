@@ -6,6 +6,7 @@ build-backend = "setuptools.build_meta"
 name = "bidevidence-backend"
 version = "0.1.0"
 description = "BidEvidence Phase 0+1 API"
+license = "AGPL-3.0-only"
 requires-python = ">=3.12"
 dependencies = [
   "fastapi>=0.115,<1",
