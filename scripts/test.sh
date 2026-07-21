@@ -4,9 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-python3 scripts/verify_demo.py
-python3 scripts/acceptance_mvp.py
-python3 scripts/validate_delivery.py
+PYTHON="$(command -v python3)"
+[[ -x backend/.venv/bin/python ]] && PYTHON="${ROOT_DIR}/backend/.venv/bin/python"
+
+"$PYTHON" scripts/verify_demo.py
+"$PYTHON" scripts/acceptance_mvp.py
+"$PYTHON" scripts/validate_delivery.py
 
 if [[ -x backend/.venv/bin/python ]]; then
   (cd backend && .venv/bin/python -m pytest)

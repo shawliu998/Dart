@@ -13,6 +13,7 @@
 | FastAPI / Pydantic / Uvicorn | API 与 Schema | MIT / MIT / BSD-3-Clause | 保留许可证 |
 | SQLAlchemy / Alembic / psycopg | ORM、迁移、驱动 | MIT / MIT / LGPL-3.0（psycopg，按版本核实） | 分发二进制驱动前核实对应条款 |
 | pypdf | PDF 读取 | BSD-3-Clause | 保留许可证 |
+| ReportLab | 确定性演示 PDF 生成 | BSD | 仅使用开源 PDF Toolkit，保留包内许可证 |
 | Tesseract OCR | 可选本地 OCR 命令 | Apache-2.0 | 仅显式本地调用；分发时登记二进制及语言数据来源 |
 | Poppler `pdftoppm` | 扫描 PDF 页渲染 | GPL-2.0-or-later（按发行版核实） | 当前仅调用系统命令；若随应用分发须单独完成 GPL 合规评估 |
 | PostgreSQL / pgvector | 数据库与向量 | PostgreSQL License | 记录镜像、扩展版本和修改 |
@@ -29,7 +30,7 @@
 
 ## 资产来源
 
-演示 PDF/DOCX/XLSX 由仓库 stdlib 脚本生成，只包含虚构企业/项目数据。未使用竞品品牌、文案、图片或真实企业证照。若引入字体、图标包外资源、OCR/Embedding 权重、模板或测试文档，必须建立独立资产台账。
+演示 PDF/DOCX/XLSX 由仓库确定性脚本生成，只包含虚构企业/项目数据。PDF 嵌入 `BidEvidence Fixture Sans` 字体子集，该字体由 Noto Sans SC 修改并重命名，依据 SIL Open Font License 1.1 分发；来源和完整许可证见 `demo/fonts/`。未使用竞品品牌、文案、图片或真实企业证照。若引入字体、图标包外资源、OCR/Embedding 权重、模板或测试文档，必须建立独立资产台账。
 
 ## 发布流程
 

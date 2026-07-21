@@ -157,9 +157,9 @@ macOS/Linux/Git Bash：
 ```bash
 bash scripts/setup.sh
 bash scripts/demo.sh
-python3 scripts/verify_demo.py
-python3 scripts/acceptance_mvp.py --artifacts-dir .data/acceptance --clean
-python3 scripts/acceptance_agent.py --artifacts-dir .data/agent-acceptance
+backend/.venv/bin/python scripts/verify_demo.py
+backend/.venv/bin/python scripts/acceptance_mvp.py --artifacts-dir .data/acceptance --clean
+backend/.venv/bin/python scripts/acceptance_agent.py --artifacts-dir .data/agent-acceptance
 bash scripts/verify.sh
 ```
 
@@ -167,9 +167,11 @@ Windows PowerShell 的底层等价命令：
 
 ```powershell
 Copy-Item .env.example .env
-python scripts/generate_demo_assets.py
-python scripts/verify_demo.py
-python scripts/acceptance_mvp.py --artifacts-dir .data/acceptance --clean
+python -m venv backend/.venv
+backend/.venv/Scripts/python.exe -m pip install -r backend/requirements-dev.txt
+backend/.venv/Scripts/python.exe scripts/generate_demo_assets.py
+backend/.venv/Scripts/python.exe scripts/verify_demo.py
+backend/.venv/Scripts/python.exe scripts/acceptance_mvp.py --artifacts-dir .data/acceptance --clean
 docker compose up -d --build
 Start-Sleep -Seconds 10
 python scripts/seed_running_api.py

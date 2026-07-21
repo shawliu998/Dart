@@ -4,11 +4,11 @@
   "files": [
     {
       "path": "amendments/补充公告01.pdf",
-      "sha256": "516dd947d6c66a09b97693b3907718637e6ee0e451f1f6626d76b643cc06c83f"
+      "sha256": "42202fe839a014c1cec895f433d4e5cf17a9394cd455f0e5fa33d3d55397311f"
     },
     {
       "path": "bid_documents/商务响应表.xlsx",
-      "sha256": "85c5794af7587a7ad5ff7ca60b75c774e8ee99241e2e82837c91b6202e0b1085"
+      "sha256": "5af95d583ae51b86803cfc0dfd6a7febeecea9cac484315054467ab01a26b904"
     },
     {
       "path": "bid_documents/技术响应文件.docx",
@@ -20,35 +20,35 @@
     },
     {
       "path": "bid_documents/报价表.xlsx",
-      "sha256": "6ee04ff74743eb20cddb13b8b92ca1211b90cfaf516ca0c2378f2d1da56e46c1"
+      "sha256": "78a5a5700cd39044b2d88d3e45380c67b28dd3824dbe75d3fdef1eae92f8186a"
     },
     {
       "path": "evidence/ISO27001证书.pdf",
-      "sha256": "a360af1d1e79ec294d5187c322f066b8c35e82786f9ac02237168607c7d1d6c6"
+      "sha256": "00a63f66cc6a7c9b237b7562c817f98375b8c656c0ab51a303f1c154e1c1e886"
     },
     {
       "path": "evidence/ISO9001证书.pdf",
-      "sha256": "fd2d0560b8bbc94f03a07f47adbc0c0300474c0a2ef2bd7171f7636fcfa58f0e"
+      "sha256": "f2a78a587e2d29d30e7389429313e426b467238349d757205457a9cd5a1c16c8"
     },
     {
       "path": "evidence/案例合同A.pdf",
-      "sha256": "64867da7caec93339e46e09f9ec43f9490b10de92aa1da8c6fc3825420936397"
+      "sha256": "0aeda413b13d11ee46ff78190dc6e390ff0b28006a7dd0ae7ebec82c4e0ad7bf"
     },
     {
       "path": "evidence/案例合同B.pdf",
-      "sha256": "e52883854547b08678b6acc300c069c6be7859c2f48b8875f34080db812729d6"
+      "sha256": "efdc64970b07d945b0f0ce5b1546266dba5c86a559c9cbee92355fe1c84ef5af"
     },
     {
       "path": "evidence/营业执照.pdf",
-      "sha256": "a98983837eab3674b9ac2b520b4ab66c8dbea6ebf4887ae5036a23e3ec5fb539"
+      "sha256": "6e9b885206c99e085b228e0330a383134b86f58f179fea461835846120b84af7"
     },
     {
       "path": "evidence/项目经理证书.pdf",
-      "sha256": "faf171927e3a0911ef4fc8e7a5e2751fb5289385fd3fe48c97bd8506f0ccb40f"
+      "sha256": "e2e76aa54ec42f0761f691f27db1cd31699c0b9c3c34751c05bd391396cb4260"
     },
     {
       "path": "evidence/验收报告A.pdf",
-      "sha256": "30e878d9a02dc18886fc7073a74b035ffb595d8d28a88efc2d51fcc63e740f87"
+      "sha256": "250592eda1908220d817ea6d0d6b160fc07f9fc438048cc86b1281ea5f448a74"
     },
     {
       "path": "tender/技术需求附件.docx",
@@ -56,7 +56,7 @@
     },
     {
       "path": "tender/招标文件.pdf",
-      "sha256": "4424995aebdd790f6f31d07bc28fe066bcc44db1b569d1d562cc0d088bd79c8f"
+      "sha256": "be5b7deccc591585762148c3582b5ec44a26aa67c781c50a169357f309140b4e"
     }
   ]
 }

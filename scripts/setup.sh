@@ -8,11 +8,6 @@ command -v python3 >/dev/null || { echo "错误：需要 Python 3.12+" >&2; exit
 command -v node >/dev/null || { echo "错误：需要 Node.js 20+" >&2; exit 1; }
 command -v npm >/dev/null || { echo "错误：需要 npm" >&2; exit 1; }
 
-python3 scripts/generate_demo_assets.py
-python3 scripts/verify_demo.py
-python3 scripts/acceptance_mvp.py
-python3 scripts/validate_delivery.py
-
 if [[ -f backend/pyproject.toml ]]; then
   python3 -m venv backend/.venv
   backend/.venv/bin/python -m pip install --upgrade pip
@@ -24,6 +19,13 @@ elif [[ -f backend/requirements.txt ]]; then
 else
   echo "警告：未找到后端依赖清单，跳过后端安装。"
 fi
+
+PYTHON="$(command -v python3)"
+[[ -x backend/.venv/bin/python ]] && PYTHON="${ROOT_DIR}/backend/.venv/bin/python"
+"$PYTHON" scripts/generate_demo_assets.py
+"$PYTHON" scripts/verify_demo.py
+"$PYTHON" scripts/acceptance_mvp.py
+"$PYTHON" scripts/validate_delivery.py
 
 if [[ -f frontend/package-lock.json ]]; then
   (cd frontend && npm ci)

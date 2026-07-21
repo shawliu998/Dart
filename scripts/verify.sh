@@ -4,15 +4,16 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-python3 scripts/generate_demo_assets.py
-python3 scripts/verify_demo.py
-python3 scripts/acceptance_mvp.py --artifacts-dir .data/acceptance --clean
-python3 scripts/validate_delivery.py
+PYTHON="$(command -v python3)"
+[[ -x backend/.venv/bin/python ]] && PYTHON="${ROOT_DIR}/backend/.venv/bin/python"
+
+"$PYTHON" scripts/generate_demo_assets.py
+"$PYTHON" scripts/verify_demo.py
+"$PYTHON" scripts/acceptance_mvp.py --artifacts-dir .data/acceptance --clean
+"$PYTHON" scripts/validate_delivery.py
 bash scripts/lint.sh
 bash scripts/test.sh
 
-PYTHON="$(command -v python3)"
-[[ -x backend/.venv/bin/python ]] && PYTHON="${ROOT_DIR}/backend/.venv/bin/python"
 RUNTIME_DIR="${ROOT_DIR}/.data/verify-runtime"
 rm -rf "$RUNTIME_DIR"
 mkdir -p "$RUNTIME_DIR/uploads"
@@ -33,7 +34,7 @@ cleanup_api() {
 trap cleanup_api EXIT
 api_ready=0
 for _ in {1..30}; do
-  if python3 scripts/seed_running_api.py --base-url http://127.0.0.1:18080 --probe >/dev/null 2>&1; then
+  if "$PYTHON" scripts/seed_running_api.py --base-url http://127.0.0.1:18080 --probe >/dev/null 2>&1; then
     api_ready=1
     break
   fi
@@ -44,9 +45,9 @@ if [[ "$api_ready" != "1" ]]; then
   echo "错误：验收API未就绪。" >&2
   exit 1
 fi
-python3 scripts/seed_running_api.py --base-url http://127.0.0.1:18080
-python3 scripts/acceptance_api.py --base-url http://127.0.0.1:18080 --artifacts-dir .data/verify-runtime/service-acceptance --clean
-python3 scripts/acceptance_agent.py --base-url http://127.0.0.1:18080 --artifacts-dir .data/verify-runtime/agent-acceptance
+"$PYTHON" scripts/seed_running_api.py --base-url http://127.0.0.1:18080
+"$PYTHON" scripts/acceptance_api.py --base-url http://127.0.0.1:18080 --artifacts-dir .data/verify-runtime/service-acceptance --clean
+"$PYTHON" scripts/acceptance_agent.py --base-url http://127.0.0.1:18080 --artifacts-dir .data/verify-runtime/agent-acceptance
 cleanup_api
 trap - EXIT
 

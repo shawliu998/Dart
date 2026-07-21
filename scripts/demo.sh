@@ -4,9 +4,12 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-python3 scripts/generate_demo_assets.py
-python3 scripts/verify_demo.py
-python3 scripts/acceptance_mvp.py --artifacts-dir .data/demo-delivery --clean
+PYTHON="$(command -v python3)"
+[[ -x backend/.venv/bin/python ]] && PYTHON="${ROOT_DIR}/backend/.venv/bin/python"
+
+"$PYTHON" scripts/generate_demo_assets.py
+"$PYTHON" scripts/verify_demo.py
+"$PYTHON" scripts/acceptance_mvp.py --artifacts-dir .data/demo-delivery --clean
 
 stack_started=0
 if [[ "${BIDEVIDENCE_DEMO_SKIP_STACK:-0}" != "1" ]]; then
@@ -14,15 +17,15 @@ if [[ "${BIDEVIDENCE_DEMO_SKIP_STACK:-0}" != "1" ]]; then
   docker compose up -d --build
   ready=0
   for _ in {1..60}; do
-    if python3 scripts/seed_running_api.py --probe >/dev/null 2>&1; then
+    if "$PYTHON" scripts/seed_running_api.py --probe >/dev/null 2>&1; then
       ready=1
       break
     fi
     sleep 2
   done
   [[ "$ready" == "1" ]] || { echo "错误：API在120秒内未就绪，请运行 docker compose logs api。" >&2; exit 1; }
-  python3 scripts/seed_running_api.py
-  python3 scripts/acceptance_api.py --artifacts-dir .data/service-acceptance --clean
+  "$PYTHON" scripts/seed_running_api.py
+  "$PYTHON" scripts/acceptance_api.py --artifacts-dir .data/service-acceptance --clean
   stack_started=1
 else
   bash scripts/seed.sh

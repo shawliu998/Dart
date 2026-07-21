@@ -40,6 +40,8 @@ uploads/
 *.sqlite3
 *.db
 submission-packages/
+tmp/
+outputs/
 
 # Editors and OS
 .DS_Store
