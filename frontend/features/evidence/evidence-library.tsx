@@ -8,40 +8,67 @@ import {
   Download,
   FileSearch,
   FileText,
-  LoaderCircle,
-  Play,
   Search,
-  Upload,
 } from "lucide-react";
 import { ConfidenceIndicator } from "@/components/ui/badges";
 import { DocumentViewer } from "@/components/documents/document-viewer";
-import {
-  MutationFeedback,
-  type MutationResult,
-} from "@/components/feedback/mutation-feedback";
 import type { DataSource, EvidenceAsset } from "@/lib/phase-data/types";
 import styles from "./evidence-library-v2.module.css";
 
-const statusLabel = {
+const statusLabel: Record<EvidenceAsset["status"], string> = {
   verified: "已人工验证",
   review: "待人工验证",
   expired: "已过期",
   conflict: "存在冲突",
 };
-type ParseQueueItem = {
-  id: string;
-  name: string;
-  status: "queued" | "parsing" | "review" | "failed";
-  progress: number;
-  detail: string;
-};
-const localFeedback = (message: string): MutationResult => ({
-  source: "demo",
-  persisted: false,
-  status: "warning",
-  title: "本地演示操作",
-  message,
-});
+
+type DetailTab = "preview" | "claims" | "usage" | "history";
+
+const detailTabs: Array<[DetailTab, string]> = [
+  ["claims", "Claims"],
+  ["preview", "来源预览"],
+  ["usage", "使用项目"],
+  ["history", "版本"],
+];
+
+function reuseGuidance(asset: EvidenceAsset) {
+  if (asset.status === "expired") {
+    return {
+      tone: "danger",
+      title: "已过期，不应直接复用",
+      detail: `有效期为 ${asset.validUntil}，请先确认是否已有更新材料。`,
+    };
+  }
+  if (asset.status === "conflict") {
+    return {
+      tone: "danger",
+      title: "存在冲突，需要先复核",
+      detail: "结构化 Claim 中存在与当前投标条件不一致的信息。",
+    };
+  }
+  if (asset.status === "review") {
+    return {
+      tone: "review",
+      title: "尚未完成人工验证",
+      detail: "可查看来源与使用记录，但不能仅凭当前状态判断可复用。",
+    };
+  }
+  return {
+    tone: "ready",
+    title: "信息已验证，可作为候选材料",
+    detail: "请继续结合当前招标要求核对适用范围与有效期。",
+  };
+}
+
+function expiryCopy(asset: EvidenceAsset) {
+  if (asset.expiryDays < 0) {
+    return `已过期 ${Math.abs(asset.expiryDays)} 天`;
+  }
+  if (asset.expiryDays <= 90) {
+    return `${asset.expiryDays} 天后到期`;
+  }
+  return "当前有效";
+}
 
 export function EvidenceLibrary({
   initialAssets,
@@ -52,103 +79,50 @@ export function EvidenceLibrary({
   source: DataSource;
   error?: string;
 }) {
-  const [assets, setAssets] = useState(initialAssets);
+  const assets = initialAssets;
   const [selectedId, setSelectedId] = useState(initialAssets[0]?.id);
   const [query, setQuery] = useState("");
   const [type, setType] = useState("all");
   const [status, setStatus] = useState("all");
-  const [tab, setTab] = useState<"preview" | "claims" | "usage" | "history">(
-    "claims",
-  );
+  const [tab, setTab] = useState<DetailTab>("claims");
   const [previewPage, setPreviewPage] = useState(1);
-  const [queue, setQueue] = useState<ParseQueueItem[]>([]);
-  const [feedback, setFeedback] = useState<MutationResult | null>(null);
-  const selected = assets.find((item) => item.id === selectedId) ?? assets[0];
+  const [mobileView, setMobileView] = useState<"list" | "detail">("list");
+
   const filtered = useMemo(
     () =>
       assets.filter(
         (item) =>
-          `${item.name}${item.tags.join("")}${item.legalEntity}`
+          `${item.name}${item.tags.join("")}${item.legalEntity}${item.owner}`
             .toLowerCase()
-            .includes(query.toLowerCase()) &&
+            .includes(query.trim().toLowerCase()) &&
           (type === "all" || item.type === type) &&
           (status === "all" || item.status === status),
       ),
     [assets, query, status, type],
   );
+  const selected =
+    filtered.find((item) => item.id === selectedId) ?? filtered[0];
   const types = Array.from(new Set(assets.map((item) => item.type)));
+  const reviewCount = assets.filter((item) => item.status === "review").length;
+  const riskCount = assets.filter(
+    (item) => item.status === "expired" || item.status === "conflict",
+  ).length;
+  const activeFilterCount =
+    Number(Boolean(query.trim())) +
+    Number(type !== "all") +
+    Number(status !== "all");
 
-  function addFiles(files: FileList | null) {
-    if (!files?.length) return;
-    const uploaded = Array.from(files).map((file, index): EvidenceAsset => ({
-      id: `local-${Date.now()}-${index}`,
-      name: file.name,
-      type: "待分类",
-      legalEntity: "主体待确认",
-      status: "review",
-      validUntil: "待提取",
-      expiryDays: 0,
-      claimCount: 0,
-      usageCount: 0,
-      owner: "刘敏",
-      department: "待分配",
-      lastReviewed: "未复核",
-      tags: ["本地上传"],
-      pageCount: 0,
-      size: `${(file.size / 1024 / 1024).toFixed(1)} MB`,
-      version: "V1",
-      claims: [],
-      usedBy: [],
-    }));
-    setAssets((current) => [...uploaded, ...current]);
-    setSelectedId(uploaded[0].id);
-    setQueue((current) => [
-      ...uploaded.map((item) => ({
-        id: item.id,
-        name: item.name,
-        status: "queued" as const,
-        progress: 0,
-        detail: "等待本地演示解析",
-      })),
-      ...current,
-    ]);
-    setFeedback(
-      localFeedback(
-        `已将 ${uploaded.length} 份材料加入解析队列；尚未上传后端。`,
-      ),
-    );
+  function selectAsset(asset: EvidenceAsset) {
+    setSelectedId(asset.id);
+    setTab("claims");
+    setPreviewPage(1);
+    setMobileView("detail");
   }
 
-  function advanceQueue(id: string) {
-    setQueue((current) =>
-      current.map((item) =>
-        item.id !== id
-          ? item
-          : item.status === "queued"
-            ? {
-                ...item,
-                status: "parsing",
-                progress: 45,
-                detail: "正在提取页码与候选 Claim",
-              }
-            : item.status === "parsing"
-              ? {
-                  ...item,
-                  status: "review",
-                  progress: 100,
-                  detail: "解析完成，等待人工核验 Claim",
-                }
-              : item,
-      ),
-    );
-    const item = queue.find((entry) => entry.id === id);
-    setFeedback(
-      localFeedback(
-        item?.status === "queued"
-          ? "已启动演示解析；不会调用真实模型。"
-          : "解析结果已进入人工复核队列。",
-      ),
-    );
+  function clearFilters() {
+    setQuery("");
+    setType("all");
+    setStatus("all");
   }
 
   function exportInventory() {
@@ -181,15 +155,19 @@ export function EvidenceLibrary({
         <header className="page-header">
           <div className="page-title-group">
             <h1>企业材料库</h1>
-            <p>将证书、主体、人员与项目案例维护为可复用、可验证的企业证据。</p>
+            <p>集中查看材料状态、有效期、Claims 与项目使用记录。</p>
           </div>
           <span className="data-source api">API 数据不可用</span>
         </header>
         <section className="panel empty-state" role="alert" aria-live="assertive">
           <AlertTriangle size={20} aria-hidden="true" />
           <strong>企业材料数据暂时不可用</strong>
-          <p>未能从 API 读取企业材料。请检查本地服务后重试；当前页面不会显示替代数据。</p>
-          <button className="button" type="button" onClick={() => window.location.reload()}>
+          <p>未能读取企业材料，当前页面不会显示替代数据。</p>
+          <button
+            className="button"
+            type="button"
+            onClick={() => window.location.reload()}
+          >
             重试读取
           </button>
         </section>
@@ -197,461 +175,402 @@ export function EvidenceLibrary({
     );
   }
 
-  if (!selected) {
+  if (!assets.length) {
     return (
       <div className="page evidence-page">
         <header className="page-header">
           <div className="page-title-group">
             <h1>企业材料库</h1>
-            <p>将证书、主体、人员与项目案例维护为可复用、可验证的企业证据。</p>
+            <p>集中查看材料状态、有效期、Claims 与项目使用记录。</p>
           </div>
-          <span className={`data-source ${source}`}>
-            {source === "api" ? "API 数据" : "本地演示数据"}
-          </span>
         </header>
         <section className="panel empty-state">
           <FileSearch size={20} aria-hidden="true" />
-          <strong>尚未上传企业材料</strong>
-          <p>上传材料后，可由后端解析并进入人工核验流程。</p>
+          <strong>当前没有可复核的企业材料</strong>
+          <p>材料进入现有数据源后，将在这里显示状态、来源和使用记录。</p>
         </section>
       </div>
     );
   }
+
   return (
-    <div className="page evidence-page">
-      <header className="page-header">
+    <div className={`page evidence-page ${styles.page}`}>
+      <header className={`page-header ${styles.pageHeader}`}>
         <div className="page-title-group">
           <h1>企业材料库</h1>
-          <p>将证书、主体、人员与项目案例维护为可复用、可验证的企业证据。</p>
+          <p>集中复核材料的有效性、来源与项目使用记录。</p>
         </div>
-        <div className="header-actions">
-          <span className={`data-source ${source}`}>
-            {source === "api" ? "API 数据" : "本地演示数据"}
-          </span>
-          <button className="button" type="button" onClick={exportInventory}>
-            <Download size={14} />
-            导出清单
-          </button>
-          <label className="button primary">
-            <Upload size={14} />
-            上传材料
-            <input
-              className="sr-only"
-              type="file"
-              multiple
-              onChange={(event) => addFiles(event.target.files)}
-            />
-          </label>
-        </div>
+        <button className="button" type="button" onClick={exportInventory}>
+          <Download size={14} aria-hidden="true" />
+          导出当前清单
+        </button>
       </header>
-      <section className="evidence-alerts" aria-label="材料提醒">
-        <EvidenceAlert
-          value={String(
-            assets.filter(
-              (item) => item.expiryDays >= 0 && item.expiryDays <= 30,
-            ).length,
-          )}
-          label="30 天内到期"
-          tone="danger"
-          onClick={() => setStatus("review")}
-        />
-        <EvidenceAlert
-          value={String(
-            assets.filter(
-              (item) => item.expiryDays > 30 && item.expiryDays <= 90,
-            ).length,
-          )}
-          label="90 天内到期"
-          onClick={() => setStatus("review")}
-        />
-        <EvidenceAlert
-          value={String(
-            assets.filter((item) => item.legalEntity === "主体待确认").length,
-          )}
-          label="缺少主体"
-          onClick={() => setQuery("主体待确认")}
-        />
-        <EvidenceAlert
-          value={String(
-            assets.filter((item) => item.status === "review").length,
-          )}
-          label="未经人工验证"
-          onClick={() => setStatus("review")}
-        />
-        <EvidenceAlert
-          value={String(
-            assets.filter((item) => item.status === "conflict").length,
-          )}
-          label="存在冲突"
-          tone="danger"
-          onClick={() => setStatus("conflict")}
-        />
-        <EvidenceAlert
-          value={String(
-            assets.filter((item) => item.lastReviewed === "未复核").length,
-          )}
-          label="长期未复核"
-          onClick={() => setQuery("未复核")}
-        />
-      </section>
-      <MutationFeedback result={feedback} />
-      {queue.length > 0 && (
-        <section className={`panel ${styles.queue}`} aria-label="材料解析队列">
-          <div className="panel-header">
-            <div>
-              <h2>材料解析队列</h2>
-              <p>上传、页码识别、Claim 候选与人工复核状态明确分离</p>
-            </div>
-            <span>
-              {queue.filter((item) => item.status !== "review").length} 项处理中
-            </span>
-          </div>
-          <div>
-            {queue.map((item) => (
-              <article key={item.id}>
-                <strong>{item.name}</strong>
-                <span>
-                  {item.status === "queued"
-                    ? "排队中"
-                    : item.status === "parsing"
-                      ? "解析中"
-                      : item.status === "review"
-                        ? "待人工核验"
-                        : "失败"}
-                </span>
-                <div>
-                  <progress max={100} value={item.progress} />
-                  <small>{item.detail}</small>
-                </div>
-                {item.status === "queued" || item.status === "parsing" ? (
-                  <button
-                    className="button small"
-                    type="button"
-                    onClick={() => advanceQueue(item.id)}
-                  >
-                    {item.status === "queued" ? (
-                      <Play size={12} />
-                    ) : (
-                      <LoaderCircle size={12} />
-                    )}
-                    {item.status === "queued" ? "开始解析" : "完成演示解析"}
-                  </button>
-                ) : (
-                  <CheckCircle2 size={15} />
-                )}
-              </article>
-            ))}
-          </div>
-        </section>
-      )}
-      <div className="evidence-layout">
-        <aside className="panel evidence-sidebar">
-          <h2>材料范围</h2>
-          <label className="evidence-search">
-            <Search size={14} />
-            <input
-              aria-label="搜索企业材料"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索文件、标签、主体"
-            />
-          </label>
-          <section>
-            <h3>
-              材料类型
-            </h3>
-            <button
-              className={type === "all" ? "active" : ""}
-              type="button"
-              onClick={() => setType("all")}
-            >
-              <span>全部材料</span>
-              <em>{assets.length}</em>
-            </button>
+
+      <section className={styles.toolbar} aria-label="材料筛选">
+        <label className={styles.search}>
+          <Search size={15} aria-hidden="true" />
+          <span className="sr-only">搜索企业材料</span>
+          <input
+            aria-label="搜索企业材料"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索文件、标签、主体或负责人"
+          />
+        </label>
+        <label className={styles.select}>
+          <span>类型</span>
+          <select
+            aria-label="材料类型筛选"
+            value={type}
+            onChange={(event) => setType(event.target.value)}
+          >
+            <option value="all">全部类型</option>
             {types.map((item) => (
-              <button
-                key={item}
-                className={type === item ? "active" : ""}
-                type="button"
-                onClick={() => setType(item)}
-              >
-                <span>{item}</span>
-                <em>{assets.filter((asset) => asset.type === item).length}</em>
-              </button>
+              <option key={item} value={item}>
+                {item}
+              </option>
             ))}
-          </section>
-          <section>
-            <h3>
-              状态
-            </h3>
+          </select>
+        </label>
+        <label className={styles.select}>
+          <span>状态</span>
+          <select
+            aria-label="材料状态筛选"
+            value={status}
+            onChange={(event) => setStatus(event.target.value)}
+          >
+            <option value="all">全部状态</option>
             {Object.entries(statusLabel).map(([key, label]) => (
-              <button
-                key={key}
-                className={status === key ? "active" : ""}
-                type="button"
-                onClick={() => setStatus(status === key ? "all" : key)}
-              >
-                <span>{label}</span>
-                <em>{assets.filter((asset) => asset.status === key).length}</em>
-              </button>
+              <option key={key} value={key}>
+                {label}
+              </option>
             ))}
-          </section>
-          {(query || type !== "all" || status !== "all") && (
-            <button
-              className="button small full-width"
-              type="button"
-              onClick={() => {
-                setQuery("");
-                setType("all");
-                setStatus("all");
-              }}
-            >
-              清除筛选
-            </button>
-          )}
-        </aside>
-        <section className="panel evidence-list-panel">
-          <div className="panel-header">
+          </select>
+        </label>
+        <div className={styles.summary} aria-label="材料复核概况">
+          <span>
+            <strong>{filtered.length}</strong> 份材料
+          </span>
+          <i />
+          <span>{reviewCount} 份待验证</span>
+          <span className={riskCount ? styles.risk : ""}>
+            {riskCount} 份有风险
+          </span>
+        </div>
+        {activeFilterCount > 0 && (
+          <button
+            className={styles.clear}
+            type="button"
+            onClick={clearFilters}
+          >
+            清除 {activeFilterCount} 项筛选
+          </button>
+        )}
+      </section>
+
+      <div className={styles.mobileSwitcher} aria-label="移动端材料视图">
+        <button
+          type="button"
+          aria-pressed={mobileView === "list"}
+          onClick={() => setMobileView("list")}
+        >
+          材料列表
+        </button>
+        <button
+          type="button"
+          aria-pressed={mobileView === "detail"}
+          disabled={!selected}
+          onClick={() => setMobileView("detail")}
+        >
+          材料详情
+        </button>
+      </div>
+
+      <div
+        className={`${styles.workspace} ${
+          mobileView === "detail" ? styles.showDetail : styles.showList
+        }`}
+      >
+        <section className={`panel ${styles.listPanel}`} aria-label="材料清单">
+          <header className={styles.listHeader}>
             <div>
               <h2>材料清单</h2>
-              <p>
-                {filtered.length} 份材料 ·{" "}
-                {filtered.reduce((sum, item) => sum + item.claimCount, 0)}{" "}
-                个可引用 Claim
-              </p>
+              <p>选择一份材料，核对是否适合当前投标使用。</p>
             </div>
-            <span>
-              最近复核：
-              {assets.find((item) => item.lastReviewed !== "未复核")
-                ?.lastReviewed ?? "暂无"}
-            </span>
-          </div>
-          <div className="evidence-table-wrap">
-            <table className="evidence-table">
-              <thead>
-                <tr>
-                  <th>材料</th>
-                  <th>主体 / 部门</th>
-                  <th>有效期</th>
-                  <th>状态</th>
-                  <th>使用</th>
-                  <th>负责人</th>
-                </tr>
-              </thead>
-              <tbody>
-                {filtered.map((asset) => (
-                  <tr
-                    key={asset.id}
-                    className={asset.id === selected.id ? "selected" : ""}
-                    onClick={() => setSelectedId(asset.id)}
-                  >
-                    <td>
-                      <span>
-                        <strong title={asset.name}>{asset.name}</strong>
-                        <small>
-                          {asset.type} · {asset.version} · {asset.size}
-                        </small>
-                      </span>
-                    </td>
-                    <td>
-                      <strong title={asset.legalEntity}>{asset.legalEntity}</strong>
-                      <small title={asset.department}>{asset.department}</small>
-                    </td>
-                    <td>
-                      <strong>{asset.validUntil}</strong>
-                      <small
-                        className={asset.expiryDays < 0 ? "danger-text" : ""}
-                      >
-                        {asset.expiryDays < 0
-                          ? `已过期 ${Math.abs(asset.expiryDays)} 天`
-                          : asset.expiryDays < 90
-                            ? `${asset.expiryDays} 天后到期`
-                            : "有效"}
-                      </small>
-                    </td>
-                    <td>
-                      <span className={`asset-status ${asset.status}`}>
-                        {statusLabel[asset.status]}
-                      </span>
-                    </td>
-                    <td>
-                      <strong>{asset.usageCount} 个项目</strong>
-                      <small>{asset.claimCount} 个 Claim</small>
-                    </td>
-                    <td>
-                      <strong>{asset.owner}</strong>
-                      <small>{asset.lastReviewed}</small>
-                    </td>
+            <span>{filtered.reduce((sum, item) => sum + item.claimCount, 0)} 个 Claims</span>
+          </header>
+          {filtered.length ? (
+            <div className={styles.tableWrap}>
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>材料</th>
+                    <th>主体 / 部门</th>
+                    <th>有效期</th>
+                    <th>验证状态</th>
+                    <th>使用 / Claims</th>
+                    <th>最近复核</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-            {filtered.length === 0 && (
-              <div className="empty-state">
-                <strong>没有匹配的企业材料</strong>调整范围或上传新材料。
-              </div>
-            )}
-          </div>
-        </section>
-        <aside className="panel evidence-detail">
-          <div className="evidence-detail-head">
-            <span className="asset-icon large">
-              <FileText size={20} />
-            </span>
-            <div>
-              <strong>{selected.name}</strong>
-              <small>
-                {selected.version} · {selected.pageCount} 页 · {selected.size}
-              </small>
+                </thead>
+                <tbody>
+                  {filtered.map((asset) => (
+                    <tr
+                      key={asset.id}
+                      className={asset.id === selected?.id ? styles.selected : ""}
+                      onClick={() => selectAsset(asset)}
+                    >
+                      <td>
+                        <button
+                          className={styles.assetButton}
+                          type="button"
+                          onClick={(event) => {
+                            event.stopPropagation();
+                            selectAsset(asset);
+                          }}
+                        >
+                          <strong>{asset.name}</strong>
+                          <small>
+                            {asset.type} · {asset.version} · {asset.size}
+                          </small>
+                        </button>
+                      </td>
+                      <td>
+                        <strong title={asset.legalEntity}>{asset.legalEntity}</strong>
+                        <small>{asset.department}</small>
+                      </td>
+                      <td>
+                        <strong>{asset.validUntil}</strong>
+                        <small className={asset.expiryDays < 0 ? styles.dangerText : ""}>
+                          {expiryCopy(asset)}
+                        </small>
+                      </td>
+                      <td>
+                        <span className={`${styles.status} ${styles[asset.status]}`}>
+                          {statusLabel[asset.status]}
+                        </span>
+                      </td>
+                      <td>
+                        <strong>{asset.usageCount} 个项目</strong>
+                        <small>{asset.claimCount} 个 Claims</small>
+                      </td>
+                      <td>
+                        <strong>{asset.lastReviewed}</strong>
+                        <small>{asset.owner}</small>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
             </div>
-            <span className={`asset-status ${selected.status}`}>
-              {statusLabel[selected.status]}
-            </span>
-          </div>
-          <div className="detail-tabs evidence-tabs" role="tablist">
-            {(
-              [
-                ["preview", "预览"],
-                ["claims", "Claims"],
-                ["usage", "使用项目"],
-                ["history", "版本"],
-              ] as const
-            ).map(([key, label]) => (
-              <button
-                key={key}
-                className={tab === key ? "active" : ""}
-                role="tab"
-                aria-selected={tab === key}
-                type="button"
-                onClick={() => setTab(key)}
-              >
-                {label}
-                {key === "claims" && <span>{selected.claims.length}</span>}
+          ) : (
+            <div className={styles.noResults}>
+              <FileSearch size={20} aria-hidden="true" />
+              <strong>没有匹配的企业材料</strong>
+              <p>调整搜索词或清除筛选后重试。</p>
+              <button type="button" onClick={clearFilters}>
+                清除筛选
               </button>
-            ))}
-          </div>
-          <div className="evidence-detail-body">
-            {tab === "claims" && (
-              <div className="claims-list">
-                <div className="claims-summary">
-                  <strong>{selected.claims.length} 个结构化 Claim</strong>
-                  <small>每项均保留来源页与置信度</small>
-                </div>
-                {selected.claims.map((claim) => (
-                  <article
-                    key={claim.id}
-                    className={claim.conflict ? "conflict" : ""}
-                  >
-                    <div>
-                      <span>{claim.label}</span>
-                      <strong>{claim.value}</strong>
-                    </div>
-                    <p>可证明：{claim.proves}</p>
-                    <footer>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setPreviewPage(claim.page);
-                          setTab("preview");
-                        }}
-                      >
-                        第 {claim.page} 页 <ChevronRight size={11} />
-                      </button>
-                      <ConfidenceIndicator value={claim.confidence} />
-                    </footer>
-                    {claim.conflict && (
-                      <aside>
-                        <AlertTriangle size={12} />
-                        {claim.conflict}
-                      </aside>
-                    )}
-                  </article>
-                ))}
-                {selected.claims.length === 0 && (
-                  <div className="empty-state">
-                    <strong>尚未抽取 Claim</strong>
-                    本地上传材料需连接后端解析后抽取。
-                  </div>
-                )}
-              </div>
-            )}
-            {tab === "preview" && (
-              <DocumentViewer
-                key={`${selected.id}-${previewPage}`}
-                name={selected.name}
-                state={selected.pageCount === 0 ? "loading" : "ready"}
-                initialPage={previewPage}
-                pageCount={selected.pageCount || 1}
-                excerpt={
-                  selected.claims.find((claim) => claim.page === previewPage)
-                    ?.value
-                }
-                focusLabel={
-                  selected.claims.find((claim) => claim.page === previewPage)
-                    ?.label
-                }
-                sourceLocation={`${selected.version} · ${selected.legalEntity}`}
-                demo
-              />
-            )}
-            {tab === "usage" && (
-              <div className="usage-list">
-                <h3>已关联项目</h3>
-                {selected.usedBy.map((project) => (
-                  <p key={project}>
-                    <span>
-                      <strong>{project}</strong>
-                      <small>证据引用正在使用</small>
-                    </span>
-                    <ChevronRight size={13} />
-                  </p>
-                ))}
-                {!selected.usedBy.length && (
-                  <div className="empty-state">
-                    <strong>尚未被项目使用</strong>可在证据匹配工作台建立关联。
-                  </div>
-                )}
-              </div>
-            )}
-            {tab === "history" && (
-              <div className="version-list">
-                <h3>版本历史</h3>
-                <p>
-                  <span>{selected.version}</span>
-                  <strong>当前版本</strong>
+            </div>
+          )}
+        </section>
+
+        <aside className={`panel ${styles.detailPanel}`} aria-label="材料复核详情">
+          {selected ? (
+            <>
+              <header className={styles.detailHeader}>
+                <span className={styles.fileIcon}>
+                  <FileText size={18} aria-hidden="true" />
+                </span>
+                <div>
+                  <strong>{selected.name}</strong>
                   <small>
-                    {selected.lastReviewed} · {selected.owner} 复核
+                    {selected.type} · {selected.version} · {selected.pageCount} 页
                   </small>
-                </p>
-                <p>
-                  <span>V1</span>
-                  <strong>初始上传</strong>
-                  <small>保留原始文件哈希</small>
-                </p>
+                </div>
+                <span className={`${styles.status} ${styles[selected.status]}`}>
+                  {statusLabel[selected.status]}
+                </span>
+              </header>
+
+              <ReviewSummary asset={selected} />
+
+              <dl className={styles.facts}>
+                <div>
+                  <dt>主体</dt>
+                  <dd>{selected.legalEntity}</dd>
+                </div>
+                <div>
+                  <dt>有效期</dt>
+                  <dd>
+                    {selected.validUntil}
+                    <small>{expiryCopy(selected)}</small>
+                  </dd>
+                </div>
+                <div>
+                  <dt>最近复核</dt>
+                  <dd>
+                    {selected.lastReviewed}
+                    <small>{selected.owner}</small>
+                  </dd>
+                </div>
+                <div>
+                  <dt>引用情况</dt>
+                  <dd>
+                    {selected.usageCount} 个项目
+                    <small>{selected.claimCount} 个 Claims</small>
+                  </dd>
+                </div>
+              </dl>
+
+              <div className={styles.tabs} role="tablist" aria-label="材料详情">
+                {detailTabs.map(([key, label]) => (
+                  <button
+                    key={key}
+                    className={tab === key ? styles.activeTab : ""}
+                    role="tab"
+                    aria-selected={tab === key}
+                    type="button"
+                    onClick={() => setTab(key)}
+                  >
+                    {label}
+                    {key === "claims" && <span>{selected.claims.length}</span>}
+                  </button>
+                ))}
               </div>
-            )}
-          </div>
+
+              <div className={styles.detailBody}>
+                {tab === "claims" && (
+                  <div className={styles.claims}>
+                    <header>
+                      <strong>{selected.claims.length} 个结构化 Claims</strong>
+                      <small>保留来源页与置信度</small>
+                    </header>
+                    {selected.claims.map((claim) => (
+                      <article
+                        key={claim.id}
+                        className={claim.conflict ? styles.claimConflict : ""}
+                      >
+                        <div>
+                          <span>{claim.label}</span>
+                          <strong>{claim.value}</strong>
+                        </div>
+                        <p>可证明：{claim.proves}</p>
+                        <footer>
+                          <button
+                            type="button"
+                            onClick={() => {
+                              setPreviewPage(claim.page);
+                              setTab("preview");
+                            }}
+                          >
+                            第 {claim.page} 页
+                            <ChevronRight size={12} aria-hidden="true" />
+                          </button>
+                          <ConfidenceIndicator value={claim.confidence} />
+                        </footer>
+                        {claim.conflict && (
+                          <aside>
+                            <AlertTriangle size={13} aria-hidden="true" />
+                            {claim.conflict}
+                          </aside>
+                        )}
+                      </article>
+                    ))}
+                    {!selected.claims.length && (
+                      <div className={styles.inlineEmpty}>
+                        <strong>尚无结构化 Claim</strong>
+                        <span>当前材料没有可用于判断的 Claim 数据。</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {tab === "preview" && (
+                  <DocumentViewer
+                    key={`${selected.id}-${previewPage}`}
+                    name={selected.name}
+                    state={selected.pageCount === 0 ? "loading" : "ready"}
+                    initialPage={previewPage}
+                    pageCount={selected.pageCount || 1}
+                    excerpt={
+                      selected.claims.find((claim) => claim.page === previewPage)
+                        ?.value
+                    }
+                    focusLabel={
+                      selected.claims.find((claim) => claim.page === previewPage)
+                        ?.label
+                    }
+                    sourceLocation={`${selected.version} · ${selected.legalEntity}`}
+                    demo
+                  />
+                )}
+
+                {tab === "usage" && (
+                  <div className={styles.records}>
+                    <header>
+                      <strong>已使用项目</strong>
+                      <small>{selected.usedBy.length} 个可追溯引用</small>
+                    </header>
+                    {selected.usedBy.map((project) => (
+                      <div key={project}>
+                        <span>{project}</span>
+                        <small>正在引用当前材料</small>
+                      </div>
+                    ))}
+                    {!selected.usedBy.length && (
+                      <div className={styles.inlineEmpty}>
+                        <strong>尚未被项目使用</strong>
+                        <span>当前数据中没有项目引用记录。</span>
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {tab === "history" && (
+                  <div className={styles.records}>
+                    <header>
+                      <strong>当前版本</strong>
+                      <small>现有接口只返回最新版本</small>
+                    </header>
+                    <div>
+                      <span>{selected.version}</span>
+                      <strong>{selected.lastReviewed} · {selected.owner} 复核</strong>
+                      <small>{selected.size} · {selected.pageCount} 页</small>
+                    </div>
+                    <p className={styles.historyNote}>
+                      当前数据未提供历史快照，因此不展示无法核实的版本比较。
+                    </p>
+                  </div>
+                )}
+              </div>
+            </>
+          ) : (
+            <div className={styles.noSelection}>
+              <FileSearch size={20} aria-hidden="true" />
+              <strong>请选择一份材料</strong>
+              <p>从材料清单中选择条目后查看复核信息。</p>
+            </div>
+          )}
         </aside>
       </div>
     </div>
   );
 }
 
-function EvidenceAlert({
-  value,
-  label,
-  tone = "",
-  onClick,
-}: {
-  value: string;
-  label: string;
-  tone?: string;
-  onClick: () => void;
-}) {
+function ReviewSummary({ asset }: { asset: EvidenceAsset }) {
+  const guidance = reuseGuidance(asset);
+  const Icon = guidance.tone === "ready" ? CheckCircle2 : AlertTriangle;
+
   return (
-    <button className={tone} type="button" onClick={onClick}>
-      <strong>{value}</strong>
-      <small>{label}</small>
-    </button>
+    <section
+      className={`${styles.reviewSummary} ${styles[guidance.tone]}`}
+      aria-label="材料复用提示"
+    >
+      <Icon size={17} aria-hidden="true" />
+      <div>
+        <strong>{guidance.title}</strong>
+        <p>{guidance.detail}</p>
+      </div>
+    </section>
   );
 }

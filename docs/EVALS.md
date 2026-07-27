@@ -41,3 +41,40 @@ make verify
 ## 6. 结果与回归
 
 报告记录 git SHA、fixture/schema/generator/parser/prompt/rule 版本、运行时间和失败样本。Prompt、parser、规则或规范化变更必须对同一 oracle 比较退化。人工纠正经审核后追加到下一版 gold；已经发布的 fixture 版本不可静默修改含义。
+
+## 7. 要求抽取离线评测
+
+`demo/evals/requirement_extraction_v1.json` 在现有 v2 oracle 上补齐逐页输入和原文 span：
+
+- 3 份完全合成资料、9 页、24 条 gold 要求；
+- 24 条强制要求，其中 3 条是否决候选；
+- 页眉/说明/标题等明确负例；
+- fixture、逐页输入、最终结构化 system prompt（含 JSON 指令、示例与
+  `RequirementBatch` Schema）的固定 SHA256。
+
+默认命令只用 `DeterministicTextParser` 重新解析 fixture，并校验页数、原文 span、v2
+oracle 映射与全部哈希；不会读取 live 凭证，也不会调用模型：
+
+```bash
+make eval-requirements
+backend/.venv/bin/python scripts/evaluate_requirements.py \
+  --output .data/evals/requirement-extraction-offline.json
+```
+
+live 模式不属于 `make test`、`make verify` 或 CI。只有用户明确批准凭证使用后，才可在本机设置
+`BIDEVIDENCE_LLM_BASE_URL`、`BIDEVIDENCE_LLM_API_KEY` 和
+`BIDEVIDENCE_LLM_MODEL`，再显式运行：
+
+```bash
+backend/.venv/bin/python scripts/evaluate_requirements.py \
+  --allow-live --runs 3 \
+  --output .data/evals/deepseek-requirement-extraction.json
+```
+
+不要把密钥写入命令、结果、聊天或版本库。模型名完全来自环境变量，以兼容服务商当前公开的
+DeepSeek model identifier；评测器不维护可能过期的模型别名。每页结果保留不含凭证的请求配置、
+原始响应、错误、延迟、usage、返回模型和 finish reason，并逐轮报告带分子/分母的
+precision、recall、F1、强制/否决召回、类别、来源、Schema 和负例指标及 bad case。
+
+该数据集很小且完全合成。即使 live 结果通过，也只能说明固定工作流上的回归表现，不能外推为
+真实招投标总体准确率，更不能替代来源校验和人工复核。

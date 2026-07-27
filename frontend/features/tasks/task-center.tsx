@@ -3,14 +3,13 @@
 import { useMemo, useState } from "react";
 import Link from "next/link";
 import {
+  ArrowLeft,
   CalendarClock,
   Check,
   ChevronRight,
   FileText,
   Grid2X2,
   List,
-  MessageSquare,
-  Paperclip,
   Plus,
   Search,
   UserRound,
@@ -30,7 +29,14 @@ const columns: { key: RemediationTask["status"]; label: string }[] = [
   { key: "review", label: "待复核" },
   { key: "done", label: "已完成" },
 ];
-const priorityLabel = { critical: "紧急", high: "高", medium: "中", low: "低" };
+
+const priorityLabel = {
+  critical: "紧急",
+  high: "高",
+  medium: "中",
+  low: "低",
+};
+
 const nextStatus: Record<RemediationTask["status"], RemediationTask["status"]> =
   {
     todo: "in_progress",
@@ -38,6 +44,13 @@ const nextStatus: Record<RemediationTask["status"], RemediationTask["status"]> =
     review: "done",
     done: "in_progress",
   };
+
+const nextActionLabel: Record<RemediationTask["status"], string> = {
+  todo: "开始处理",
+  in_progress: "提交复核",
+  review: "复核并完成",
+  done: "重新打开",
+};
 
 export function TaskCenter({
   projectId,
@@ -51,394 +64,429 @@ export function TaskCenter({
   loadError?: string;
 }) {
   const [tasks, setTasks] = useState(initialTasks);
-  const [view, setView] = useState<"kanban" | "table">("kanban");
+  const [view, setView] = useState<"list" | "flow">("list");
   const [query, setQuery] = useState("");
   const [priority, setPriority] = useState("all");
+  const [status, setStatus] = useState("all");
   const [selectedId, setSelectedId] = useState(initialTasks[0]?.id);
+  const [mobileView, setMobileView] = useState<"list" | "detail">("list");
   const [dragId, setDragId] = useState<string | null>(null);
   const [feedback, setFeedback] = useState<MutationResult | null>(null);
   const [createOpen, setCreateOpen] = useState(false);
   const [newTitle, setNewTitle] = useState("");
-  const selected = tasks.find((item) => item.id === selectedId) ?? tasks[0];
+
   const filtered = useMemo(
     () =>
       tasks.filter(
         (task) =>
-          `${task.title}${task.owner}${task.sourceLabel}`
+          `${task.title}${task.owner}${task.reviewer}${task.sourceLabel}`
             .toLowerCase()
             .includes(query.toLowerCase()) &&
-          (priority === "all" || task.priority === priority),
+          (priority === "all" || task.priority === priority) &&
+          (status === "all" || task.status === status),
       ),
-    [priority, query, tasks],
+    [priority, query, status, tasks],
   );
 
-  async function moveTask(id: string, status: RemediationTask["status"]) {
+  const selected =
+    filtered.find((item) => item.id === selectedId) ??
+    filtered[0] ??
+    tasks.find((item) => item.id === selectedId) ??
+    tasks[0];
+
+  const openCount = tasks.filter((item) => item.status !== "done").length;
+  const reviewCount = tasks.filter((item) => item.status === "review").length;
+  const filtersActive = Boolean(
+    query || priority !== "all" || status !== "all",
+  );
+
+  function selectTask(id: string) {
+    setSelectedId(id);
+    setMobileView("detail");
+  }
+
+  function clearFilters() {
+    setQuery("");
+    setPriority("all");
+    setStatus("all");
+  }
+
+  async function moveTask(id: string, targetStatus: RemediationTask["status"]) {
     const currentTask = tasks.find((task) => task.id === id);
     if (!currentTask) return;
-    if (nextStatus[currentTask.status] !== status) {
+    if (nextStatus[currentTask.status] !== targetStatus) {
       setFeedback({
         source,
         persisted: false,
         status: "error",
         title: "状态流转被阻止",
-        message: `任务必须按“待处理 → 进行中 → 待复核 → 已完成”流转；当前不能从 ${columns.find((item) => item.key === currentTask.status)?.label} 直接进入 ${columns.find((item) => item.key === status)?.label}。`,
+        message: `任务必须按“待处理 → 进行中 → 待复核 → 已完成”流转；当前不能从 ${statusLabel(currentTask.status)} 直接进入 ${statusLabel(targetStatus)}。`,
       });
       return;
     }
+
     const result =
-      status === "review"
+      targetStatus === "review"
         ? await phaseApi.completeTask(id)
-        : status === "done"
+        : targetStatus === "done"
           ? await phaseApi.reviewTask(id)
           : await phaseApi.updateTask(
               id,
-              { status },
-              `看板移动：${currentTask.status} → ${status}`,
+              { status: targetStatus },
+              `任务流转：${currentTask.status} → ${targetStatus}`,
             );
+
     setFeedback(toFeedback(result, source, "任务状态已更新"));
     if (result.failed) return;
     setTasks((current) =>
-      current.map((task) => (task.id === id ? { ...task, status } : task)),
+      current.map((task) =>
+        task.id === id ? { ...task, status: targetStatus } : task,
+      ),
     );
   }
+
   async function createTask() {
     if (!newTitle.trim()) return;
     const draft: RemediationTask = {
       id: `TASK-DEMO-${Date.now()}`,
-      title: newTitle,
+      title: newTitle.trim(),
       priority: "medium",
       status: "todo",
       owner: "刘敏",
       reviewer: "未分配",
       dueDate: "2026-07-24",
-      sourceType: "requirement",
+      sourceType: "manual",
       sourceLabel: "人工创建 · 当前项目",
       reason: "由投标经理手动创建",
       evidence: "待补充",
-      steps: ["补充处理说明", "上传完成证明"],
+      steps: ["补充处理说明", "提交复核"],
       attachments: 0,
       comments: 0,
     };
-    const result = await phaseApi.createTask(
-      projectId,
-      { ...draft, sourceType: "manual" as RemediationTask["sourceType"] },
-      projectId,
-    );
+    const result = await phaseApi.createTask(projectId, draft, projectId);
     setFeedback(toFeedback(result, source, "任务已创建"));
     if (result.failed) return;
-    setTasks((current) => [draft, ...current]);
-    setSelectedId(draft.id);
+    const created = { ...draft, id: result.data.id || draft.id };
+    setTasks((current) => [created, ...current]);
+    setSelectedId(created.id);
+    setMobileView("detail");
     setNewTitle("");
     setCreateOpen(false);
   }
+
   if (loadError) {
-    return <DataUnavailableState title="整改任务 API 数据不可用" message={loadError} />;
+    return (
+      <DataUnavailableState
+        title="整改任务 API 数据不可用"
+        message={loadError}
+      />
+    );
   }
-  if (!selected) return null;
+
   return (
-    <div className="page task-page">
-      <header className="page-header">
+    <div className="page task-page batch03-task-page">
+      <header className="page-header task-page-header">
         <div className="page-title-group">
           <h1>整改任务</h1>
-          <p>
-            每个任务都关联要求、否决项、冲突、公告变化或封装问题，并保留完整来源链。
-          </p>
+          <p>负责人处理整改项并提交复核，复核人沿同一来源链完成确认。</p>
         </div>
-        <div className="header-actions">
-          <span className={`data-source ${source}`}>
-            {source === "api" ? "API 数据" : "本地演示数据"}
-          </span>
-          <button
-            className="button primary"
-            type="button"
-            onClick={() => setCreateOpen(true)}
-          >
-            <Plus size={14} />
-            新建任务
-          </button>
-        </div>
+        <button
+          className="button primary"
+          type="button"
+          onClick={() => setCreateOpen(true)}
+        >
+          <Plus size={14} />
+          新建任务
+        </button>
       </header>
-      <section className="task-overview">
-        <article>
-          <span>
-            <strong>
-              {
-                tasks.filter(
-                  (item) =>
-                    item.priority === "critical" && item.status !== "done",
-                ).length
-              }
-            </strong>
-            <small>紧急优先级</small>
-          </span>
-        </article>
-        <article>
-          <span>
-            <strong>
-              {
-                tasks.filter(
-                  (item) =>
-                    item.dueDate <= "2026-07-19" && item.status !== "done",
-                ).length
-              }
-            </strong>
-            <small>3 天内到期</small>
-          </span>
-        </article>
-        <article>
-          <span>
-            <strong>
-              {tasks.filter((item) => item.status === "done").length}
-            </strong>
-            <small>已完成</small>
-          </span>
-        </article>
-        <div className="task-toolbar">
-          <label>
-            <Search size={13} />
-            <input
-              aria-label="搜索整改任务"
-              value={query}
-              onChange={(event) => setQuery(event.target.value)}
-              placeholder="搜索任务、负责人、来源"
-            />
-          </label>
+
+      <section className="task-commandbar" aria-label="整改任务工具栏">
+        <label className="task-search-field">
+          <Search size={14} />
+          <input
+            aria-label="搜索整改任务"
+            value={query}
+            onChange={(event) => setQuery(event.target.value)}
+            placeholder="搜索任务、负责人、复核人或来源"
+          />
+        </label>
+        <label className="task-filter-field">
+          <span>优先级</span>
           <select
             aria-label="按优先级筛选"
             value={priority}
             onChange={(event) => setPriority(event.target.value)}
           >
-            <option value="all">全部优先级</option>
+            <option value="all">全部</option>
             <option value="critical">紧急</option>
             <option value="high">高</option>
             <option value="medium">中</option>
+            <option value="low">低</option>
           </select>
-          <span className="view-toggle">
-            <button
-              className={view === "kanban" ? "active" : ""}
-              type="button"
-              aria-label="Kanban 视图"
-              onClick={() => setView("kanban")}
-            >
-              <Grid2X2 size={14} />
-            </button>
-            <button
-              className={view === "table" ? "active" : ""}
-              type="button"
-              aria-label="表格视图"
-              onClick={() => setView("table")}
-            >
-              <List size={14} />
-            </button>
-          </span>
+        </label>
+        <label className="task-filter-field">
+          <span>状态</span>
+          <select
+            aria-label="按状态筛选"
+            value={status}
+            onChange={(event) => setStatus(event.target.value)}
+          >
+            <option value="all">全部</option>
+            {columns.map((column) => (
+              <option key={column.key} value={column.key}>
+                {column.label}
+              </option>
+            ))}
+          </select>
+        </label>
+        <div className="task-command-summary" aria-label="任务概况">
+          <strong>{filtered.length}</strong> 项<span>{openCount} 项未完成</span>
+          <span>{reviewCount} 项待复核</span>
+        </div>
+        {filtersActive && (
+          <button
+            className="task-clear-filters"
+            type="button"
+            onClick={clearFilters}
+          >
+            清除筛选
+          </button>
+        )}
+        <div className="task-view-toggle" aria-label="任务视图">
+          <button
+            className={view === "list" ? "active" : ""}
+            type="button"
+            aria-label="工作清单"
+            aria-pressed={view === "list"}
+            onClick={() => setView("list")}
+          >
+            <List size={14} />
+            清单
+          </button>
+          <button
+            className={view === "flow" ? "active" : ""}
+            type="button"
+            aria-label="流程视图"
+            aria-pressed={view === "flow"}
+            onClick={() => setView("flow")}
+          >
+            <Grid2X2 size={14} />
+            流程
+          </button>
         </div>
       </section>
+
       <MutationFeedback result={feedback} />
-      <div className="task-layout">
-        <section className="panel task-board">
-          {view === "kanban" ? (
-            <div className="kanban-board">
-              {columns.map((column) => (
-                <section
-                  key={column.key}
-                  onDragOver={(event) => event.preventDefault()}
-                  onDrop={() => {
-                    if (dragId) void moveTask(dragId, column.key);
-                    setDragId(null);
-                  }}
-                >
-                  <header>
-                    <strong>{column.label}</strong>
-                    <span>
-                      {
-                        filtered.filter((task) => task.status === column.key)
-                          .length
-                      }
-                    </span>
-                  </header>
-                  <div>
-                    {filtered
-                      .filter((task) => task.status === column.key)
-                      .map((task) => (
-                        <article
-                          key={task.id}
-                          draggable
-                          onDragStart={() => setDragId(task.id)}
-                          onDragEnd={() => setDragId(null)}
-                          className={task.id === selected.id ? "selected" : ""}
-                          onClick={() => setSelectedId(task.id)}
-                        >
-                          <span className={`task-priority ${task.priority}`}>
-                            {priorityLabel[task.priority]}优先级
-                          </span>
-                          <strong>{task.title}</strong>
-                          <small>{task.sourceLabel}</small>
-                          <footer>
-                            <span>
-                              <UserRound size={11} />
-                              {task.owner}
-                            </span>
-                            <span>
-                              <CalendarClock size={11} />
-                              {task.dueDate.slice(5)}
-                            </span>
-                          </footer>
-                        </article>
-                      ))}
-                  </div>
-                </section>
-              ))}
+
+      <div className="task-mobile-switch" aria-label="移动端任务视图">
+        <button
+          className={mobileView === "list" ? "active" : ""}
+          type="button"
+          aria-pressed={mobileView === "list"}
+          onClick={() => setMobileView("list")}
+        >
+          任务列表
+        </button>
+        <button
+          className={mobileView === "detail" ? "active" : ""}
+          type="button"
+          disabled={!selected}
+          aria-pressed={mobileView === "detail"}
+          onClick={() => setMobileView("detail")}
+        >
+          任务详情
+        </button>
+      </div>
+
+      <div className={`task-workspace mobile-${mobileView}`}>
+        <section className="task-worklist" aria-label="整改任务列表">
+          {filtered.length === 0 ? (
+            <div className="task-empty">
+              <strong>没有符合条件的任务</strong>
+              <p>调整搜索或筛选条件，查看其他整改任务。</p>
+              {filtersActive && (
+                <button className="button" type="button" onClick={clearFilters}>
+                  清除筛选
+                </button>
+              )}
             </div>
+          ) : view === "list" ? (
+            <TaskList
+              tasks={filtered}
+              selectedId={selected?.id}
+              onSelect={selectTask}
+            />
           ) : (
-            <div className="task-table-wrap">
-              <table className="data-table">
-                <thead>
-                  <tr>
-                    <th>任务</th>
-                    <th>优先级</th>
-                    <th>状态</th>
-                    <th>来源</th>
-                    <th>负责人</th>
-                    <th>复核人</th>
-                    <th>截止</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {filtered.map((task) => (
-                    <tr key={task.id} onClick={() => setSelectedId(task.id)}>
-                      <td>
-                        <strong>{task.title}</strong>
-                      </td>
-                      <td>
-                        <span className={`task-priority ${task.priority}`}>
-                          {priorityLabel[task.priority]}
-                        </span>
-                      </td>
-                      <td>
-                        {
-                          columns.find((item) => item.key === task.status)
-                            ?.label
-                        }
-                      </td>
-                      <td>{task.sourceLabel}</td>
-                      <td>{task.owner}</td>
-                      <td>{task.reviewer}</td>
-                      <td>{task.dueDate}</td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
+            <TaskFlow
+              tasks={filtered}
+              selectedId={selected?.id}
+              dragId={dragId}
+              onSelect={selectTask}
+              onDragStart={setDragId}
+              onDragEnd={() => setDragId(null)}
+              onDrop={(targetStatus) => {
+                if (dragId) void moveTask(dragId, targetStatus);
+                setDragId(null);
+              }}
+            />
           )}
         </section>
-        <aside className="panel task-detail">
-          <header>
-            <div>
-              <span>{selected.id}</span>
-              <h2>{selected.title}</h2>
-            </div>
-            <span className={`task-priority ${selected.priority}`}>
-              {priorityLabel[selected.priority]}优先级
-            </span>
-          </header>
-          <section className="task-source-chain">
-            <h3>来源链</h3>
-            <Link href={taskSourceHref(projectId, selected)}>
-              <FileText size={14} />
-              <span>
-                <strong>{selected.sourceLabel}</strong>
-                <small>{selected.evidence}</small>
-              </span>
-              <ChevronRight size={13} />
-            </Link>
-          </section>
-          <section aria-label="任务状态链">
-            <h3>状态链</h3>
-            <div className="active-filters">
-              {columns.map((column, index) => (
-                <span
-                  key={column.key}
-                  className={column.key === selected.status ? "owner-chip" : ""}
+
+        <aside className="task-inspector" aria-label="当前任务详情">
+          {selected ? (
+            <>
+              <button
+                className="task-mobile-back"
+                type="button"
+                onClick={() => setMobileView("list")}
+              >
+                <ArrowLeft size={14} />
+                返回任务列表
+              </button>
+              <header className="task-inspector-header">
+                <div>
+                  <span>{selected.id}</span>
+                  <h2>{selected.title}</h2>
+                </div>
+                <strong className={`task-priority ${selected.priority}`}>
+                  {priorityLabel[selected.priority]}
+                </strong>
+              </header>
+
+              <section className="task-progress" aria-label="任务状态">
+                <div className="task-progress-heading">
+                  <h3>任务进度</h3>
+                  <span>
+                    {columns.findIndex(
+                      (column) => column.key === selected.status,
+                    ) + 1}
+                    /4
+                  </span>
+                </div>
+                <ol>
+                  {columns.map((column, index) => {
+                    const currentIndex = columns.findIndex(
+                      (item) => item.key === selected.status,
+                    );
+                    return (
+                      <li
+                        key={column.key}
+                        className={
+                          index < currentIndex
+                            ? "complete"
+                            : index === currentIndex
+                              ? "current"
+                              : ""
+                        }
+                        aria-current={
+                          column.key === selected.status ? "step" : undefined
+                        }
+                      >
+                        <span>
+                          {index < currentIndex ? (
+                            <Check size={11} />
+                          ) : (
+                            index + 1
+                          )}
+                        </span>
+                        <small>{column.label}</small>
+                      </li>
+                    );
+                  })}
+                </ol>
+              </section>
+
+              <dl className="task-assignment">
+                <div>
+                  <dt>负责人</dt>
+                  <dd>
+                    <UserRound size={13} />
+                    {selected.owner}
+                  </dd>
+                </div>
+                <div>
+                  <dt>复核人</dt>
+                  <dd>{selected.reviewer}</dd>
+                </div>
+                <div>
+                  <dt>截止日期</dt>
+                  <dd>
+                    <CalendarClock size={13} />
+                    {selected.dueDate}
+                  </dd>
+                </div>
+              </dl>
+
+              <section className="task-source-chain">
+                <h3>来源</h3>
+                <Link href={taskSourceHref(projectId, selected)}>
+                  <FileText size={15} />
+                  <span>
+                    <strong>{selected.sourceLabel}</strong>
+                    <small>{selected.evidence}</small>
+                  </span>
+                  <ChevronRight size={14} />
+                </Link>
+              </section>
+
+              <section className="task-detail-section">
+                <h3>整改原因</h3>
+                <p>{selected.reason}</p>
+              </section>
+
+              <section className="task-detail-section">
+                <h3>处理步骤</h3>
+                <ol>
+                  {selected.steps.map((step, index) => (
+                    <li key={step}>
+                      <span>{index + 1}</span>
+                      <p>{step}</p>
+                    </li>
+                  ))}
+                </ol>
+              </section>
+
+              <dl className="task-record-counts" aria-label="任务现有记录">
+                <div>
+                  <dt>附件记录</dt>
+                  <dd>{selected.attachments}</dd>
+                </div>
+                <div>
+                  <dt>评论记录</dt>
+                  <dd>{selected.comments}</dd>
+                </div>
+              </dl>
+
+              <footer className="task-next-action">
+                <div>
+                  <small>下一步</small>
+                  <strong>{nextActionLabel[selected.status]}</strong>
+                </div>
+                <button
+                  className={`button ${selected.status === "done" ? "" : "primary"}`}
+                  type="button"
+                  onClick={() =>
+                    void moveTask(selected.id, nextStatus[selected.status])
+                  }
                 >
-                  {index + 1}. {column.label}
-                </span>
-              ))}
+                  {selected.status !== "done" && <Check size={14} />}
+                  {nextActionLabel[selected.status]}
+                </button>
+              </footer>
+            </>
+          ) : (
+            <div className="task-empty">
+              <strong>暂无整改任务</strong>
+              <p>创建任务后，可在这里查看来源并推进处理与复核。</p>
             </div>
-          </section>
-          <dl className="task-meta">
-            <div>
-              <dt>负责人</dt>
-              <dd>{selected.owner}</dd>
-            </div>
-            <div>
-              <dt>复核人</dt>
-              <dd>{selected.reviewer}</dd>
-            </div>
-            <div>
-              <dt>截止时间</dt>
-              <dd>{selected.dueDate}</dd>
-            </div>
-            <div>
-              <dt>当前状态</dt>
-              <dd>
-                {columns.find((item) => item.key === selected.status)?.label}
-              </dd>
-            </div>
-          </dl>
-          <section>
-            <h3>整改原因</h3>
-            <p>{selected.reason}</p>
-          </section>
-          <section>
-            <h3>建议步骤</h3>
-            <ol>
-              {selected.steps.map((step) => (
-                <li key={step}>{step}</li>
-              ))}
-            </ol>
-          </section>
-          <div className="task-assets">
-            <span>
-              <Paperclip size={12} />
-              {selected.attachments} 个附件
-            </span>
-            <span>
-              <MessageSquare size={12} />
-              {selected.comments} 条评论
-            </span>
-          </div>
-          <footer>
-            {selected.status !== "done" ? (
-              <button
-                className="button primary full-width"
-                type="button"
-                onClick={() =>
-                  moveTask(selected.id, nextStatus[selected.status])
-                }
-              >
-                <Check size={13} />
-                {selected.status === "todo"
-                  ? "开始处理"
-                  : selected.status === "in_progress"
-                    ? "提交复核"
-                    : "复核并完成"}
-              </button>
-            ) : (
-              <button
-                className="button full-width"
-                type="button"
-                onClick={() => moveTask(selected.id, "in_progress")}
-              >
-                重新打开任务
-              </button>
-            )}
-          </footer>
+          )}
         </aside>
       </div>
+
       {createOpen && (
         <div className="dialog-backdrop">
           <div
-            className="dialog"
+            className="dialog task-create-dialog"
             role="dialog"
             aria-modal="true"
             aria-labelledby="create-task-title"
@@ -446,7 +494,7 @@ export function TaskCenter({
             <div className="dialog-title">
               <div>
                 <h2 id="create-task-title">新建整改任务</h2>
-                <p>人工任务会绑定当前项目，创建后可继续补充来源。</p>
+                <p>新任务绑定当前项目，并从“待处理”开始流转。</p>
               </div>
               <button
                 className="icon-button"
@@ -480,7 +528,7 @@ export function TaskCenter({
                 className="button primary"
                 type="button"
                 disabled={!newTitle.trim()}
-                onClick={createTask}
+                onClick={() => void createTask()}
               >
                 创建任务
               </button>
@@ -491,6 +539,126 @@ export function TaskCenter({
     </div>
   );
 }
+
+function TaskList({
+  tasks,
+  selectedId,
+  onSelect,
+}: {
+  tasks: RemediationTask[];
+  selectedId?: string;
+  onSelect: (id: string) => void;
+}) {
+  return (
+    <div className="task-list">
+      <div className="task-list-header" aria-hidden="true">
+        <span>整改任务</span>
+        <span>状态</span>
+        <span>负责人 → 复核人</span>
+        <span>截止</span>
+        <span>下一步</span>
+      </div>
+      <div role="list">
+        {tasks.map((task) => (
+          <div key={task.id} role="listitem">
+            <button
+              className={`task-list-row ${task.id === selectedId ? "selected" : ""}`}
+              type="button"
+              aria-pressed={task.id === selectedId}
+              onClick={() => onSelect(task.id)}
+            >
+              <span className="task-list-title">
+                <strong>{task.title}</strong>
+                <small>{task.sourceLabel}</small>
+              </span>
+              <span className={`task-status status-${task.status}`}>
+                {statusLabel(task.status)}
+              </span>
+              <span className="task-list-people">
+                <strong>{task.owner}</strong>
+                <small>→ {task.reviewer}</small>
+              </span>
+              <time>{task.dueDate.slice(5)}</time>
+              <span className="task-list-next">
+                {nextActionLabel[task.status]}
+                <ChevronRight size={13} />
+              </span>
+            </button>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TaskFlow({
+  tasks,
+  selectedId,
+  dragId,
+  onSelect,
+  onDragStart,
+  onDragEnd,
+  onDrop,
+}: {
+  tasks: RemediationTask[];
+  selectedId?: string;
+  dragId: string | null;
+  onSelect: (id: string) => void;
+  onDragStart: (id: string) => void;
+  onDragEnd: () => void;
+  onDrop: (status: RemediationTask["status"]) => void;
+}) {
+  return (
+    <div className="task-flow">
+      {columns.map((column) => {
+        const columnTasks = tasks.filter((task) => task.status === column.key);
+        return (
+          <section
+            key={column.key}
+            aria-label={`${column.label}列`}
+            className={dragId ? "drag-active" : ""}
+            onDragOver={(event) => event.preventDefault()}
+            onDrop={() => onDrop(column.key)}
+          >
+            <header>
+              <strong>{column.label}</strong>
+              <span>{columnTasks.length}</span>
+            </header>
+            <div>
+              {columnTasks.map((task) => (
+                <button
+                  key={task.id}
+                  className={task.id === selectedId ? "selected" : ""}
+                  type="button"
+                  draggable
+                  onDragStart={() => onDragStart(task.id)}
+                  onDragEnd={onDragEnd}
+                  onClick={() => onSelect(task.id)}
+                >
+                  <span className={`task-priority ${task.priority}`}>
+                    {priorityLabel[task.priority]}
+                  </span>
+                  <strong>{task.title}</strong>
+                  <small>{task.sourceLabel}</small>
+                  <footer>
+                    <span>{task.owner}</span>
+                    <time>{task.dueDate.slice(5)}</time>
+                  </footer>
+                </button>
+              ))}
+              {columnTasks.length === 0 && <p>暂无任务</p>}
+            </div>
+          </section>
+        );
+      })}
+    </div>
+  );
+}
+
+function statusLabel(status: RemediationTask["status"]) {
+  return columns.find((column) => column.key === status)?.label ?? status;
+}
+
 function toFeedback(
   result: { message: string; persisted: boolean; failed?: boolean },
   source: DataSource,
@@ -504,22 +672,24 @@ function toFeedback(
     message: result.message,
   };
 }
+
 function taskSourceHref(projectId: string, task: RemediationTask) {
   const route =
     task.sourceType === "agent_ocr_required"
       ? "overview"
-      : task.sourceType === "agent_compliance_check" || task.sourceType === "evidence"
+      : task.sourceType === "agent_compliance_check" ||
+          task.sourceType === "evidence"
         ? "evidence-matching"
         : task.sourceType === "agent_response_gap"
           ? "responses"
           : task.sourceType === "consistency"
-      ? "consistency"
-      : task.sourceType === "amendment"
-        ? "amendments"
-        : task.sourceType === "package"
-          ? "package"
-          : task.sourceType === "disqualification"
-            ? "disqualifications"
-            : "requirements";
+            ? "consistency"
+            : task.sourceType === "amendment"
+              ? "amendments"
+              : task.sourceType === "package"
+                ? "package"
+                : task.sourceType === "disqualification"
+                  ? "disqualifications"
+                  : "requirements";
   return `/projects/${projectId}/${route}?source=${encodeURIComponent(task.sourceLabel)}&task=${encodeURIComponent(task.id)}`;
 }

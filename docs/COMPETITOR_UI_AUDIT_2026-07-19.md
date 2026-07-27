@@ -5,7 +5,7 @@
 
 ## 结论
 
-标证通不需要复制 GovDash 的美国政府投标功能结构，但适合高保真借鉴其桌面产品视觉：窄侧栏、白底低圆角、紧凑工具条、稳定表格列、克制状态色和原文联动。OpenDesign 原型已按该方向实现，生产页面暂未覆盖。
+标证通不需要复制 GovDash 的美国政府投标功能结构，但适合高保真借鉴其桌面产品视觉：窄侧栏、白底低圆角、紧凑工具条、稳定表格列、克制状态色和原文联动。生产合规页已于 2026-07-27 将该结构落入既有工作台；OpenDesign 原型继续作为设计回归基线。
 
 ## 对标产品
 
@@ -86,6 +86,72 @@ GovDash 的公开帮助中心显示，新建 Proposal 时先建立草稿，再�
 - Loopio：公开帮助中心可查看项目、导入、分派、复核与导出流程；产品实例通常由企业组织开通。
 
 因此，本轮没有创建竞品空账号，也没有向外部上传任何私有项目数据；交互验证只使用仓库内的合成招标文件。公开材料已经足够完成上传流程的首轮高保真改造。后续若要验证真实处理动画、解析队列、错误恢复、设置保存和角色权限，需要分别申请受控产品访问，并在上传前再次确认测试文件范围。
+
+## 2026-07-27 响应编制单一母版
+
+响应编制页不再混用合规审阅、纸张编辑器或 AI 助手侧栏。本轮只采用 Loopio 官方帮助中心的 [Project List View](https://support.loopio.com/hc/en-us/articles/360046156333-How-Can-I-Configure-the-View-of-the-Questions-I-Am-Working-On) 及其[官方界面截图](https://support.loopio.com/hc/article_attachments/360065457153/mceclip0.png)作为母版。
+
+- 用户任务：按章节浏览响应，读取各条状态，在当前条目原位编写正文，同时核对要求来源与已接纳证据，最后保存或人工批准。
+- 可见结构：项目顶栏与状态轨 → 左侧章节树 → 右侧连续响应列表 → 单条原位展开；章节和答案都可真实收起，筛选后章节编号保持稳定。
+- 明确删除：三栏常驻面板、A4 纸张画布、AI 助手入口、卡片阵列、假格式工具栏、头像和无真实契约的分派/内容库按钮。
+- 复用决定：继续使用原 `ResponseWorkbench`、响应 API、草稿缓存、筛选、`J/K/Esc`、保存、批准和缺材料门禁；新增的只是组件内披露状态与紧凑排版，没有新增路由、API、DTO、viewer 或第二套工作台。
+- 行为门禁：正文一旦产生未保存修改，批准入口立即禁用；必须先保存并进入既有复核契约，避免旧版本被批准。
+- 验收证据：`docs/assets/portfolio/hero-response-workbench.jpg`；1280 × 720 首屏可看到复核意见、保存与批准动作，无横向溢出；聚焦测试覆盖答案收起、章节收起和未保存批准门禁。
+
+## 2026-07-27 合规审阅竞品能力对齐
+
+本轮以 GovDash 的 Compliance Matrix / Review Mode 和 Responsive 的 Source View 为同一工作流的能力参考，不混入聊天、纸张编辑器或装饰性 AI 面板。
+
+- 用户任务：筛选并逐条选择要求，联动查看来源页，核对要求详情、证据和判断，批量分配后导出矩阵。
+- 参考证据：`.data/ui-audit/2026-07-19/competitors/govdash-compliance-review.png`、`.data/ui-audit/2026-07-19/competitors/govdash-document-viewer.png`。
+- 可见差距：旧页正文仅 8–9px、矩阵关键列被长期隐藏、图标按钮缺少任务文案、“保存视图”没有恢复状态、三栏不能切换为真正的矩阵或来源聚焦。
+- 复刻结果：保留三栏审阅，同时提供真实的“矩阵聚焦”和“来源聚焦”；保存并恢复搜索、筛选与视图；批量勾选出现可操作的选择条；枚举类别改为中文；来源位置不再伪装成可切换文档的无效控件。
+- 复用决定：继续扩展既有 `RequirementsWorkbench`、`DocumentViewer`、要求 API、筛选状态与测试，没有新增路由、DTO、API、状态模型或第二套工作台。
+- 桌面验收：`.data/ui-requirements-govdash/bidevidence-requirements-1440-final.png`；1440 × 900 下页面 `scrollWidth = clientWidth = 1440`，损坏图片为 0。
+- 响应式验收：1024px 仍显示三栏；390px 按视图只呈现当前任务面板，矩阵视图无页面级横向溢出。
+- 自动化证据：合规工作台 5 项聚焦测试通过；前端全量 19 个测试文件、98 项测试通过；lint、TypeScript 和 Next.js production build 通过。
+
+## 2026-07-27 项目与文件接收能力对齐
+
+本轮执行包由 GPT Web Pro 作为 Orchestrator 调研并收敛，Codex 作为 Executor 在本地实现、测试和回传验收。执行包版本为 `BidEvidence-Batch01-Execution-Package-v1.1`，唯一主竞品是 Loopio Source Documents / Project Import。
+
+- 官方参考：[Using Source Documents in Projects](https://support.loopio.com/hc/en-us/articles/360020261754-Using-Source-Documents-in-Projects)、[Import Questions from Source Documents](https://support.loopio.com/hc/en-us/articles/360036305333-How-Do-I-Import-Questions-from-my-Source-Documents-to-a-Project)。
+- 用户任务：创建项目，接收 RFP 主文件与附件，逐份查看真实上传状态，失败时续传或移除，全部成功后再启动要求提取。
+- 可见差距：旧页所有文件长期显示“待上传”；任一失败只给页级错误；重试会重新走完整 `create → upload → run`，没有防止重复创建项目和重复上传成功文件的界面契约。
+- 参考边界：Loopio 官方公开资料没有可稳定下载的完整产品截图，因此不声称像素级复刻；本轮只对齐官方任务结构、信息密度、文件—项目绑定和上传反馈。
+- 复用决定：只扩展既有 `ProjectWizard`、`projectApi.create`、`projectApi.uploadDocument`、`agentApi.createRun`、直接测试与现有样式；没有新增路由、API、DTO、全局状态模型、V2 文件或平行工作台。
+- 真实状态：每份文件独立呈现“待上传 / 上传中 / 已上传 / 上传失败 / 重试中”；成功文件锁定用途且不重复提交，失败文件可以单独重试或移除。
+- 续传门禁：组件保留首次创建得到的 `projectId`；失败重试只调用该项目的 `uploadDocument`；全部文件成功前不会调用 `createRun`。
+- 浏览器证据：`.data/ui-project-intake-loopio/bidevidence-project-intake-failure-1440-prod.png`、`.data/ui-project-intake-loopio/bidevidence-project-intake-failure-390-prod.png`；使用一份仓库合成 PDF 和一份签名无效的临时 PDF 验证成功/失败并存，1440px 与 390px 均满足 `scrollWidth = clientWidth`，损坏图片为 0。
+- 自动化证据：聚焦测试覆盖“一个成功、一个失败、单文件重试、批量重试不夹带待上传文件、项目只创建一次、全部成功后继续要求提取”；前端全量 19 个测试文件、100 项测试通过；E2E 7 项通过、1 项按环境跳过；lint、TypeScript 和 production build 通过。浏览器失败态同时提供真实重试和移除动作。
+
+## 2026-07-27 企业材料库能力对齐
+
+本轮由 GPT Web Pro 先读取真实仓库上下文并调研，只选择 Loopio Library 作为主竞品。执行包版本为 `BidEvidence-Batch02-Execution-Package-v1.0`。
+
+- 官方参考：[What is the Library?](https://support.loopio.com/hc/en-us/articles/360020607753-What-is-the-Library)、[Getting Started: Library](https://support.loopio.com/hc/en-us/articles/360023922353-Getting-Started-Library)。
+- 用户任务：选择一份已有材料，核对验证状态、有效期、最近复核、Claims 和已使用项目，判断它是否适合作为当前投标的候选材料。
+- 可见差距：旧页面首屏由六项等权 KPI、左筛选、中表格和右详情组成，更像 Dashboard；组件内上传与解析队列只改变本地演示状态，没有后端材料库 mutation 契约。
+- 复刻结果：删除 KPI 条与假解析动作，以紧凑搜索/筛选、材料清单和当前材料复核详情作为唯一结构；候选、待验证、过期和冲突提示都由现有 `EvidenceAsset.status` 与有效期产生。
+- 数据真实性：Claims、来源预览、使用项目和当前版本全部绑定选中材料；版本页不再伪造 `V1 初始上传`，只显示接口已有的最新版本。
+- 响应式：390px 使用“材料列表 / 材料详情”切换，选择材料后进入详情；1440、1280、390 均满足 `scrollWidth = clientWidth`。
+- 复用决定：只扩展既有 `/evidence`、`EvidenceLibrary`、局部样式、`phaseApi.evidence()`、`EvidenceAsset`、`EvidenceClaim`、`DocumentViewer` 和现有测试，没有新增路由、API、DTO、store 或平行工作台。
+- 验收证据：`.data/ui-evidence-loopio/bidevidence-evidence-loopio-1440-prod.png`、`.data/ui-evidence-loopio/bidevidence-evidence-loopio-1280-prod.png`、`.data/ui-evidence-loopio/bidevidence-evidence-loopio-390-detail-prod.png`。
+- 自动化证据：材料库直接测试 4/4、前端全量 19 个测试文件 102/102、E2E 7 项通过且 1 项按环境跳过、lint、TypeScript 和 production build 通过。
+
+## 2026-07-27 整改任务协作能力对齐
+
+本轮只采用 Loopio Projects / My Tasks 的任务协作结构，执行包版本为 `BidEvidence-Batch03-Execution-Package-v1.0`，没有混入另一套项目管理产品。
+
+- 官方参考：[How Can I Keep Track of My Tasks in a Project?](https://support.loopio.com/hc/en-us/articles/360020467033-How-Can-I-Keep-Track-of-My-Tasks-in-a-Project)、[Getting Started: Projects](https://support.loopio.com/hc/en-us/articles/360023671294-Getting-Started-Projects)。
+- 用户任务：整改负责人查看任务来源、原因和步骤，开始处理并提交复核；复核人完成复核。
+- 可见差距：旧页面由三个数字摘要、四列卡片看板和右侧详情组成，下一动作被卡片元数据分散；390px 看板依赖 660px 横向布局。
+- 复刻结果：默认使用工作清单，每行直接呈现状态、负责人→复核人、截止和下一步；流程看板退为第二视图；详情集中展示来源、原因、处理步骤和真实下一动作。
+- 数据边界：附件和评论只显示既有数量，不增加当前接口不存在的写入动作；没有伪造通知、@提及、批量分派、负责人目录或活动日志。
+- 响应式：390px 使用“任务列表 / 任务详情”切换，流程视图纵向排列；移动详情固定呈现开始处理、提交复核或复核完成动作。
+- 复用决定：只扩展既有 `TaskCenter`、`.task-*` 样式、`RemediationTask` 和五个任务 API；没有新增路由、API、DTO、store、状态枚举或平行任务系统。
+- 验收证据：`.data/ui-tasks-loopio/bidevidence-tasks-loopio-1440-prod.png`、`.data/ui-tasks-loopio/bidevidence-tasks-loopio-1280-flow-prod.png`、`.data/ui-tasks-loopio/bidevidence-tasks-loopio-390-detail-prod.png`。
+- 自动化证据：Phase 3–5 聚焦测试 7/7、前端全量 19 个测试文件 105/105、E2E 7 项通过且 1 项按环境跳过、lint、TypeScript 和 production build 通过。
 
 ## Figma 状态
 

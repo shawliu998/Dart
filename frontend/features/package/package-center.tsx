@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import Link from "next/link";
 import { zipSync, strToU8 } from "fflate";
 import {
@@ -62,15 +62,69 @@ export function PackageCenter({
   const [buildOpen, setBuildOpen] = useState(false);
   const [approvalReason, setApprovalReason] = useState("");
   const [warningsAccepted, setWarningsAccepted] = useState(false);
+  const [reviewFilter, setReviewFilter] = useState<
+    "all" | "attention" | "passed"
+  >("all");
+  const [mobilePane, setMobilePane] = useState<"checks" | "files">("checks");
   const selected = checks.find((item) => item.id === selectedId) ?? checks[0];
   const failed = checks.filter((item) => item.status === "failed");
   const warnings = checks.filter(
     (item) => item.status === "warning" && !item.humanConfirmed,
   );
+  const passedCount = checks.filter((item) => item.status === "passed").length;
+  const rulePassRate = checks.length
+    ? Math.round((passedCount / checks.length) * 100)
+    : 0;
+  const files = flatten(tree).filter((item) => item.type === "file");
+  const visibleChecks = checks.filter((item) => {
+    if (reviewFilter === "passed") return item.status === "passed";
+    if (reviewFilter === "attention") {
+      return (
+        item.status === "failed" ||
+        (item.status === "warning" && !item.humanConfirmed)
+      );
+    }
+    return true;
+  });
+
+  function changeReviewFilter(filter: "all" | "attention" | "passed") {
+    setReviewFilter(filter);
+    const firstVisible = checks.find((item) => {
+      if (filter === "passed") return item.status === "passed";
+      if (filter === "attention") {
+        return (
+          item.status === "failed" ||
+          (item.status === "warning" && !item.humanConfirmed)
+        );
+      }
+      return true;
+    });
+    if (firstVisible) setSelectedId(firstVisible.id);
+  }
 
   async function validate() {
     setValidating(true);
     const result = await phaseApi.validatePackage(projectId);
+    if (!result.failed) {
+      const refreshed = await phaseApi.package(projectId);
+      if (refreshed.error) {
+        setValidating(false);
+        setFeedback(
+          failure(
+            source,
+            "封装检查结果刷新失败",
+            `${refreshed.error}；页面保留检查前状态，请重试。`,
+          ),
+        );
+        return;
+      }
+      setTree(refreshed.data.tree);
+      setChecks(refreshed.data.checks);
+      setSelectedId(
+        refreshed.data.checks.find((item) => item.status === "failed")?.id ??
+          refreshed.data.checks[0]?.id,
+      );
+    }
     setValidating(false);
     setFeedback(toFeedback(result, source, "封装检查已完成"));
   }
@@ -281,30 +335,25 @@ export function PackageCenter({
     setBuildOpen(false);
   }
   if (loadError) {
-    return <DataUnavailableState title="文件封装 API 数据不可用" message={loadError} />;
+    return (
+      <DataUnavailableState
+        title="文件封装 API 数据不可用"
+        message={loadError}
+      />
+    );
   }
   if (!selected) return null;
   return (
     <div className="page package-page">
-      <header className="page-header">
+      <header className="page-header package-page-header">
         <div className="page-title-group">
-          <h1>文件封装中心</h1>
-          <p>
-            按最终目录组织材料，执行确定性检查，并在人工确认警告后生成 ZIP
-            与哈希清单。
-          </p>
+          <h1>交付包检查</h1>
+          <p>核对最终文件，处理阻塞项，并在人工批准后生成交付 ZIP。</p>
         </div>
-        <div className="header-actions">
-          <span className={`data-source ${source}`}>
-            {source === "api" ? "API 数据" : "本地演示数据"}
-          </span>
-          <button className="button" type="button" onClick={downloadManifest}>
-            <Hash size={14} />
-            下载哈希清单
-          </button>
+        <div className="header-actions package-delivery-actions">
           <button className="button" type="button" onClick={downloadPreview}>
             <Download size={14} />
-            生成预览包
+            预览交付包
           </button>
           <button
             className="button primary"
@@ -316,58 +365,32 @@ export function PackageCenter({
           </button>
         </div>
       </header>
-      <section className="package-summary">
-        <article className="failed">
-          <span>
-            <strong>{failed.length}</strong>
-            <small>阻塞问题</small>
-          </span>
-        </article>
-        <article className="warning">
-          <span>
-            <strong>{warnings.length}</strong>
-            <small>待确认警告</small>
-          </span>
-        </article>
-        <article className="passed">
-          <span>
-            <strong>
-              {checks.filter((item) => item.status === "passed").length}
-            </strong>
-            <small>检查通过</small>
-          </span>
-        </article>
-        <div>
-          <span>封装完成度</span>
-          <strong>
-            {Math.round(
-              (checks.filter(
-                (item) => item.status === "passed" || item.humanConfirmed,
-              ).length /
-                checks.length) *
-                100,
-            )}
-            %
+      <section className="package-review-status" aria-label="交付包检查状态">
+        <div className="package-status-copy">
+          <strong className={failed.length ? "has-blockers" : "is-ready"}>
+            {failed.length
+              ? `${failed.length} 个问题阻止生成最终包`
+              : "当前没有阻塞问题"}
           </strong>
-          <div>
-            <i
-              style={{
-                width: `${Math.round((checks.filter((item) => item.status === "passed" || item.humanConfirmed).length / checks.length) * 100)}%`,
-              }}
-            />
-          </div>
+          <span>
+            {warnings.length} 个待确认 · {passedCount} 项通过 · 规则通过率{" "}
+            {rulePassRate}%
+          </span>
+        </div>
+        <div className="package-status-meta">
+          <span className={`data-source ${source}`}>
+            {source === "api" ? "已连接项目数据" : "演示项目数据"}
+          </span>
+          <span>
+            {files.length} 个文件 · {tree.length} 个封装项
+          </span>
           <button
-            className="button small"
+            className="package-manifest-action"
             type="button"
-            onClick={validate}
-            disabled={validating}
+            onClick={downloadManifest}
           >
-            {validating ? (
-              <LoaderCircle className="spin" size={12} />
-            ) : (
-              <Play size={12} />
-            )}
-            {validating ? "检查中" : "运行封装检查"}
+            <Hash size={13} />
+            导出校验清单
           </button>
         </div>
       </section>
@@ -384,15 +407,36 @@ export function PackageCenter({
             : { status: "idle" }
         }
       />
-      <div className="package-layout">
-        <section className="panel package-tree">
+      <div className="package-mobile-switch" aria-label="移动端交付包视图">
+        <button
+          type="button"
+          className={mobilePane === "checks" ? "active" : ""}
+          aria-pressed={mobilePane === "checks"}
+          onClick={() => setMobilePane("checks")}
+        >
+          检查与处理
+          <span>{failed.length + warnings.length}</span>
+        </button>
+        <button
+          type="button"
+          className={mobilePane === "files" ? "active" : ""}
+          aria-pressed={mobilePane === "files"}
+          onClick={() => setMobilePane("files")}
+        >
+          交付文件
+          <span>{files.length}</span>
+        </button>
+      </div>
+      <div className="package-review-layout">
+        <section
+          className={`panel package-tree package-mobile-pane ${
+            mobilePane === "files" ? "is-active" : ""
+          }`}
+        >
           <div className="panel-header">
             <div>
-              <h2>最终文件树</h2>
-              <p>
-                {flatten(tree).filter((item) => item.type === "file").length}{" "}
-                个文件 · 8 个章节
-              </p>
+              <h2>交付文件</h2>
+              <p>按最终目录核对 {files.length} 个文件</p>
             </div>
           </div>
           <div>
@@ -458,122 +502,181 @@ export function PackageCenter({
             ))}
           </div>
         </section>
-        <section className="panel validation-list">
-          <div className="panel-header">
+        <section
+          className={`panel validation-list package-mobile-pane ${
+            mobilePane === "checks" ? "is-active" : ""
+          }`}
+        >
+          <div className="panel-header package-review-header">
             <div>
-              <h2>封装检查清单</h2>
-              <p>文件存在、版本、签章、主体、修订、加密与重复项</p>
+              <h2>检查与处理</h2>
+              <p>先处理阻塞项，再确认警告并预览交付包</p>
             </div>
-            <span>{checks.length} 项规则</span>
+            <button
+              className="button small"
+              type="button"
+              onClick={validate}
+              disabled={validating}
+            >
+              {validating ? (
+                <LoaderCircle className="spin" size={12} />
+              ) : (
+                <Play size={12} />
+              )}
+              {validating ? "检查中" : "重新检查"}
+            </button>
           </div>
-          <div className="validation-table-wrap">
-            <table>
-              <thead>
-                <tr>
-                  <th>检查项</th>
-                  <th>分类</th>
-                  <th>文件</th>
-                  <th>结果</th>
-                </tr>
-              </thead>
-              <tbody>
-                {checks.map((check) => (
-                  <tr
-                    key={check.id}
-                    className={check.id === selected.id ? "selected" : ""}
+          <div className="package-review-filters" aria-label="筛选检查项">
+            <button
+              type="button"
+              className={reviewFilter === "all" ? "active" : ""}
+              aria-pressed={reviewFilter === "all"}
+              onClick={() => changeReviewFilter("all")}
+            >
+              全部 <span>{checks.length}</span>
+            </button>
+            <button
+              type="button"
+              className={reviewFilter === "attention" ? "active" : ""}
+              aria-pressed={reviewFilter === "attention"}
+              onClick={() => changeReviewFilter("attention")}
+            >
+              待处理 <span>{failed.length + warnings.length}</span>
+            </button>
+            <button
+              type="button"
+              className={reviewFilter === "passed" ? "active" : ""}
+              aria-pressed={reviewFilter === "passed"}
+              onClick={() => changeReviewFilter("passed")}
+            >
+              已通过 <span>{passedCount}</span>
+            </button>
+          </div>
+          <div className="package-review-list">
+            {visibleChecks.map((check) => {
+              const isSelected = check.id === selected.id;
+              return (
+                <Fragment key={check.id}>
+                  <button
+                    type="button"
+                    className={`package-review-row ${isSelected ? "selected" : ""}`}
+                    aria-expanded={isSelected}
                     onClick={() => setSelectedId(check.id)}
                   >
-                    <td>
-                      <i className={`check-dot ${check.status}`} aria-hidden="true" />
-                      <span>
-                        <strong>{check.label}</strong>
-                        <small>{check.message}</small>
-                      </span>
-                    </td>
-                    <td>{check.category}</td>
-                    <td>{check.file}</td>
-                    <td>
-                      <span className={`check-result ${check.status}`}>
-                        {check.status === "passed"
-                          ? "通过"
-                          : check.status === "warning"
-                            ? check.humanConfirmed
-                              ? "已确认"
-                              : "警告"
-                            : "失败"}
-                      </span>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    <span className={`check-icon ${check.status}`}>
+                      {check.status === "passed" ? (
+                        <Check size={13} />
+                      ) : check.status === "warning" ? (
+                        <AlertTriangle size={13} />
+                      ) : (
+                        <X size={13} />
+                      )}
+                    </span>
+                    <span className="package-review-primary">
+                      <strong>{check.label}</strong>
+                      <small>{check.message}</small>
+                    </span>
+                    <span className="package-review-file">
+                      <small>{check.category}</small>
+                      <strong>{check.file}</strong>
+                    </span>
+                    <span className={`check-result ${check.status}`}>
+                      {check.status === "passed"
+                        ? "通过"
+                        : check.status === "warning"
+                          ? check.humanConfirmed
+                            ? "已确认"
+                            : "待确认"
+                          : "阻塞"}
+                    </span>
+                    <ChevronDown size={14} aria-hidden="true" />
+                  </button>
+                  {isSelected && (
+                    <div className="package-issue-panel">
+                      <div className="package-issue-context">
+                        <section
+                          className={`validation-result-card ${selected.status}`}
+                        >
+                          <h3>检查结果</h3>
+                          <p>{selected.message}</p>
+                        </section>
+                        <section>
+                          <h3>处理建议</h3>
+                          <p>{selected.suggestion}</p>
+                        </section>
+                        <section>
+                          <h3>来源要求</h3>
+                          <Link
+                            href={`/projects/${projectId}/requirements?source=${encodeURIComponent(selected.sourceRequirement)}&package_check=${encodeURIComponent(selected.id)}`}
+                          >
+                            <FileText size={12} />
+                            {selected.sourceRequirement}
+                          </Link>
+                        </section>
+                      </div>
+                      <div className="package-issue-action">
+                        {selected.status === "failed" && (
+                          <label className="button primary repair-upload">
+                            <Upload size={13} />
+                            上传修复文件
+                            <input
+                              className="sr-only"
+                              type="file"
+                              onChange={(event) =>
+                                repairWithFile(selected, event.target.files)
+                              }
+                            />
+                          </label>
+                        )}
+                        {selected.status === "warning" &&
+                          !selected.humanConfirmed && (
+                            <button
+                              className="button"
+                              type="button"
+                              onClick={confirmWarning}
+                            >
+                              <Check size={13} />
+                              人工确认警告
+                            </button>
+                          )}
+                        {selected.humanConfirmed && (
+                          <p className="human-confirmed">
+                            <FileCheck2 size={13} />
+                            已人工确认，原始警告仍保留
+                          </p>
+                        )}
+                        {selected.status === "passed" && (
+                          <p className="package-check-complete">
+                            <Check size={13} />
+                            无需处理
+                          </p>
+                        )}
+                      </div>
+                    </div>
+                  )}
+                </Fragment>
+              );
+            })}
+            {!visibleChecks.length && (
+              <div className="package-review-empty">当前筛选下没有检查项。</div>
+            )}
           </div>
-        </section>
-        <aside className="panel package-detail">
-          <header>
-            <span className={`check-icon large ${selected.status}`}>
-              {selected.status === "passed" ? (
-                <Check size={16} />
-              ) : selected.status === "warning" ? (
-                <AlertTriangle size={16} />
-              ) : (
-                <X size={16} />
-              )}
+          <footer className="package-review-footer">
+            <span>
+              {failed.length
+                ? `处理完 ${failed.length} 个阻塞问题后才能生成最终包`
+                : "阻塞项已清除，可预览并进入人工批准"}
             </span>
-            <div>
-              <strong>{selected.label}</strong>
-              <small>
-                {selected.category} · {selected.file}
-              </small>
-            </div>
-          </header>
-          <section className={`validation-result-card ${selected.status}`}>
-            <h3>校验结果</h3>
-            <p>{selected.message}</p>
-          </section>
-          <section>
-            <h3>修复建议</h3>
-            <p>{selected.suggestion}</p>
-          </section>
-          <section>
-            <h3>来源要求</h3>
-            <Link
-              href={`/projects/${projectId}/requirements?source=${encodeURIComponent(selected.sourceRequirement)}&package_check=${encodeURIComponent(selected.id)}`}
-            >
-              <FileText size={12} />
-              {selected.sourceRequirement}
-            </Link>
-          </section>
-          {selected.status === "failed" && (
-            <label className="button primary repair-upload">
-              <Upload size={13} />
-              上传修复文件
-              <input
-                className="sr-only"
-                type="file"
-                onChange={(event) =>
-                  repairWithFile(selected, event.target.files)
-                }
-              />
-            </label>
-          )}
-          {selected.status === "warning" && !selected.humanConfirmed && (
             <button
-              className="button full-width"
+              className="button small"
               type="button"
-              onClick={confirmWarning}
+              onClick={downloadPreview}
             >
-              <Check size={13} />
-              人工确认该警告
+              <Download size={13} />
+              预览交付包
             </button>
-          )}
-          {selected.humanConfirmed && (
-            <p className="human-confirmed">
-              <FileCheck2 size={13} />
-              已由人工确认，仍保留原始警告记录。
-            </p>
-          )}
-        </aside>
+          </footer>
+        </section>
       </div>
       {buildOpen && (
         <div className="dialog-backdrop">

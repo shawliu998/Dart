@@ -49,6 +49,33 @@ describe("ResponseWorkbench", () => {
     expect(screen.getByRole("alert")).toHaveTextContent("批准前请填写复核意见");
   });
 
+  it("requires the edited response to be saved before approval", async () => {
+    const user = userEvent.setup();
+    render(<ResponseWorkbench projectId="p-1" initialResponses={[response]} source="api" />);
+    await user.clear(screen.getByLabelText("投标响应内容"));
+    await user.type(screen.getByLabelText("投标响应内容"), "尚未保存的人工修改");
+    await user.type(screen.getByLabelText("修改／复核意见（必填）"), "已核对原件");
+    expect(screen.getByRole("button", { name: "批准响应" })).toBeDisabled();
+  });
+
+  it("supports real answer and section disclosures for dense list scanning", async () => {
+    const user = userEvent.setup();
+    render(<ResponseWorkbench projectId="project-1" initialResponses={responses} source="api" />);
+    const answer = screen.getByRole("button", { name: /REQ-001 实施方案/ });
+    expect(answer).toHaveAttribute("aria-expanded", "true");
+    await user.click(answer);
+    expect(answer).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByLabelText("投标响应内容")).not.toBeInTheDocument();
+    await user.click(answer);
+    expect(screen.getByLabelText("投标响应内容")).toBeInTheDocument();
+
+    const section = screen.getByRole("heading", { name: "1.0 技术要求" }).closest("button");
+    expect(section).not.toBeNull();
+    await user.click(section!);
+    expect(section).toHaveAttribute("aria-expanded", "false");
+    expect(screen.queryByRole("button", { name: /REQ-001 实施方案/ })).not.toBeInTheDocument();
+  });
+
   it("moves a human-completed missing-evidence draft into the existing review contract", async () => {
     const user = userEvent.setup();
     const save = vi.spyOn(responseApi, "save").mockResolvedValue({ ...responses[1], editedText: "人工补充后的人员资质响应", status: "needs_review", version: 2 });

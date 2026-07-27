@@ -17,12 +17,14 @@ bash scripts/test.sh
 RUNTIME_DIR="${ROOT_DIR}/.data/verify-runtime"
 rm -rf "$RUNTIME_DIR"
 mkdir -p "$RUNTIME_DIR/uploads"
+LIVE_E2E_PORT="$($PYTHON -c 'import socket; sock = socket.socket(); sock.bind(("127.0.0.1", 0)); print(sock.getsockname()[1]); sock.close()')"
 (
   cd backend
   export APP_ENV=development
   export AUTH_SECRET=verify-only-development-secret
   export DATABASE_URL="sqlite:///${RUNTIME_DIR}/verify.db"
   export UPLOAD_DIR="${RUNTIME_DIR}/uploads"
+  export CORS_ORIGINS="http://localhost:${LIVE_E2E_PORT}"
   "$PYTHON" -m alembic upgrade head
   exec "$PYTHON" -m uvicorn app.main:app --host 127.0.0.1 --port 18080
 ) >"${RUNTIME_DIR}/api.log" 2>&1 &
@@ -48,6 +50,12 @@ fi
 "$PYTHON" scripts/seed_running_api.py --base-url http://127.0.0.1:18080
 "$PYTHON" scripts/acceptance_api.py --base-url http://127.0.0.1:18080 --artifacts-dir .data/verify-runtime/service-acceptance --clean
 "$PYTHON" scripts/acceptance_agent.py --base-url http://127.0.0.1:18080 --artifacts-dir .data/verify-runtime/agent-acceptance
+(
+  cd frontend
+  E2E_PORT="$LIVE_E2E_PORT" \
+    E2E_LIVE_API_BASE_URL=http://127.0.0.1:18080 \
+    npm run test:e2e:live
+)
 cleanup_api
 trap - EXIT
 

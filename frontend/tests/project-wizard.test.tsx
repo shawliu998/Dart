@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 
@@ -79,6 +79,97 @@ describe("ProjectWizard", () => {
     await waitFor(() => expect(upload).toHaveBeenCalledTimes(2));
     expect(upload).toHaveBeenCalledWith("project-1", expect.any(File), "tender_main");
     expect(upload).toHaveBeenCalledWith("project-1", expect.any(File), "amendment");
+  });
+
+  it("keeps successful files, retries one failure, and never recreates the project", async () => {
+    const user = userEvent.setup();
+    let resolveMainUpload!: (value: { id: string }) => void;
+    let resolveRetry!: (value: { id: string }) => void;
+    const mainUpload = new Promise<{ id: string }>((resolve) => { resolveMainUpload = resolve; });
+    const retryUpload = new Promise<{ id: string }>((resolve) => { resolveRetry = resolve; });
+    let attachmentAttempts = 0;
+    const create = vi.spyOn(projectApi, "create").mockResolvedValue({ id: "project-1" } as never);
+    vi.spyOn(projectApi, "uploadDocument").mockImplementation(async (_projectId, file) => {
+      if (file.name === "招标文件.pdf") return mainUpload;
+      attachmentAttempts += 1;
+      if (attachmentAttempts === 1) throw new Error("附件上传超时");
+      return retryUpload;
+    });
+    const createRun = vi.spyOn(agentApi, "createRun").mockResolvedValue({ source: "api", data: {} as never, error: null });
+    render(<ProjectWizard />);
+
+    await user.type(screen.getByRole("textbox", { name: /项目名称/ }), "续传测试项目");
+    await user.upload(screen.getByLabelText("添加文件"), [
+      new File(["main"], "招标文件.pdf", { type: "application/pdf" }),
+      new File(["attachment"], "技术附件.xlsx", { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }),
+    ]);
+    await user.click(screen.getByRole("button", { name: "创建并开始分析" }));
+
+    const mainRow = screen.getByRole("row", { name: /招标文件.pdf/ });
+    expect(within(mainRow).getByText("上传中")).toBeInTheDocument();
+    resolveMainUpload({ id: "document-main" });
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("部分文件上传失败");
+    expect(within(mainRow).getByText("已上传")).toBeInTheDocument();
+    const attachmentRow = screen.getByRole("row", { name: /技术附件.xlsx/ });
+    expect(within(attachmentRow).getByText("上传失败")).toBeInTheDocument();
+    expect(within(attachmentRow).getByText("附件上传超时")).toBeInTheDocument();
+    expect(createRun).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "重试 技术附件.xlsx" }));
+    expect(within(attachmentRow).getByText("重试中")).toBeInTheDocument();
+    resolveRetry({ id: "document-attachment" });
+    await waitFor(() => expect(within(attachmentRow).getByText("已上传")).toBeInTheDocument());
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(createRun).not.toHaveBeenCalled();
+
+    await user.click(screen.getByRole("button", { name: "继续要求提取" }));
+    await waitFor(() => expect(createRun).toHaveBeenCalledWith("project-1"));
+    expect(create).toHaveBeenCalledTimes(1);
+    expect(push).toHaveBeenCalledWith("/projects/project-1/overview");
+  });
+
+  it("keeps batch retry limited to failed files before uploading later additions", async () => {
+    const user = userEvent.setup();
+    let failedAttempts = 0;
+    const create = vi.spyOn(projectApi, "create").mockResolvedValue({ id: "project-1" } as never);
+    const upload = vi.spyOn(projectApi, "uploadDocument").mockImplementation(async (_projectId, file) => {
+      if (file.name === "失败附件.pdf") {
+        failedAttempts += 1;
+        if (failedAttempts === 1) throw new Error("附件上传失败");
+      }
+      return { id: `document-${file.name}` };
+    });
+    const createRun = vi.spyOn(agentApi, "createRun").mockResolvedValue({ source: "api", data: {} as never, error: null });
+    render(<ProjectWizard />);
+
+    await user.type(screen.getByRole("textbox", { name: /项目名称/ }), "批量重试语义测试");
+    await user.upload(screen.getByLabelText("添加文件"), [
+      new File(["main"], "招标文件.pdf", { type: "application/pdf" }),
+      new File(["failed"], "失败附件.pdf", { type: "application/pdf" }),
+    ]);
+    await user.click(screen.getByRole("button", { name: "创建并开始分析" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("部分文件上传失败");
+
+    await user.upload(
+      screen.getByLabelText("添加文件"),
+      new File(["later"], "后添加附件.pdf", { type: "application/pdf" }),
+    );
+    await user.click(screen.getByRole("button", { name: "重试失败文件" }));
+
+    const failedRow = screen.getByRole("row", { name: /失败附件.pdf/ });
+    const laterRow = screen.getByRole("row", { name: /后添加附件.pdf/ });
+    await waitFor(() => expect(within(failedRow).getByText("已上传")).toBeInTheDocument());
+    expect(within(laterRow).getByText("待上传")).toBeInTheDocument();
+    expect(upload).toHaveBeenCalledTimes(3);
+    expect(createRun).not.toHaveBeenCalled();
+    expect(create).toHaveBeenCalledTimes(1);
+
+    await user.click(screen.getByRole("button", { name: "上传并继续" }));
+    await waitFor(() => expect(upload).toHaveBeenCalledTimes(4));
+    expect(upload).toHaveBeenLastCalledWith("project-1", expect.objectContaining({ name: "后添加附件.pdf" }), "tender_attachment");
+    expect(createRun).toHaveBeenCalledWith("project-1");
+    expect(create).toHaveBeenCalledTimes(1);
   });
 
   it("supports filtering and removing uploaded files without dead controls", async () => {

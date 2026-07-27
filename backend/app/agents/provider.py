@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
-from typing import Protocol, TypeVar
+from dataclasses import asdict, dataclass
+from time import perf_counter
+from typing import Any, Protocol, TypeVar
+from urllib.parse import urlsplit
 
 import httpx
 from pydantic import BaseModel
@@ -30,6 +34,95 @@ class LLMProvider(Protocol):
 
 class ProviderUnavailableError(RuntimeError):
     """Raised before any model call when a provider is not explicitly available."""
+
+
+@dataclass
+class ProviderCallTrace:
+    """Credential-free diagnostics for one OpenAI-compatible request."""
+
+    request_config: dict[str, Any]
+    raw_response: Any | None = None
+    error: str | None = None
+    latency_ms: int | None = None
+    status_code: int | None = None
+    usage: dict[str, Any] | None = None
+    returned_model: str | None = None
+    finish_reason: str | None = None
+
+    def model_dump(self) -> dict[str, Any]:
+        return asdict(self)
+
+
+def _canonical_json(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+
+
+def _sha256_text(value: str) -> str:
+    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+
+
+def _redact_sensitive(value: Any, secrets: tuple[str, ...]) -> Any:
+    if isinstance(value, dict):
+        redacted: dict[Any, Any] = {}
+        for key, item in value.items():
+            normalized_key = str(key).lower().replace("-", "_")
+            if normalized_key in {
+                "authorization",
+                "api_key",
+                "apikey",
+                "x_api_key",
+                "access_token",
+                "refresh_token",
+            }:
+                redacted[key] = "[REDACTED]"
+            else:
+                redacted[key] = _redact_sensitive(item, secrets)
+        return redacted
+    if isinstance(value, list):
+        return [_redact_sensitive(item, secrets) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_sensitive(item, secrets) for item in value)
+    if isinstance(value, str):
+        result = value
+        for secret in secrets:
+            if secret:
+                result = result.replace(secret, "[REDACTED]")
+        return re.sub(
+            r"(?i)\bBearer\s+[A-Za-z0-9._~+/=-]+",
+            "Bearer [REDACTED]",
+            result,
+        )
+    return value
+
+
+def _contains_secret(value: Any, secrets: tuple[str, ...]) -> bool:
+    active_secrets = tuple(secret for secret in secrets if secret)
+    if isinstance(value, dict):
+        return any(
+            _contains_secret(key, active_secrets)
+            or _contains_secret(item, active_secrets)
+            for key, item in value.items()
+        )
+    if isinstance(value, (list, tuple)):
+        return any(_contains_secret(item, active_secrets) for item in value)
+    if isinstance(value, str):
+        return any(secret in value for secret in active_secrets)
+    return False
+
+
+def build_structured_system_prompt(
+    system_prompt: str,
+    output_schema: type[BaseModel],
+) -> str:
+    schema_json = _canonical_json(output_schema.model_json_schema())
+    return (
+        f"{system_prompt.rstrip()}\n\n"
+        "只返回一个有效 JSON 对象，不要返回 Markdown、代码围栏或解释文字。"
+        "JSON 对象必须严格符合下面的 JSON Schema；"
+        "无法确定的候选也必须使用 Schema 允许的字段表达并进入人工复核。\n"
+        '最小 JSON 输出示例：{"results":[]}。\n'
+        f"JSON Schema:\n{schema_json}"
+    )
 
 
 class MockLLMProvider:
@@ -180,10 +273,37 @@ class OpenAICompatibleProvider:
 
     name = "openai_compatible"
 
-    def __init__(self, *, base_url: str, api_key: str, model: str) -> None:
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        model: str,
+        max_tokens: int = 4096,
+        timeout_seconds: float = 60,
+        transport: httpx.AsyncBaseTransport | None = None,
+    ) -> None:
+        if not 256 <= max_tokens <= 16384:
+            raise ValueError("max_tokens must be between 256 and 16384")
+        if timeout_seconds <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        parsed_base_url = urlsplit(base_url)
+        if parsed_base_url.scheme not in {"http", "https"} or not parsed_base_url.netloc:
+            raise ValueError("base_url must be an absolute HTTP(S) URL")
+        if (
+            parsed_base_url.username
+            or parsed_base_url.password
+            or parsed_base_url.query
+            or parsed_base_url.fragment
+        ):
+            raise ValueError("base_url must not contain credentials, query, or fragment")
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
+        self.max_tokens = max_tokens
+        self.timeout_seconds = timeout_seconds
+        self._transport = transport
+        self.last_call_trace: ProviderCallTrace | None = None
 
     async def structured_generate(
         self,
@@ -193,28 +313,93 @@ class OpenAICompatibleProvider:
         output_schema: type[T],
         metadata: dict,
     ) -> T:
+        schema = output_schema.model_json_schema()
+        schema_json = _canonical_json(schema)
+        structured_system_prompt = build_structured_system_prompt(
+            system_prompt,
+            output_schema,
+        )
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": system_prompt},
+                {"role": "system", "content": structured_system_prompt},
                 {"role": "user", "content": user_input},
             ],
             "temperature": 0,
+            "max_tokens": self.max_tokens,
             "response_format": {"type": "json_object"},
         }
+        endpoint = f"{self.base_url}/chat/completions"
+        trace = ProviderCallTrace(
+            request_config={
+                "endpoint": _redact_sensitive(endpoint, (self.api_key,)),
+                "model": _redact_sensitive(self.model, (self.api_key,)),
+                "temperature": 0,
+                "max_tokens": self.max_tokens,
+                "timeout_seconds": self.timeout_seconds,
+                "response_format": payload["response_format"],
+                "output_schema": output_schema.__name__,
+                "schema_sha256": _sha256_text(schema_json),
+                "system_prompt_sha256": _sha256_text(structured_system_prompt),
+                "user_input_sha256": _sha256_text(user_input),
+                "prompt_version": metadata.get("prompt_version"),
+                "source_page": metadata.get("source_page"),
+            }
+        )
+        self.last_call_trace = trace
+        started = perf_counter()
         try:
-            async with httpx.AsyncClient(timeout=60) as client:
+            async with httpx.AsyncClient(
+                timeout=self.timeout_seconds,
+                transport=self._transport,
+            ) as client:
                 response = await client.post(
-                    f"{self.base_url}/chat/completions",
+                    endpoint,
                     headers={"Authorization": f"Bearer {self.api_key}"},
                     json=payload,
                 )
+            trace.status_code = response.status_code
+            try:
+                raw_response: Any = response.json()
+            except json.JSONDecodeError:
+                raw_response = response.text
+            trace.raw_response = _redact_sensitive(raw_response, (self.api_key,))
             response.raise_for_status()
-            content = response.json()["choices"][0]["message"]["content"]
+            if not isinstance(raw_response, dict):
+                raise TypeError("provider response must be a JSON object")
+            choice = raw_response["choices"][0]
+            trace.usage = _redact_sensitive(
+                raw_response.get("usage"),
+                (self.api_key,),
+            )
+            trace.returned_model = _redact_sensitive(
+                raw_response.get("model"),
+                (self.api_key,),
+            )
+            trace.finish_reason = _redact_sensitive(
+                choice.get("finish_reason"),
+                (self.api_key,),
+            )
+            content = choice["message"]["content"]
             parsed = json.loads(content) if isinstance(content, str) else content
-            return output_schema.model_validate(parsed)
-        except (httpx.HTTPError, KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
-            raise ProviderUnavailableError(f"OpenAI-compatible provider failed: {exc}") from exc
+            validated = output_schema.model_validate(parsed)
+            if _contains_secret(
+                validated.model_dump(mode="json"),
+                (self.api_key,),
+            ):
+                raise ValueError("provider output contained a configured credential")
+            return validated
+        except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
+            redacted_error = _redact_sensitive(
+                f"{type(exc).__name__}: {exc}",
+                (self.api_key,),
+            )
+            trace.error = redacted_error
+            raise ProviderUnavailableError(
+                f"OpenAI-compatible provider failed: {redacted_error}"
+            ) from None
+        finally:
+            trace.latency_ms = round((perf_counter() - started) * 1000)
 
 
 def get_requirement_provider(provider_name: str | None = None) -> LLMProvider:
@@ -236,7 +421,22 @@ def get_requirement_provider(provider_name: str | None = None) -> LLMProvider:
                 "openai_compatible requires BIDEVIDENCE_LLM_BASE_URL, "
                 "BIDEVIDENCE_LLM_API_KEY, and BIDEVIDENCE_LLM_MODEL"
             )
-        return OpenAICompatibleProvider(base_url=base_url, api_key=api_key, model=model)
+        raw_max_tokens = os.getenv("BIDEVIDENCE_LLM_MAX_TOKENS", "4096")
+        try:
+            max_tokens = int(raw_max_tokens)
+        except ValueError as exc:
+            raise ProviderUnavailableError(
+                "BIDEVIDENCE_LLM_MAX_TOKENS must be an integer"
+            ) from exc
+        try:
+            return OpenAICompatibleProvider(
+                base_url=base_url,
+                api_key=api_key,
+                model=model,
+                max_tokens=max_tokens,
+            )
+        except ValueError as exc:
+            raise ProviderUnavailableError(str(exc)) from exc
     raise ProviderUnavailableError(
         f"provider '{selected}' is not approved for local execution; use mock or register an approved adapter"
     )

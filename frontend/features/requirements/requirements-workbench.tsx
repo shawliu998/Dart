@@ -1,6 +1,6 @@
 "use client";
 
-import { KeyboardEvent, useMemo, useRef, useState } from "react";
+import { KeyboardEvent, useEffect, useMemo, useRef, useState } from "react";
 import {
   Warning as AlertTriangle,
   DownloadSimple as ArrowDownToLine,
@@ -35,10 +35,21 @@ import {
 import { apiRequest } from "@/lib/api/client";
 import type { DataSource } from "@/lib/phase-data/types";
 import type { Requirement, RequirementStatus } from "@/lib/types";
+import { useI18n } from "@/lib/i18n";
 
 type DetailTab = "detail" | "evidence" | "judgement" | "activity";
+type WorkbenchView = "review" | "matrix" | "source";
 type FilterKey =
   "all" | "disqualification" | "mandatory" | "missing" | "conflict" | "review";
+const filterKeys = new Set<FilterKey>([
+  "all",
+  "disqualification",
+  "mandatory",
+  "missing",
+  "conflict",
+  "review",
+]);
+const workbenchViews = new Set<WorkbenchView>(["review", "matrix", "source"]);
 
 const filterLabels: Record<FilterKey, string> = {
   all: "全部要求",
@@ -47,6 +58,22 @@ const filterLabels: Record<FilterKey, string> = {
   missing: "缺少证据",
   conflict: "存在冲突",
   review: "人工复核",
+};
+const requirementCategoryLabels: Record<string, string> = {
+  qualification: "资格资质",
+  commercial: "商务条件",
+  technical: "技术要求",
+  pricing: "报价要求",
+  delivery: "交付计划",
+  service: "服务保障",
+  personnel: "人员要求",
+  case: "案例业绩",
+  legal: "法律与授权",
+  security: "安全要求",
+  format: "文件格式",
+  signature: "签章要求",
+  submission: "递交要求",
+  other: "其他要求",
 };
 const feedbackResult = (
   source: DataSource,
@@ -71,10 +98,12 @@ export function RequirementsWorkbench({
   projectId?: string;
   source?: DataSource;
 }) {
+  const { t } = useI18n();
   const [items, setItems] = useState(initialRequirements);
   const [selectedId, setSelectedId] = useState(initialRequirements[0]?.id);
   const [query, setQuery] = useState("");
   const [filter, setFilter] = useState<FilterKey>("all");
+  const [view, setView] = useState<WorkbenchView>("review");
   const [tab, setTab] = useState<DetailTab>("detail");
   const [flash, setFlash] = useState(0);
   const [evidenceState, setEvidenceState] = useState<
@@ -94,27 +123,53 @@ export function RequirementsWorkbench({
   const [completeOpen, setCompleteOpen] = useState(false);
   const [feedback, setFeedback] = useState<MutationResult | null>(null);
   const tableRef = useRef<HTMLDivElement>(null);
+  const initialItemsRef = useRef(initialRequirements);
 
-  const selected = items.find((item) => item.id === selectedId) ?? items[0];
-  const selectedIndex = items.findIndex((item) => item.id === selected?.id);
   const visibleItems = useMemo(
-    () =>
-      items.filter((item) => {
-        const textMatch =
-          `${item.code}${item.title}${item.category}${item.originalText}`
-            .toLowerCase()
-            .includes(query.toLowerCase());
-        const filterMatch =
-          filter === "all" ||
-          (filter === "disqualification" && item.disqualification) ||
-          (filter === "mandatory" && item.mandatory) ||
-          (filter === "missing" && item.status === "missing") ||
-          (filter === "conflict" && item.status === "conflict") ||
-          (filter === "review" && item.status === "review");
-        return textMatch && filterMatch;
-      }),
+    () => filterRequirements(items, query, filter),
     [filter, items, query],
   );
+  const selected =
+    visibleItems.find((item) => item.id === selectedId) ??
+    visibleItems[0] ??
+    items[0];
+  const selectedIndex = visibleItems.findIndex(
+    (item) => item.id === selected?.id,
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    try {
+      const stored = JSON.parse(
+        localStorage.getItem("bidevidence.requirements.view") ?? "null",
+      ) as { filter?: string; query?: string; view?: string } | null;
+      if (!stored) return;
+      const nextFilter = filterKeys.has(stored.filter as FilterKey)
+        ? (stored.filter as FilterKey)
+        : "all";
+      const nextQuery = typeof stored.query === "string" ? stored.query : "";
+      const nextView = workbenchViews.has(stored.view as WorkbenchView)
+        ? (stored.view as WorkbenchView)
+        : "review";
+      const nextItems = filterRequirements(
+        initialItemsRef.current,
+        nextQuery,
+        nextFilter,
+      );
+      queueMicrotask(() => {
+        if (cancelled) return;
+        setFilter(nextFilter);
+        setQuery(nextQuery);
+        setView(nextView);
+        if (nextItems.length) setSelectedId(nextItems[0].id);
+      });
+    } catch {
+      localStorage.removeItem("bidevidence.requirements.view");
+    }
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   if (!selected) return null;
 
@@ -125,11 +180,12 @@ export function RequirementsWorkbench({
   }
 
   function moveSelection(direction: -1 | 1) {
+    if (!visibleItems.length) return;
     const next = Math.min(
-      items.length - 1,
+      visibleItems.length - 1,
       Math.max(0, selectedIndex + direction),
     );
-    select(items[next]);
+    select(visibleItems[next]);
   }
 
   function rowKeyDown(
@@ -188,11 +244,25 @@ export function RequirementsWorkbench({
   function saveView() {
     localStorage.setItem(
       "bidevidence.requirements.view",
-      JSON.stringify({ filter, query }),
+      JSON.stringify({ filter, query, view }),
     );
     setFeedback(
       feedbackResult("demo", false, "当前筛选视图仅保存在本机浏览器。"),
     );
+  }
+
+  function updateQuery(nextQuery: string) {
+    setQuery(nextQuery);
+    const nextItems = filterRequirements(items, nextQuery, filter);
+    if (nextItems.length && !nextItems.some((item) => item.id === selectedId))
+      select(nextItems[0]);
+  }
+
+  function updateFilter(nextFilter: FilterKey) {
+    setFilter(nextFilter);
+    const nextItems = filterRequirements(items, query, nextFilter);
+    if (nextItems.length && !nextItems.some((item) => item.id === selectedId))
+      select(nextItems[0]);
   }
 
   async function submitOverride() {
@@ -372,7 +442,7 @@ export function RequirementsWorkbench({
 
   return (
     <div
-      className="page-workbench requirements-page"
+      className={`page-workbench requirements-page requirements-view-${view}`}
       data-project-id={projectId}
     >
       <header className="workbench-heading v4-review-heading">
@@ -388,6 +458,28 @@ export function RequirementsWorkbench({
           <span><small>来源文档</small><strong>{new Set(items.map((item) => item.sourceDocument)).size}</strong></span>
         </div>
         <div className="header-actions">
+          <div
+            className="requirements-view-switcher"
+            role="group"
+            aria-label="合规工作台视图"
+          >
+            {(
+              [
+                ["review", "三栏审阅"],
+                ["matrix", "矩阵聚焦"],
+                ["source", "来源聚焦"],
+              ] as const
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                type="button"
+                aria-pressed={view === key}
+                onClick={() => setView(key)}
+              >
+                {label}
+              </button>
+            ))}
+          </div>
           <span className={`data-source ${source}`}>
             {source === "api" ? "API 数据" : "本地演示数据"}
           </span>
@@ -414,18 +506,20 @@ export function RequirementsWorkbench({
         <AlertTriangle size={15} />
         <span>
           <strong>
-            {
-              items.filter(
+            {t("{count} 项高优先级待处理", {
+              count: items.filter(
                 (item) =>
                   ["fatal", "high"].includes(item.risk) &&
                   item.status !== "met",
-              ).length
-            }{" "}
-            项高优先级待处理
+              ).length,
+            })}
           </strong>{" "}
           · 来自当前矩阵的高风险且未满足/待复核要求。
         </span>
-        <button type="button" onClick={() => setFilter("disqualification")}>
+        <button
+          type="button"
+          onClick={() => updateFilter("disqualification")}
+        >
           仅看否决项
           <ChevronRight size={13} />
         </button>
@@ -442,25 +536,12 @@ export function RequirementsWorkbench({
               <FileText size={15} />
               <span>
                 <strong>{selected.sourceDocument}</strong>
-                <small>{selected.sourceVersion} · 86 页 · 已解析</small>
+                <small>{t("{version} · 86 页 · 已解析", { version: selected.sourceVersion })}</small>
               </span>
             </div>
-            <select
-              aria-label="切换文档"
-              value={selected.sourceDocument}
-              onChange={(event) =>
-                setFeedback(
-                  feedbackResult(
-                    "demo",
-                    false,
-                    `已请求切换到 ${event.target.value}；当前要求仍定位其原始来源。`,
-                  ),
-                )
-              }
-            >
-              <option>{selected.sourceDocument}</option>
-              <option>补充公告01.pdf</option>
-            </select>
+            <span className="source-location-state">
+              {t("第 {page} 页 · {clause}", { page: selected.page, clause: selected.clause })}
+            </span>
           </div>
           <div key={flash} className="source-highlight">
             <DocumentViewer
@@ -477,18 +558,18 @@ export function RequirementsWorkbench({
           <div className="document-footer">
             <button
               type="button"
-              disabled={selectedIndex === 0}
+              disabled={!visibleItems.length || selectedIndex === 0}
               onClick={() => moveSelection(-1)}
             >
               <ChevronLeft size={13} />
               上一条
             </button>
             <span>
-              <strong>第 {selected.page} 页</strong> / 共 86 页
+              <strong>{t("第 {page} 页", { page: selected.page })}</strong> / {t("86 页")}
             </span>
             <button
               type="button"
-              disabled={selectedIndex === items.length - 1}
+              disabled={selectedIndex === visibleItems.length - 1}
               onClick={() => moveSelection(1)}
             >
               下一条
@@ -504,8 +585,11 @@ export function RequirementsWorkbench({
               <span>
                 <strong>合规矩阵</strong>
                 <small>
-                  {visibleItems.length} / {items.length} 条要求 · 已选{" "}
-                  {selectedRows.size}
+                  {t("{visible} / {total} 条要求 · 已选 {selected}", {
+                    visible: visibleItems.length,
+                    total: items.length,
+                    selected: selectedRows.size,
+                  })}
                 </small>
               </span>
             </div>
@@ -515,8 +599,8 @@ export function RequirementsWorkbench({
                 type="button"
                 onClick={() => setAgentOpen(true)}
               >
-                <Bot size={13} />
-                Agent 结构化
+                <Clipboard size={13} />
+                应用结构
               </button>
               <button
                 className="mini-action"
@@ -534,7 +618,7 @@ export function RequirementsWorkbench({
               <input
                 aria-label="搜索要求"
                 value={query}
-                onChange={(event) => setQuery(event.target.value)}
+                onChange={(event) => updateQuery(event.target.value)}
                 placeholder="搜索编号、标题、原文"
               />
             </label>
@@ -543,7 +627,9 @@ export function RequirementsWorkbench({
               <select
                 aria-label="筛选要求"
                 value={filter}
-                onChange={(event) => setFilter(event.target.value as FilterKey)}
+                onChange={(event) =>
+                  updateFilter(event.target.value as FilterKey)
+                }
               >
                 {Object.entries(filterLabels).map(([key, label]) => (
                   <option key={key} value={key}>
@@ -556,15 +642,30 @@ export function RequirementsWorkbench({
           </div>
           <div className="active-filters">
             {filter !== "all" && (
-              <button type="button" onClick={() => setFilter("all")}>
+              <button type="button" onClick={() => updateFilter("all")}>
                 {filterLabels[filter]} <X size={11} />
               </button>
             )}
             <span>
-              {visibleItems.filter((item) => item.confidence < 0.7).length}{" "}
-              条低置信度已路由人工
+              {t("{count} 条低置信度已路由人工", {
+                count: visibleItems.filter((item) => item.confidence < 0.7).length,
+              })}
             </span>
           </div>
+          {selectedRows.size > 0 && (
+            <div className="matrix-selection-bar" role="status">
+              <span>
+                <Check size={13} weight="bold" />
+                已选择 {selectedRows.size} 条要求
+              </span>
+              <button type="button" onClick={() => setBatchOpen(true)}>
+                分配负责人
+              </button>
+              <button type="button" onClick={() => setSelectedRows(new Set())}>
+                清除选择
+              </button>
+            </div>
+          )}
           <div className="matrix-table-wrap" ref={tableRef}>
             <table className="matrix-table">
               <thead>
@@ -617,13 +718,15 @@ export function RequirementsWorkbench({
                     </td>
                     <td>
                       <span>
-                        {item.code} · {item.category}
+                        {item.code} ·{" "}
+                        {t(requirementCategoryLabels[item.category] ??
+                          item.category)}
                       </span>
                       <strong>{item.title}</strong>
                       <small>
-                        {item.mandatory ? "强制" : "一般"}
-                        {item.disqualification ? " · 否决风险" : ""} · 第{" "}
-                        {item.page} 页
+                        {item.mandatory ? t("强制") : t("一般")}
+                        {item.disqualification ? ` · ${t("否决风险")}` : ""} ·{" "}
+                        {t("第 {page} 页", { page: item.page })}
                       </small>
                     </td>
                     <td>
@@ -660,7 +763,7 @@ export function RequirementsWorkbench({
           </div>
           <div className="matrix-footer">
             <span>↑↓ 选择 · Enter 打开</span>
-            <span>已加载全部 {visibleItems.length} 条</span>
+            <span>{t("已加载全部 {count} 条", { count: visibleItems.length })}</span>
           </div>
         </section>
 
@@ -668,7 +771,9 @@ export function RequirementsWorkbench({
           <div className="detail-summary">
             <div>
               <span>
-                {selected.code} · {selected.category}
+                {selected.code} ·{" "}
+                {t(requirementCategoryLabels[selected.category] ??
+                  selected.category)}
               </span>
               <h2>{selected.title}</h2>
             </div>
@@ -850,7 +955,7 @@ export function RequirementsWorkbench({
       )}
       {agentOpen && (
         <SimpleDialog
-          title="Agent 结构化建议"
+          title="结构化建议"
           onClose={() => setAgentOpen(false)}
         >
           <div className="dialog-warning">
@@ -1001,6 +1106,7 @@ function DetailTabContent({
   selected: Requirement;
   onCopy: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="detail-sections">
       <section>
@@ -1024,7 +1130,7 @@ function DetailTabContent({
         </div>
         <div>
           <dt>来源页</dt>
-          <dd>第 {selected.page} 页</dd>
+          <dd>{t("第 {page} 页", { page: selected.page })}</dd>
         </div>
         <div>
           <dt>强制性</dt>
@@ -1069,6 +1175,7 @@ function EvidenceTab({
   onReset: () => void;
   onPicker: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="detail-sections">
       <section>
@@ -1098,7 +1205,7 @@ function EvidenceTab({
               </div>
               <div>
                 <dt>来源页</dt>
-                <dd>第 1–2 页</dd>
+                <dd>{t("第 1–2 页")}</dd>
               </div>
               <div>
                 <dt>匹配理由</dt>
@@ -1230,6 +1337,28 @@ function ActivityTab({ selected }: { selected: Requirement }) {
     </ol>
   );
 }
+
+function filterRequirements(
+  items: Requirement[],
+  query: string,
+  filter: FilterKey,
+) {
+  const normalizedQuery = query.trim().toLowerCase();
+  return items.filter((item) => {
+    const textMatch = `${item.code}${item.title}${item.category}${item.originalText}`
+      .toLowerCase()
+      .includes(normalizedQuery);
+    const filterMatch =
+      filter === "all" ||
+      (filter === "disqualification" && item.disqualification) ||
+      (filter === "mandatory" && item.mandatory) ||
+      (filter === "missing" && item.status === "missing") ||
+      (filter === "conflict" && item.status === "conflict") ||
+      (filter === "review" && item.status === "review");
+    return textMatch && filterMatch;
+  });
+}
+
 function SimpleDialog({
   title,
   onClose,

@@ -106,6 +106,129 @@ export function mapAuditDto(dto: AnyDto): AuditRecord {
   return { id: text(dto.id), actor: text(dto.actor ?? dto.actor_name, text(dto.model_name, "系统")), actorType: (dto.model_name ? "agent" : "human") as AuditRecord["actorType"], timestamp: text(dto.timestamp), action, entityType: text(dto.entityType ?? dto.entity_type), entityId: text(dto.entityId ?? dto.entity_id), entityLabel: text(dto.entityLabel ?? dto.entity_label, text(dto.entity_id)), before: typeof dto.before === "string" ? dto.before : JSON.stringify(dto.before ?? "—"), after: typeof dto.after === "string" ? dto.after : JSON.stringify(dto.after ?? "—"), modelOrRule: text(dto.modelOrRule ?? dto.model_name, "人工操作"), promptVersion: text(dto.promptVersion ?? dto.prompt_version, "—"), inputHash: text(dto.inputHash ?? dto.input_hash, "—"), outputHash: text(dto.outputHash ?? dto.output_hash, "—"), humanOverride: Boolean(dto.humanOverride ?? dto.human_override), reason: text(dto.reason, action), risk: text(dto.risk ?? dto.risk_level, "low") as AuditRecord["risk"] };
 }
 
+const packageRuleLabels: Record<string, { label: string; category: string; suggestion: string }> = {
+  REQUIRED_FILE: { label: "必要文件存在", category: "完整性", suggestion: "上传并绑定缺失的必需文件后重新运行检查。" },
+  TENANT_OR_VERSION: { label: "文件版本可用", category: "版本", suggestion: "重新选择当前租户下可用的文件版本。" },
+  FORMAT: { label: "文件格式", category: "格式", suggestion: "转换为规则允许的 PDF、DOCX 或 XLSX 格式。" },
+  FILENAME: { label: "文件命名规范", category: "命名", suggestion: "按章节编号和命名规则重命名文件。" },
+  SOURCE_FILENAME: { label: "源文件命名", category: "命名", suggestion: "按最终封装目录的命名规则重命名源文件。" },
+  FINAL_FORMAT: { label: "最终提交格式", category: "格式", suggestion: "按招标要求转换为最终提交格式。" },
+  RELATED_DOCUMENT: { label: "关联证明完整", category: "完整性", suggestion: "补充合同对应的验收或其他关联证明。" },
+  FILE_SIZE: { label: "文件大小", category: "格式", suggestion: "压缩或拆分超过上限的文件。" },
+  DUPLICATE_NAME: { label: "文件名唯一", category: "完整性", suggestion: "消除包内重复文件名后重新检查。" },
+  DUPLICATE_HASH: { label: "文件内容唯一", category: "完整性", suggestion: "确认重复内容是否必要，并移除冗余文件。" },
+  TRACKED_CHANGES: { label: "修订与批注", category: "元数据", suggestion: "接受全部修订并删除批注后重新导出。" },
+  HUMAN_CONFIRMATION: { label: "人工确认记录", category: "人工复核", suggestion: "保留确认原因与原始警告记录。" },
+};
+
+function packageNodeStatus(value: unknown): PackageNode["status"] {
+  const status = text(value).toLowerCase();
+  if (status === "valid" || status === "present") return "valid";
+  if (status === "missing") return "missing";
+  return "warning";
+}
+
+function packageCheckStatus(value: unknown): PackageCheck["status"] {
+  const status = text(value).toLowerCase();
+  if (status === "pass" || status === "passed") return "passed";
+  if (status === "fail" || status === "failed") return "failed";
+  return "warning";
+}
+
+/** Adapts the existing package item contract, including nested validation results. */
+export function mapPackageDto(dto: AnyDto): { tree: PackageNode[]; checks: PackageCheck[] } {
+  const items = Array.isArray(dto.items) ? dto.items as AnyDto[] : [];
+  const tree = items.map((item, index) => {
+    const id = text(item.id, `item-${index}`);
+    const name = text(item.name ?? item.filename ?? item.path, `封装项 ${index + 1}`);
+    const status = packageNodeStatus(item.status);
+    const documentId = text(item.document_id ?? item.documentId);
+    return {
+      id,
+      packageItemId: id,
+      name,
+      type: "folder" as const,
+      status,
+      children: documentId
+        ? [{
+            id: `${id}-document`,
+            packageItemId: id,
+            name: text(item.document_name ?? item.document_filename, `${name}（已绑定）`),
+            type: "file" as const,
+            status,
+            version: `V${num(item.version ?? item.version_number, 1)}`,
+          }]
+        : [],
+    };
+  });
+  const nestedChecks = items.flatMap((item, itemIndex) => {
+    const itemId = text(item.id, `item-${itemIndex}`);
+    const itemName = text(item.name ?? item.filename, `封装项 ${itemIndex + 1}`);
+    const results = Array.isArray(item.validation_results) ? item.validation_results as AnyDto[] : [];
+    if (!results.length) {
+      const status = text(item.status).toLowerCase();
+      const required = item.required !== false;
+      const missing = status === "missing";
+      const invalid = status === "invalid";
+      const warning = status === "warning";
+      return [{
+        id: `${itemId}-state`,
+        packageItemId: itemId,
+        label: missing ? "必要文件存在" : warning || invalid ? "材料待复核" : "待运行封装检查",
+        category: "文件状态",
+        status: (missing && required) || invalid ? "failed" as const : "warning" as const,
+        file: itemName,
+        message: missing
+          ? required ? "必需文件缺失。" : "可选文件未提供。"
+          : warning || invalid
+            ? "当前材料已标记为待复核，请运行封装检查获取具体原因。"
+            : "材料已绑定但尚未完成确定性校验，不能视为检查通过。",
+        suggestion: missing ? "上传并绑定文件后重新运行检查。" : "运行封装检查以刷新确定性校验结果。",
+        sourceRequirement: "封装文件树",
+        humanConfirmed: false,
+      }];
+    }
+    return results.map((result, resultIndex) => {
+      const code = text(result.code, "PACKAGE_RULE");
+      const rule = packageRuleLabels[code] ?? {
+        label: code,
+        category: "校验",
+        suggestion: "按校验提示修复后重新运行检查。",
+      };
+      return {
+        id: `${itemId}-${code}-${resultIndex}`,
+        packageItemId: itemId,
+        label: rule.label,
+        category: rule.category,
+        status: packageCheckStatus(result.result ?? result.status),
+        file: itemName,
+        message: text(result.message, "未提供校验说明。"),
+        suggestion: rule.suggestion,
+        sourceRequirement: `内部封装规则 ${code}`,
+        humanConfirmed: code === "HUMAN_CONFIRMATION",
+      };
+    });
+  });
+  const directChecks = Array.isArray(dto.checks ?? dto.validation_results)
+    ? (dto.checks ?? dto.validation_results) as AnyDto[]
+    : [];
+  const checks = directChecks.length
+    ? directChecks.map((item, index) => ({
+        id: text(item.id, `check-${index}`),
+        packageItemId: text(item.package_item_id),
+        label: text(item.label ?? item.rule_name),
+        category: text(item.category, "校验"),
+        status: packageCheckStatus(item.status ?? item.result),
+        file: text(item.file ?? item.filename),
+        message: text(item.message),
+        suggestion: text(item.suggestion ?? item.remediation),
+        sourceRequirement: text(item.sourceRequirement ?? item.source_requirement),
+        humanConfirmed: Boolean(item.humanConfirmed ?? item.human_confirmed),
+      }))
+    : nestedChecks;
+  return { tree, checks };
+}
+
 async function getData<T>(path: string, demoData: T, unavailableData: T, map?: (dto: AnyDto) => unknown): Promise<DataResult<T>> {
   if (!isRemoteApiConfigured) return { data: demoData, source: "demo" };
   try {
@@ -152,11 +275,7 @@ export const phaseApi = {
     if (!isRemoteApiConfigured) return { data: { tree: packageTree, checks: packageChecks }, source: "demo" };
     try {
       const dto = await apiRequest<AnyDto>(`/api/projects/${projectId}/package`);
-      const items = Array.isArray(dto.items) ? dto.items as AnyDto[] : [];
-      const tree: PackageNode[] = items.map((item, index) => ({ id: text(item.id, `item-${index}`), packageItemId: text(item.id), name: text(item.name ?? item.filename ?? item.path), type: text(item.type, "file") as PackageNode["type"], status: text(item.status, "warning") as PackageNode["status"], size: text(item.size_display ?? item.size), version: text(item.version ?? item.version_number), children: Array.isArray(item.children) ? (item.children as AnyDto[]).map((child, childIndex) => ({ id: text(child.id, `child-${childIndex}`), packageItemId: text(child.id), name: text(child.name ?? child.filename), type: "file", status: text(child.status, "warning") as PackageNode["status"], size: text(child.size_display ?? child.size), version: text(child.version ?? child.version_number) })) : undefined }));
-      const rawChecks = Array.isArray(dto.checks ?? dto.validation_results) ? (dto.checks ?? dto.validation_results) as AnyDto[] : [];
-      const checks: PackageCheck[] = rawChecks.map((item, index) => ({ id: text(item.id, `check-${index}`), packageItemId: text(item.package_item_id), label: text(item.label ?? item.rule_name), category: text(item.category, "校验"), status: text(item.status ?? item.result, "warning") as PackageCheck["status"], file: text(item.file ?? item.filename), message: text(item.message), suggestion: text(item.suggestion ?? item.remediation), sourceRequirement: text(item.sourceRequirement ?? item.source_requirement), humanConfirmed: Boolean(item.humanConfirmed ?? item.human_confirmed) }));
-      return { data: { tree, checks }, source: "api" };
+      return { data: mapPackageDto(dto), source: "api" };
     } catch (error) { return { data: { tree: [], checks: [] }, source: "api", error: error instanceof Error ? error.message : "API 请求失败" }; }
   },
   audit: (projectId: string) => getData<AuditRecord[]>(`/api/projects/${projectId}/audit`, auditRecords, [], mapAuditDto),

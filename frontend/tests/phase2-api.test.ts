@@ -1,4 +1,4 @@
-import { mapFlatEvidenceMatchRows, phaseApi, mapAmendmentChangeDto, mapEvidenceDto, mapMatchGroupDto, mapTaskDto } from "@/lib/api/phase2";
+import { mapFlatEvidenceMatchRows, phaseApi, mapAmendmentChangeDto, mapEvidenceDto, mapMatchGroupDto, mapPackageDto, mapTaskDto } from "@/lib/api/phase2";
 import { vi } from "vitest";
 
 describe("Phase 2-5 DTO adapters", () => {
@@ -32,6 +32,37 @@ describe("Phase 2-5 DTO adapters", () => {
       expect.objectContaining({ id: "m-1", evidenceId: "e-1", decision: "accepted", reason: ["类型匹配", "复核通过"] }),
       expect.objectContaining({ id: "m-2", evidenceId: "e-2", decision: "rejected", reason: ["主体不一致", "法人不符"] }),
     ]));
+  });
+
+  it("maps nested package validation results and keeps an initial missing-file gate", () => {
+    const pending = mapPackageDto({
+      items: [
+        { id: "pkg-1", name: "01_投标函", required: true, document_id: "doc-1", status: "present", version: 2, validation_results: [] },
+        { id: "pkg-2", name: "03_授权委托书", required: true, document_id: null, status: "missing", validation_results: [] },
+      ],
+    });
+    expect(pending.tree[0]).toMatchObject({ type: "folder", status: "valid", children: [expect.objectContaining({ type: "file", version: "V2" })] });
+    expect(pending.checks).toEqual(expect.arrayContaining([
+      expect.objectContaining({ id: "pkg-1-state", status: "warning", label: "待运行封装检查" }),
+      expect.objectContaining({ id: "pkg-2-state", status: "failed", label: "必要文件存在" }),
+    ]));
+
+    const validated = mapPackageDto({
+      items: [{
+        id: "pkg-2",
+        name: "03_授权委托书",
+        required: true,
+        status: "missing",
+        validation_results: [{ code: "REQUIRED_FILE", result: "fail", message: "必需文件缺失" }],
+      }],
+    });
+    expect(validated.checks[0]).toMatchObject({
+      packageItemId: "pkg-2",
+      label: "必要文件存在",
+      category: "完整性",
+      status: "failed",
+      message: "必需文件缺失",
+    });
   });
 
   it("does not substitute demo evidence when the API fails outside demo mode", async () => {

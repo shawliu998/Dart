@@ -4,7 +4,7 @@ import "./globals.css";
 
 export const metadata: Metadata = {
   title: "标证通 BidEvidence",
-  description: "招投标合规与交付工作台",
+  description: "Traceable tender compliance and delivery workspace",
   icons: {
     icon: [
       { url: "/brand/bidevidence-icon.svg", type: "image/svg+xml" },
@@ -20,7 +20,7 @@ export const dynamic = "force-dynamic";
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="zh-CN">
+    <html lang="en" suppressHydrationWarning>
       <body>
         <AppShell>{children}</AppShell>
       </body>

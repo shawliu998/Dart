@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 PYTHON ?= $(if $(wildcard backend/.venv/bin/python),backend/.venv/bin/python,python3)
 
-.PHONY: help setup dev dev-infra down logs test lint seed demo generate-demo verify-demo acceptance acceptance-api acceptance-agent verify desktop-dev desktop-build desktop-test verify-desktop clean
+.PHONY: help setup dev dev-infra down logs test lint seed demo generate-demo verify-demo eval-requirements acceptance acceptance-api acceptance-agent verify desktop-dev desktop-build desktop-test verify-desktop clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "BidEvidence commands:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -39,6 +39,9 @@ generate-demo: ## Rebuild deterministic PDF/DOCX/XLSX demo documents
 
 verify-demo: ## Validate fixture inventory, formats, hashes and expected results
 	$(PYTHON) scripts/verify_demo.py
+
+eval-requirements: ## Validate the requirement-extraction eval dataset offline (never calls a model)
+	$(PYTHON) scripts/evaluate_requirements.py
 
 acceptance: ## Validate Phase 0-5 oracle and build a local preview ZIP/manifest
 	$(PYTHON) scripts/acceptance_mvp.py --artifacts-dir .data/acceptance --clean
