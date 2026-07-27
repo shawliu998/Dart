@@ -176,6 +176,7 @@ class ResponseItemRead(ORMModel):
     risk_notes: list
     confidence: float | None
     generation_version: int
+    revision_number: int
     version: int
     reviewed_by: UUID | None
     reviewed_at: datetime | None
@@ -185,3 +186,20 @@ class ResponseItemRead(ORMModel):
     requirement: ResponseRequirementContext | None = None
     requirement_source: ResponseRequirementSource | None = None
     evidence_sources: list[ResponseEvidenceSource] = Field(default_factory=list)
+
+
+class ResponseRevisionSummary(ORMModel):
+    id: UUID
+    response_item_id: UUID
+    revision_number: int
+    event_type: Literal["baseline", "generated", "edited", "approved"]
+    status: str
+    generation_version: int
+    created_by: UUID
+    created_by_name: str | None = None
+    created_at: datetime
+
+
+class ResponseRevisionRead(ResponseRevisionSummary):
+    draft_text: str | None
+    edited_text: str | None

@@ -16,7 +16,15 @@ from sqlalchemy.orm import Session
 from app.audit.service import append_event
 from app.auth.dependencies import Principal
 from app.db.base import utcnow
-from app.models.entities import DisqualificationRule, EvidenceClaim, EvidenceMatch, Requirement, ResponseEvidenceLink, ResponseItem
+from app.models.entities import (
+    DisqualificationRule,
+    EvidenceClaim,
+    EvidenceMatch,
+    Requirement,
+    ResponseEvidenceLink,
+    ResponseItem,
+    ResponseRevision,
+)
 
 
 @dataclass(frozen=True)
@@ -200,6 +208,87 @@ def _has_missing_source(requirement: Requirement) -> bool:
     )
 
 
+def _snapshot_revision(
+    item: ResponseItem,
+    *,
+    event_type: str,
+    created_by: UUID,
+    created_at=None,
+) -> ResponseRevision:
+    return ResponseRevision(
+        tenant_id=item.tenant_id,
+        response_item_id=item.id,
+        revision_number=item.revision_number,
+        event_type=event_type,
+        draft_text=item.draft_text,
+        edited_text=item.edited_text,
+        status=item.status,
+        generation_version=item.generation_version,
+        created_by=created_by,
+        **({"created_at": created_at} if created_at is not None else {}),
+    )
+
+
+def ensure_response_baseline(db: Session, item: ResponseItem) -> ResponseRevision:
+    """Backfill a first snapshot for rows created outside the normal generation flow."""
+    existing = db.scalar(
+        select(ResponseRevision)
+        .where(
+            ResponseRevision.response_item_id == item.id,
+            ResponseRevision.tenant_id == item.tenant_id,
+        )
+        .order_by(ResponseRevision.revision_number.desc())
+    )
+    if existing is not None:
+        if item.revision_number < existing.revision_number:
+            item.revision_number = existing.revision_number
+        return existing
+    item.revision_number = max(item.revision_number or 1, 1)
+    baseline = _snapshot_revision(
+        item,
+        event_type="baseline",
+        created_by=item.created_by,
+        created_at=item.created_at,
+    )
+    db.add(baseline)
+    db.flush()
+    return baseline
+
+
+def append_response_revision(
+    db: Session,
+    principal: Principal,
+    item: ResponseItem,
+    event_type: str,
+    *,
+    initial: bool = False,
+) -> ResponseRevision:
+    """Append a response snapshot inside the caller's transaction."""
+    existing = db.scalar(
+        select(ResponseRevision)
+        .where(
+            ResponseRevision.response_item_id == item.id,
+            ResponseRevision.tenant_id == item.tenant_id,
+        )
+        .order_by(ResponseRevision.revision_number.desc())
+    )
+    if existing is None and initial:
+        item.revision_number = max(item.revision_number or 1, 1)
+    else:
+        if existing is None:
+            ensure_response_baseline(db, item)
+        else:
+            item.revision_number = max(item.revision_number, existing.revision_number)
+        item.revision_number += 1
+    revision = _snapshot_revision(
+        item,
+        event_type=event_type,
+        created_by=principal.user_id,
+    )
+    db.add(revision)
+    return revision
+
+
 def generate_project_responses(
     db: Session, principal: Principal, project_id: UUID, *, allow_provisional: bool = False
 ) -> list[ResponseItem]:
@@ -240,6 +329,7 @@ def generate_project_responses(
             db.flush()
         else:
             is_new = False
+            ensure_response_baseline(db, item)
 
         db.query(ResponseEvidenceLink).filter(
             ResponseEvidenceLink.response_item_id == item.id
@@ -300,6 +390,13 @@ def generate_project_responses(
         if not is_new:
             item.generation_version += 1
         item.version += 1
+        append_response_revision(
+            db,
+            principal,
+            item,
+            "generated",
+            initial=is_new,
+        )
         generated += 1
     db.commit()
     append_event(
@@ -334,6 +431,7 @@ def approve_response(db: Session, principal: Principal, item: ResponseItem, reas
     item.reviewed_by = principal.user_id
     item.reviewed_at = utcnow()
     item.version += 1
+    append_response_revision(db, principal, item, "approved")
     append_event(
         db,
         principal,

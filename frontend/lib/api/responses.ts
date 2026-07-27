@@ -52,11 +52,29 @@ export type TenderResponse = {
   riskNotes: string[];
   confidence: number | null;
   generationVersion: number;
+  revisionNumber: number;
   version: number;
   evidenceClaimIds: string[];
   requirement?: ResponseRequirement | null;
   requirementSource?: RequirementSource | null;
   evidenceSources?: EvidenceSource[];
+};
+
+export type ResponseRevisionSummary = {
+  id: string;
+  responseItemId: string;
+  revisionNumber: number;
+  eventType: "baseline" | "generated" | "edited" | "approved";
+  status: TenderResponse["status"];
+  generationVersion: number;
+  createdBy: string;
+  createdByName: string | null;
+  createdAt: string;
+};
+
+export type ResponseRevision = ResponseRevisionSummary & {
+  draftText: string | null;
+  editedText: string | null;
 };
 
 const value = (input: unknown, fallback = "") => typeof input === "string" ? input : fallback;
@@ -96,9 +114,31 @@ export function mapResponseDto(dto: ResponseDto): TenderResponse {
     draftText: value(dto.draft_text ?? dto.draftText), editedText: typeof (dto.edited_text ?? dto.editedText) === "string" ? value(dto.edited_text ?? dto.editedText) : null,
     missingInformation: values(dto.missing_information ?? dto.missingInformation), riskNotes: values(dto.risk_notes ?? dto.riskNotes),
     confidence: typeof dto.confidence === "number" ? dto.confidence : dto.confidence === null ? null : Number.isFinite(Number(dto.confidence)) ? Number(dto.confidence) : null,
-    generationVersion: Number(dto.generation_version ?? dto.generationVersion ?? 1), version: Number(dto.version ?? 1), evidenceClaimIds: values(dto.evidence_claim_ids ?? dto.evidenceClaimIds),
+    generationVersion: Number(dto.generation_version ?? dto.generationVersion ?? 1), revisionNumber: Number(dto.revision_number ?? dto.revisionNumber ?? 1), version: Number(dto.version ?? 1), evidenceClaimIds: values(dto.evidence_claim_ids ?? dto.evidenceClaimIds),
     requirement: mapRequirement(dto.requirement), requirementSource: mapRequirementSource(dto.requirement_source ?? dto.requirementSource),
     evidenceSources: evidenceSourceRows(dto).map(mapEvidenceSource).filter((source): source is EvidenceSource => source !== null),
+  };
+}
+
+function mapRevisionSummary(dto: ResponseDto): ResponseRevisionSummary {
+  return {
+    id: value(dto.id),
+    responseItemId: value(dto.response_item_id ?? dto.responseItemId),
+    revisionNumber: Number(dto.revision_number ?? dto.revisionNumber ?? 1),
+    eventType: value(dto.event_type ?? dto.eventType, "baseline") as ResponseRevisionSummary["eventType"],
+    status: value(dto.status, "not_started") as TenderResponse["status"],
+    generationVersion: Number(dto.generation_version ?? dto.generationVersion ?? 1),
+    createdBy: value(dto.created_by ?? dto.createdBy),
+    createdByName: typeof (dto.created_by_name ?? dto.createdByName) === "string" ? value(dto.created_by_name ?? dto.createdByName) : null,
+    createdAt: value(dto.created_at ?? dto.createdAt),
+  };
+}
+
+function mapRevision(dto: ResponseDto): ResponseRevision {
+  return {
+    ...mapRevisionSummary(dto),
+    draftText: typeof (dto.draft_text ?? dto.draftText) === "string" ? value(dto.draft_text ?? dto.draftText) : null,
+    editedText: typeof (dto.edited_text ?? dto.editedText) === "string" ? value(dto.edited_text ?? dto.editedText) : null,
   };
 }
 
@@ -125,5 +165,13 @@ export const responseApi = {
   },
   async approve(id: string, reason: string): Promise<TenderResponse> {
     return mapResponseDto(await apiRequest<ResponseDto>(`/api/responses/${id}/approve`, { method: "POST", body: JSON.stringify({ reason }) }));
+  },
+  async listRevisions(id: string): Promise<ResponseRevisionSummary[]> {
+    const rows = await apiRequest<unknown>(`/api/responses/${id}/revisions`);
+    if (!Array.isArray(rows)) throw new Error("API 返回了无法识别的版本记录。");
+    return rows.map((row) => mapRevisionSummary(row as ResponseDto));
+  },
+  async getRevision(id: string, revisionNumber: number): Promise<ResponseRevision> {
+    return mapRevision(await apiRequest<ResponseDto>(`/api/responses/${id}/revisions/${revisionNumber}`));
   },
 };

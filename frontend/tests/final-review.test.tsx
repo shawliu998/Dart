@@ -113,6 +113,7 @@ const responses: TenderResponse[] = [
     riskNotes: [],
     confidence: 0.8,
     generationVersion: 1,
+    revisionNumber: 1,
     version: 1,
     evidenceClaimIds: ["claim-1"],
   },

@@ -20,6 +20,7 @@ from app.models.entities import (  # noqa: F401
     ModelRun,
     ResponseEvidenceLink,
     ResponseItem,
+    ResponseRevision,
     Organization,
     PackageItem,
     RemediationTask,
