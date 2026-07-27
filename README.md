@@ -117,10 +117,10 @@ The fixed demo oracle contains:
 Current frontend acceptance:
 
 - ESLint, TypeScript and the production build pass;
-- 20 test files, 109/109 tests pass, including locale persistence and source-language protection;
+- 20 test files, 113/113 tests pass, including locale persistence, source-language protection and response version history;
 - Playwright E2E: 7 passed, 1 skipped;
 - Batches 01–05 received Pro `PRODUCT_ACCEPT` and Codex `TECH_ACCEPT`;
-- the final portfolio package received `PORTFOLIO_ACCEPT` and the GitHub presentation received `README_ACCEPT`.
+- the final portfolio package received `PORTFOLIO_ACCEPT`, the GitHub presentation received `README_ACCEPT`, and response version history received `RESPONSE_VERSION_ACCEPT`.
 
 ```bash
 make verify-demo

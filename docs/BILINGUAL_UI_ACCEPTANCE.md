@@ -34,5 +34,5 @@ Browser checks covered:
 
 - TypeScript: passed.
 - ESLint: passed.
-- Vitest: 20 files, 109/109 tests passed.
+- Vitest: 20 files, 113/113 tests passed.
 - Production build: see the final packaging record.

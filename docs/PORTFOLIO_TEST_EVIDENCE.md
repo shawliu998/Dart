@@ -7,8 +7,10 @@
 - ESLint：通过
 - TypeScript：通过
 - production build：通过
-- 前端单元/组件测试：20 个文件，109/109
+- 后端服务/API 测试：126/126
+- 前端单元/组件测试：20 个文件，113/113
 - 双语界面：英文默认、中文切换、刷新持久化和业务原文保护测试通过
+- 响应版本历史：连续 v1–v4、相同正文不增版本、租户隔离、任意版本比较和批准事件无正文变化提示均通过
 - Playwright E2E：7 passed，1 skipped
 - Batch 05 最终复核聚焦测试：3/3
 
@@ -20,6 +22,7 @@
 - `BATCH04_EXECUTION_EVIDENCE.md`
 - `BATCH05_EXECUTION_EVIDENCE.md`
 - `BILINGUAL_UI_ACCEPTANCE.md`
+- `RESPONSE_VERSION_HISTORY_EXECUTION_BRIEF.md`
 
 ## 当前终验
 
