@@ -72,3 +72,17 @@ GitHub 展示结论：`README_ACCEPT`，可进入最终 R4 封装。
 最终 GitHub 语言结论：`ENGLISH_README_ACCEPT`。
 
 完整复审记录见 `docs/GITHUB_PRESENTATION_ENGLISH_FINAL_REVIEW.md`。
+
+## AGENT_NATIVE_PRESENTATION_ACCEPT
+
+ChatGPT Pro 对 agent-native 定位与 GitHub Social Preview 的 1280×640、640×320、320×160 三档完成最终复审：
+
+- 三档均无 P0 / P1。
+- `Durable runs`、`Closed tool registry`、`Deterministic checks` 与真实实现一致。
+- 截图中的 `Waiting for human review` 与闭环高亮的 `Human gate` 状态一致。
+- Resume 回路准确表达审核后基于新事实继续，而不是启动无状态对话。
+- 没有聊天窗口、机器人、模型 Logo 或泛化的 “AI-powered” 装饰；产品主体仍是 artifact-first 投标工作台。
+
+最终 GitHub agent-native 展示结论：`AGENT_NATIVE_PRESENTATION_ACCEPT`。
+
+> Accepted: the social preview clearly communicates a durable, bounded agent loop in an artifact-first bid workspace, with deterministic controls and human-owned decisions.

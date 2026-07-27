@@ -4,7 +4,7 @@
 
 1. `01-README.md`：一句话定位、七步旅程、三分钟演示与完整仓库入口。
 2. `02-CASE_STUDY.md`：问题、竞品研究边界、关键产品决策、失败案例和局限。
-3. `04-SCREENSHOTS/`：八张 production 产品证据、两张 README 预览与一张英文默认界面验收图。
+3. `04-SCREENSHOTS/`：八张 production 产品证据、两张 README 预览、一张英文默认界面验收图与一张 agent-native Social Preview。
 4. `03-ARCHITECTURE.md`：前后端、规则、AI 与人工门禁的架构说明。
 5. `05-TEST_EVIDENCE.md`：自动化与当前终验事实。
 6. `06-RUNNING_GUIDE.md`：评审者本地运行和七步访问顺序。
@@ -26,6 +26,7 @@
 - `09-readme-desktop.png`
 - `10-readme-mobile.png`
 - `11-bilingual-requirements-en.png`
+- `12-agent-native-social-preview.png`
 
 ## 展示复审
 
@@ -33,6 +34,7 @@
 - `08-PRO-REVIEW/README_ACCEPT.png`
 - `08-PRO-REVIEW/GITHUB_PRESENTATION_ENGLISH_FINAL_REVIEW.md`
 - `08-PRO-REVIEW/ENGLISH_README_ACCEPT.png`
+- `08-PRO-REVIEW/AGENT_NATIVE_PRESENTATION_ACCEPT.md`
 
 ## 真实性说明
 
