@@ -44,5 +44,7 @@
 - 主图、docs 链接和 License 可访问。
 - 不包含 `.env`、数据库、上传物、依赖目录或构建缓存。
 - About description、topics 和 social preview 与 README 使用同一定位。
+- 当前 Git tag、GitHub Release、发布 ZIP 与 `docs/RELEASE_BASELINE.md` 指向同一批已验收源码。
+- GitHub Release 说明记录发布资产的 SHA-256，并保留上一基线作为回退点。
 
 本文件只记录建议，不修改远程分支或 GitHub 设置。

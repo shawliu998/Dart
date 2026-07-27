@@ -86,3 +86,29 @@ ChatGPT Pro 对 agent-native 定位与 GitHub Social Preview 的 1280×640、640
 最终 GitHub agent-native 展示结论：`AGENT_NATIVE_PRESENTATION_ACCEPT`。
 
 > Accepted: the social preview clearly communicates a durable, bounded agent loop in an artifact-first bid workspace, with deterministic controls and human-owned decisions.
+
+## RESPONSE_VERSION_ACCEPT
+
+ChatGPT Pro 对不可变响应版本历史与比较完成最终复审：
+
+- P0：无；P1：无。
+- 唯一 `ResponseWorkbench`、事务追加、行锁串行化、租户权限和只读历史契约保持正确。
+- 默认比较最新与上一版本；任意 From / To 比较、单版本状态、错误反馈和窄屏重排均在原工作台内完成。
+- 批准只产生事件快照而正文未变化时，界面明确说明 `No content changes`，不虚构文本差异。
+- 未进入恢复、评论、负责人、通用审计、平行 API、第二工作台或 Agent UI 范围。
+- 界面保持成熟 B2B 工作台风格，介绍页没有把 agent-native 作为刻意口号。
+
+最终结论：`RESPONSE_VERSION_ACCEPT`；P2 修正闭环为 `P2_RESOLVED_ACCEPT`。
+
+完整契约和验收记录见 `docs/RESPONSE_VERSION_HISTORY_EXECUTION_BRIEF.md`。
+
+## RELEASE_BASELINE_ACCEPT
+
+本批在产品、技术和 Pro 复审通过后进入 `v0.1.2` 发布基线：
+
+- 精确源码由 Git tag `v0.1.2` 固定。
+- 发布资产为 `BidEvidence-DeepSeek-AGI-Portfolio-Final-R10.zip`。
+- R10 包含当前源码、发布基线、响应版本历史说明与两张真实交互截图。
+- GitHub Release 记录资产 SHA-256，并保留 `v0.1.1` 作为上一可回退基线。
+
+详细发布范围与门禁见 `docs/RELEASE_BASELINE.md`。
