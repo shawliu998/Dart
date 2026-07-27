@@ -2,7 +2,7 @@
 
 # Dart · BidEvidence
 
-BidEvidence is an agent-native bid workspace where durable, bounded runs choose actions from a closed tool registry to produce typed, sourced artifacts, while deterministic checks and human gates keep consequential bid decisions under human control.
+BidEvidence is a traceable bid workspace that keeps tender requirements, company evidence, response writing, and human review connected.
 
 [Product tour](docs/FINAL_PRODUCT_AUDIT.md) · [Case study](docs/CASE_STUDY.md) · [Architecture](docs/ARCHITECTURE.md) · [Run locally](docs/PORTFOLIO_RUNNING_GUIDE.md) · [Acceptance](docs/FINAL_ACCEPTANCE.md)
 
@@ -43,23 +43,6 @@ File intake → Compliance review → Evidence library → Response writing
 | --- | --- | --- |
 | Seven-step workflow, 24 sourced requirements, 17 evidence claims, 24 responses, deterministic checks, remediation and delivery gates | Response diffing, comments, DOCX style preview and signed desktop distribution | Legal qualification decisions, CA signing, guarantee payments, CAPTCHA handling and external submission |
 
-## Agent-native by architecture
-
-BidEvidence is artifact-first rather than chat-first. A durable run reads the current project state, selects one bounded action, writes a typed and sourced artifact, validates the result, and either continues or stops at a human gate.
-
-```text
-Observe project state → Plan next action → Execute a bounded tool
-        ↑                                      ↓
-        └──── Resume after review ← Human gate ← Verify the artifact
-```
-
-- **State-aware planning:** each iteration is planned from persisted documents, requirements, evidence, checks, responses and prior tool events—not from an ungrounded conversation.
-- **Bounded execution:** the planner can select only from a closed tool registry. Tools call existing domain services and produce schema-validated artifacts with provenance.
-- **Durable loop:** runs, steps, events, outputs and approvals are persisted; failed or interrupted work can resume without inventing a second workflow state.
-- **Human-controlled consequences:** requirements, evidence matches, response drafts and the final work package stop at explicit review gates. Approval changes project state, then the loop continues from fresh facts.
-
-[Agent loop and human-gate design](docs/AI_DESIGN.md)
-
 ## Why it is designed this way
 
 Every important conclusion links back to a document version, page, clause and excerpt. A response can cite evidence only after a reviewer has accepted it.
@@ -68,9 +51,11 @@ Language models help with classification, candidate extraction, ranking and expl
 
 Generating a draft is not the same as approving a submission. The fixed demo deliberately includes an expired certificate, an incomplete project-reference chain and a missing authorization file. The package can be previewed, but it cannot silently pass the final gate.
 
-Agent-native does not mean unsupervised submission. This is a working portfolio project, not a legal-advice service or signing tool, and it never performs guarantee payment, CAPTCHA handling or external submission.
+The workflow can advance through bounded runs, but submission and other consequential decisions stay under human control. This is a working portfolio project, not a legal-advice service or signing tool, and it never performs guarantee payment, CAPTCHA handling or external submission.
 
 ## Architecture
+
+The product remains artifact-first rather than chat-first. Its background workflow can read persisted project state, choose one action from a closed tool registry, write a sourced artifact, verify it, and pause for review before continuing.
 
 ```mermaid
 flowchart LR
@@ -88,11 +73,11 @@ flowchart LR
 - **Web:** Next.js App Router and TypeScript.
 - **API:** FastAPI, Pydantic v2, SQLAlchemy 2 and Alembic.
 - **Rules:** amount, date, quantity, entity, validity, consistency, file and hash checks.
-- **Agent runtime:** durable runs, bounded iterations, a closed tool registry, typed artifacts, resumable failures and explicit approvals.
+- **Workflow runtime:** durable runs, bounded iterations, a closed tool registry, typed artifacts, resumable failures and explicit approvals.
 - **Model boundary:** a structured provider interface; local runs and tests default to `MockLLMProvider`.
 - **Traceability:** document versions, page excerpts, claims, rule codes, review reasons and append-only records.
 
-[Architecture notes](docs/ARCHITECTURE.md) · [AI, rules and human review](docs/AI_DESIGN.md)
+[Architecture notes](docs/ARCHITECTURE.md) · [Workflow loop, rules and human review](docs/AI_DESIGN.md)
 
 ## Run locally
 
@@ -154,7 +139,7 @@ I led the work from problem framing to acceptance:
 - product scope, competitor research and the seven-step workflow;
 - information architecture, interaction design and visual convergence;
 - the Next.js frontend, FastAPI backend, domain model and deterministic rules;
-- the durable agent loop, closed tool contracts, artifact model and human approval gates;
+- the bounded workflow loop, closed tool contracts, artifact model and human approval gates;
 - synthetic PDF/DOCX/XLSX fixtures, the fixed oracle and automated tests;
 - product review, technical acceptance, evidence capture and packaging.
 

@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 from sqlalchemy import select
 
 from app.db.session import SessionLocal
-from app.models.entities import EvidenceMatch, Requirement, ResponseItem
+from app.models.entities import EvidenceMatch, Requirement, ResponseItem, ResponseRevision
 
 
 def _draft_response(demo: dict) -> str:
@@ -39,7 +39,12 @@ def _draft_response(demo: dict) -> str:
             db.add(item)
         item.status = "drafted"
         item.draft_text = "基于已确认材料的响应草稿。"
+        item.edited_text = None
         item.confidence = Decimal("0.820")
+        item.revision_number = 1
+        db.query(ResponseRevision).filter(
+            ResponseRevision.response_item_id == item.id
+        ).delete(synchronize_session=False)
         db.commit()
         return str(item.id)
 
@@ -183,3 +188,95 @@ def test_response_workbench_enforces_tenant_and_reason(client, demo):
         headers=demo["auth_headers"],
         json={"reason": "可批准"},
     ).status_code == 200
+
+
+def test_response_revisions_are_immutable_sequential_and_readable(client, demo):
+    response_id = _draft_response(demo)
+    headers = demo["auth_headers"]
+
+    first_edit = client.patch(
+        f"/api/responses/{response_id}",
+        headers=headers,
+        json={"edited_text": "第一版人工响应内容。", "reason": "补充第一版人工说明"},
+    )
+    assert first_edit.status_code == 200
+    assert first_edit.json()["revision_number"] == 2
+
+    second_edit = client.patch(
+        f"/api/responses/{response_id}",
+        headers=headers,
+        json={"edited_text": "第二版人工响应内容，增加交付说明。", "reason": "增加交付阶段说明"},
+    )
+    assert second_edit.status_code == 200
+    assert second_edit.json()["revision_number"] == 3
+
+    duplicate = client.patch(
+        f"/api/responses/{response_id}",
+        headers=headers,
+        json={"edited_text": "第二版人工响应内容，增加交付说明。", "reason": "重复保存相同内容"},
+    )
+    assert duplicate.status_code == 200
+    assert duplicate.json()["revision_number"] == 3
+
+    approved = client.post(
+        f"/api/responses/{response_id}/approve",
+        headers=headers,
+        json={"reason": "核对来源后批准响应"},
+    )
+    assert approved.status_code == 200
+    assert approved.json()["revision_number"] == 4
+
+    history = client.get(
+        f"/api/responses/{response_id}/revisions",
+        headers=headers,
+    )
+    assert history.status_code == 200
+    assert [revision["revision_number"] for revision in history.json()] == [4, 3, 2, 1]
+    assert [revision["event_type"] for revision in reversed(history.json())] == [
+        "baseline",
+        "edited",
+        "edited",
+        "approved",
+    ]
+    assert all(revision["created_by_name"] for revision in history.json())
+
+    baseline = client.get(
+        f"/api/responses/{response_id}/revisions/1",
+        headers=headers,
+    )
+    assert baseline.status_code == 200
+    assert baseline.json()["draft_text"] == "基于已确认材料的响应草稿。"
+    assert baseline.json()["edited_text"] is None
+
+    latest = client.get(
+        f"/api/responses/{response_id}/revisions/4",
+        headers=headers,
+    )
+    assert latest.status_code == 200
+    assert latest.json()["status"] == "approved"
+    assert latest.json()["edited_text"] == "第二版人工响应内容，增加交付说明。"
+
+
+def test_response_revision_reads_enforce_tenant_and_missing_version(client, demo):
+    response_id = _draft_response(demo)
+    headers = demo["auth_headers"]
+    edited = client.patch(
+        f"/api/responses/{response_id}",
+        headers=headers,
+        json={"edited_text": "形成版本历史。", "reason": "建立可读取的人工版本"},
+    )
+    assert edited.status_code == 200
+
+    other_headers = {
+        "X-Tenant-ID": str(uuid4()),
+        "X-User-ID": demo["user_id"],
+        "X-Role": "admin",
+    }
+    assert client.get(
+        f"/api/responses/{response_id}/revisions",
+        headers=other_headers,
+    ).status_code == 404
+    assert client.get(
+        f"/api/responses/{response_id}/revisions/99",
+        headers=headers,
+    ).status_code == 404

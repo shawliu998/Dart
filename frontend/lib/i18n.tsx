@@ -533,6 +533,7 @@ const englishCopy: Record<string, string> = {
   "使用 / Claims": "Usage / claims",
   "当前版本": "Current version",
   "版本": "Version",
+  "版本历史": "Version history",
   "当前没有可复核的企业材料": "No company evidence to review",
   "企业材料数据暂时不可用": "Company evidence is temporarily unavailable",
   "未能读取企业材料，当前页面不会显示替代数据。":
@@ -597,6 +598,9 @@ const englishCopy: Record<string, string> = {
     "This response is missing evidence. Add it and save before approval.",
   "正文有未保存修改，请先保存并复核，再批准当前版本。":
     "The response has unsaved changes. Save it for review before approving this version.",
+  "响应内容未变化": "No content changes",
+  "仅记录人工批准事件": "Approval event only",
+  "所选版本的响应正文相同": "The selected versions have identical response text",
   "整改任务": "Remediation tasks",
   "整改任务列表": "Remediation task list",
   "任务列表": "Task list",

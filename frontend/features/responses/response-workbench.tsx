@@ -7,6 +7,7 @@ import {
   CheckCircle as CheckCircle2,
   FileText,
   FloppyDisk as Save,
+  ClockCounterClockwise,
   Keyboard,
   MagnifyingGlass as Search,
   WarningCircle as AlertOctagon,
@@ -16,6 +17,7 @@ import { DataUnavailableState } from "@/components/feedback/data-unavailable-sta
 import { MutationFeedback, type MutationResult } from "@/components/feedback/mutation-feedback";
 import type { DataSource } from "@/lib/phase-data/types";
 import { responseApi, type TenderResponse } from "@/lib/api/responses";
+import { ResponseVersionPanel } from "./response-version-panel";
 
 const statusLabels: Record<TenderResponse["status"], string> = { not_started: "未开始", drafted: "草稿待编辑", needs_review: "待人工复核", missing_evidence: "缺少材料", approved: "已批准", excluded: "不适用" };
 const conciseStatusLabels: Record<TenderResponse["status"], string> = { ...statusLabels, drafted: "草稿", needs_review: "待复核", missing_evidence: "缺材料" };
@@ -273,6 +275,7 @@ function ResponseEditor({ item, draft, reason, position, total, dirty, cannotApp
   onApprove: () => void;
   onReview: () => void;
 }) {
+  const [versionsOpen, setVersionsOpen] = useState(false);
   const requirementTitle = item.requirement?.title || item.strategy;
   const category = item.requirement?.category ? categoryLabels[item.requirement.category] ?? item.requirement.category : "响应草稿";
   return <section className="response-entry-expanded" data-dirty={dirty}>
@@ -280,12 +283,13 @@ function ResponseEditor({ item, draft, reason, position, total, dirty, cannotApp
     <div className="response-entry-context">
       <p><strong>标准化要求</strong><span>{item.requirement?.normalizedText || "暂未返回标准化要求。"}</span></p>
       <p><strong>编制要点</strong><span>{item.strategy}</span></p>
-      <small>{category} · 第 {position} / {total} 条 · 版本 {item.version}</small>
+      <small>{category} · 第 {position} / {total} 条 · 内容 v{item.revisionNumber}</small>
     </div>
     {item.missingInformation.length > 0 && <aside className="response-missing"><AlertOctagon size={17} weight="fill" /><span><strong>{cannotApprove ? "尚缺材料，补充后再复核" : "仍有待人工补充内容"}</strong><small>{item.missingInformation.join("；")}</small></span></aside>}
     <div className="response-compose">
-      <div className="response-compose-head"><strong>响应正文</strong><span className={dirty ? "dirty" : ""}>{dirty ? "有未保存修改" : `已保存 · 第 ${item.version} 版`}</span></div>
+      <div className="response-compose-head"><strong>响应正文</strong><div><span className={dirty ? "dirty" : ""}>{dirty ? "有未保存修改" : `已保存 · v${item.revisionNumber}`}</span><button type="button" aria-expanded={versionsOpen} onClick={() => setVersionsOpen((current) => !current)}><ClockCounterClockwise size={14} />版本历史</button></div></div>
       <label className="response-draft"><span className="sr-only">投标响应正文</span><textarea value={draft} onChange={(event) => onDraft(event.target.value)} aria-label="投标响应内容" /></label>
+      <ResponseVersionPanel responseId={item.id} currentRevisionNumber={item.revisionNumber} open={versionsOpen} onClose={() => setVersionsOpen(false)} />
     </div>
     <ResponseSources item={item} cannotApprove={cannotApprove} onReview={onReview} />
     <div className="response-entry-review">

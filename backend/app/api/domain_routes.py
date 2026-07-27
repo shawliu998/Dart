@@ -27,7 +27,9 @@ from app.models.entities import (
     Requirement,
     ResponseEvidenceLink,
     ResponseItem,
+    ResponseRevision,
     SubmissionPackage,
+    User,
 )
 from app.schemas.domain import (
     AmendmentAnalyze,
@@ -42,6 +44,8 @@ from app.schemas.domain import (
     PackageItemUpdate,
     ResponseEdit,
     ResponseItemRead,
+    ResponseRevisionRead,
+    ResponseRevisionSummary,
     TaskCreate,
     TaskDecision,
     TaskUpdate,
@@ -183,17 +187,29 @@ def _response_read(db: Session, item: ResponseItem) -> dict:
     return _response_reads(db, [item])[item.id]
 
 
-def _get_response_item(db: Session, principal: Principal, response_id: UUID) -> ResponseItem:
-    item = db.scalar(
-        select(ResponseItem).where(
-            ResponseItem.id == response_id,
-            ResponseItem.tenant_id == principal.tenant_id,
-        )
+def _get_response_item(
+    db: Session,
+    principal: Principal,
+    response_id: UUID,
+    *,
+    for_update: bool = False,
+) -> ResponseItem:
+    statement = select(ResponseItem).where(
+        ResponseItem.id == response_id,
+        ResponseItem.tenant_id == principal.tenant_id,
     )
+    if for_update:
+        statement = statement.with_for_update()
+    item = db.scalar(statement)
     if item is None:
         raise HTTPException(status_code=404, detail="response item not found")
     get_project(db, principal, item.project_id)
     return item
+
+
+def _revision_read(db: Session, revision: ResponseRevision) -> dict:
+    actor_name = db.scalar(select(User.name).where(User.id == revision.created_by))
+    return {**model_dict(revision), "created_by_name": actor_name}
 
 
 @router.post("/evidence", response_model=EvidenceRead, status_code=201)
@@ -339,13 +355,18 @@ def edit_response(
     principal: Principal = Depends(get_principal),
 ):
     require_write(principal)
-    item = _get_response_item(db, principal, response_id)
+    item = _get_response_item(db, principal, response_id, for_update=True)
+    current_text = item.edited_text if item.edited_text is not None else item.draft_text
+    if current_text == data.edited_text:
+        return _response_read(db, item)
+    response_service.ensure_response_baseline(db, item)
     before = {"edited_text": item.edited_text, "status": item.status}
     item.edited_text = data.edited_text
     item.status = "needs_review"
     item.reviewed_by = None
     item.reviewed_at = None
     item.version += 1
+    response_service.append_response_revision(db, principal, item, "edited")
     append_event(
         db,
         principal,
@@ -361,6 +382,52 @@ def edit_response(
     return _response_read(db, item)
 
 
+@router.get(
+    "/responses/{response_id}/revisions",
+    response_model=list[ResponseRevisionSummary],
+)
+def list_response_revisions(
+    response_id: UUID,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+):
+    item = _get_response_item(db, principal, response_id)
+    revisions = list(
+        db.scalars(
+            select(ResponseRevision)
+            .where(
+                ResponseRevision.response_item_id == item.id,
+                ResponseRevision.tenant_id == principal.tenant_id,
+            )
+            .order_by(ResponseRevision.revision_number.desc())
+        )
+    )
+    return [_revision_read(db, revision) for revision in revisions]
+
+
+@router.get(
+    "/responses/{response_id}/revisions/{revision_number}",
+    response_model=ResponseRevisionRead,
+)
+def get_response_revision(
+    response_id: UUID,
+    revision_number: int,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+):
+    item = _get_response_item(db, principal, response_id)
+    revision = db.scalar(
+        select(ResponseRevision).where(
+            ResponseRevision.response_item_id == item.id,
+            ResponseRevision.revision_number == revision_number,
+            ResponseRevision.tenant_id == principal.tenant_id,
+        )
+    )
+    if revision is None:
+        raise HTTPException(status_code=404, detail="response revision not found")
+    return _revision_read(db, revision)
+
+
 @router.post("/responses/{response_id}/approve", response_model=ResponseItemRead)
 def approve_response(
     response_id: UUID,
@@ -369,7 +436,7 @@ def approve_response(
     principal: Principal = Depends(get_principal),
 ):
     require_review(principal)
-    item = _get_response_item(db, principal, response_id)
+    item = _get_response_item(db, principal, response_id, for_update=True)
     if item.status not in {"drafted", "needs_review"}:
         raise HTTPException(status_code=409, detail="response item is not ready for approval")
     return _response_read(db, response_service.approve_response(db, principal, item, data.reason))

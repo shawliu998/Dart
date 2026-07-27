@@ -402,8 +402,46 @@ class ResponseItem(UUIDAuditMixin, Base):
     risk_notes: Mapped[list] = mapped_column(JSON, default=list)
     confidence: Mapped[Decimal | None] = mapped_column(Numeric(4, 3), nullable=True)
     generation_version: Mapped[int] = mapped_column(Integer, default=1)
+    revision_number: Mapped[int] = mapped_column(Integer, default=1)
     reviewed_by: Mapped[UUID | None] = mapped_column(nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+
+
+class ResponseRevision(Base):
+    """An immutable, user-visible snapshot of a response item."""
+
+    __tablename__ = "response_revisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "response_item_id",
+            "revision_number",
+            name="uq_response_revision_number",
+        ),
+        CheckConstraint(
+            "event_type IN ('baseline', 'generated', 'edited', 'approved')",
+            name="ck_response_revisions_event_type",
+        ),
+        Index(
+            "ix_response_revisions_item_number",
+            "response_item_id",
+            "revision_number",
+        ),
+        Index("ix_response_revisions_tenant", "tenant_id"),
+    )
+
+    id: Mapped[UUID] = mapped_column(primary_key=True, default=uuid4)
+    tenant_id: Mapped[UUID]
+    response_item_id: Mapped[UUID] = mapped_column(
+        ForeignKey("response_items.id"), index=True
+    )
+    revision_number: Mapped[int] = mapped_column(Integer)
+    event_type: Mapped[str] = mapped_column(String(20))
+    draft_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    edited_text: Mapped[str | None] = mapped_column(Text, nullable=True)
+    status: Mapped[str] = mapped_column(String(30))
+    generation_version: Mapped[int] = mapped_column(Integer)
+    created_by: Mapped[UUID]
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
 class ResponseEvidenceLink(UUIDAuditMixin, Base):

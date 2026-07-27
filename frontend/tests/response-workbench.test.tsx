@@ -3,11 +3,12 @@ import userEvent from "@testing-library/user-event";
 import { vi } from "vitest";
 
 import { ResponseWorkbench } from "@/features/responses/response-workbench";
+import { diffResponseText } from "@/features/responses/response-diff";
 import { mapResponseDto, responseApi, type TenderResponse } from "@/lib/api/responses";
 
 const response: TenderResponse = {
   id: "rsp-1", projectId: "p-1", requirementId: "req-1", status: "drafted", strategy: "引用已接受的项目经理证书", draftText: "我方已配置符合要求的项目经理。", editedText: null,
-  missingInformation: [], riskNotes: ["请核验证书有效期"], confidence: .86, generationVersion: 1, version: 1, evidenceClaimIds: ["claim-1"],
+  missingInformation: [], riskNotes: ["请核验证书有效期"], confidence: .86, generationVersion: 1, revisionNumber: 1, version: 1, evidenceClaimIds: ["claim-1"],
   requirement: { code: "REQ-001", title: "项目经理资质", category: "qualification", normalizedText: "项目经理须具备有效资格证书。", mandatory: true, riskLevel: "high" },
   requirementSource: { documentId: "doc-1", filename: "招标文件.pdf", version: 1, page: 3, clause: "3.1", excerpt: "项目经理须具备有效资格证书。", bbox: null },
   evidenceSources: [{ claimId: "claim-1", assetId: "asset-1", assetName: "项目经理证书", documentId: "doc-2", filename: "项目经理证书.pdf", documentVersion: 1, claimType: "certificate", subject: "张工", predicate: "持有", value: "项目经理证书", validTo: null, page: 1, excerpt: "项目经理资格证书", confidence: .92, humanVerified: true }],
@@ -17,13 +18,13 @@ const responses: TenderResponse[] = [
   {
     id: "response-1", projectId: "project-1", requirementId: "REQ-001", status: "needs_review",
     strategy: "实施方案", draftText: "第一条响应", editedText: null, missingInformation: [], riskNotes: [],
-    confidence: 0.82, generationVersion: 1, version: 1, evidenceClaimIds: ["claim-1"],
+    confidence: 0.82, generationVersion: 1, revisionNumber: 1, version: 1, evidenceClaimIds: ["claim-1"],
     requirement: { code: "REQ-001", title: "实施方案", category: "technical", normalizedText: "提交实施方案。", mandatory: true, riskLevel: "high" }, requirementSource: null, evidenceSources: [],
   },
   {
     id: "response-2", projectId: "project-1", requirementId: "REQ-002", status: "missing_evidence",
     strategy: "人员资质", draftText: "第二条响应", editedText: null, missingInformation: ["项目经理证书"], riskNotes: [],
-    confidence: 0.66, generationVersion: 1, version: 1, evidenceClaimIds: [],
+    confidence: 0.66, generationVersion: 1, revisionNumber: 1, version: 1, evidenceClaimIds: [],
     requirement: { code: "REQ-002", title: "人员资质", category: "personnel", normalizedText: "提供项目经理证书。", mandatory: true, riskLevel: "high" }, requirementSource: null, evidenceSources: [],
   },
 ];
@@ -160,5 +161,83 @@ describe("ResponseWorkbench", () => {
     const mapped = mapResponseDto({ id: "rsp", project_id: "p", requirement_id: "r", status: "drafted", evidence_sources: [{ claim_id: "claim", asset_id: "asset", document_id: "doc", filename: "材料.pdf", claim_type: "certificate", subject: "主体", predicate: "拥有", value: "证书", page: null, confidence: null }], requirement_source: { document_id: "tender", filename: "招标文件.pdf", version: 1, page: null, bbox: null } });
     expect(mapped.requirementSource).toBeNull();
     expect(mapped.evidenceSources).toEqual([]);
+  });
+
+  it("loads version history only when opened and defaults to latest versus previous", async () => {
+    const user = userEvent.setup();
+    const summaries = [
+      { id: "rev-3", responseItemId: "rsp-1", revisionNumber: 3, eventType: "edited" as const, status: "needs_review" as const, generationVersion: 1, createdBy: "user-1", createdByName: "刘畅", createdAt: "2026-07-27T10:30:00Z" },
+      { id: "rev-2", responseItemId: "rsp-1", revisionNumber: 2, eventType: "edited" as const, status: "needs_review" as const, generationVersion: 1, createdBy: "user-1", createdByName: "刘畅", createdAt: "2026-07-27T10:20:00Z" },
+      { id: "rev-1", responseItemId: "rsp-1", revisionNumber: 1, eventType: "generated" as const, status: "drafted" as const, generationVersion: 1, createdBy: "user-1", createdByName: "刘畅", createdAt: "2026-07-27T10:10:00Z" },
+    ];
+    const listRevisions = vi.spyOn(responseApi, "listRevisions").mockResolvedValue(summaries);
+    const getRevision = vi.spyOn(responseApi, "getRevision").mockImplementation(async (_id, revisionNumber) => ({
+      ...summaries.find((revision) => revision.revisionNumber === revisionNumber)!,
+      draftText: "原始响应内容",
+      editedText: revisionNumber === 3 ? "调整后的响应内容" : revisionNumber === 2 ? "上一版响应内容" : null,
+    }));
+
+    render(<ResponseWorkbench projectId="p-1" initialResponses={[{ ...response, revisionNumber: 3 }]} source="api" />);
+    expect(listRevisions).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "版本历史" }));
+    expect(await screen.findByLabelText("响应版本历史")).toBeInTheDocument();
+    expect(listRevisions).toHaveBeenCalledWith("rsp-1");
+    expect(await screen.findByText("调整后的响应内容")).toBeInTheDocument();
+    expect(screen.getByLabelText("对比起始版本")).toHaveValue("2");
+    expect(screen.getByLabelText("对比目标版本")).toHaveValue("3");
+    expect(getRevision).toHaveBeenCalledWith("rsp-1", 2);
+    expect(getRevision).toHaveBeenCalledWith("rsp-1", 3);
+
+    await user.selectOptions(screen.getByLabelText("对比起始版本"), "1");
+    expect(await screen.findByText("原始响应内容")).toBeInTheDocument();
+    expect(getRevision).toHaveBeenCalledWith("rsp-1", 1);
+    listRevisions.mockRestore();
+    getRevision.mockRestore();
+  });
+
+  it("shows a truthful single-version state instead of a fake comparison", async () => {
+    const user = userEvent.setup();
+    const listRevisions = vi.spyOn(responseApi, "listRevisions").mockResolvedValue([
+      { id: "rev-1", responseItemId: "rsp-1", revisionNumber: 1, eventType: "generated", status: "drafted", generationVersion: 1, createdBy: "user-1", createdByName: "刘畅", createdAt: "2026-07-27T10:10:00Z" },
+    ]);
+    const getRevision = vi.spyOn(responseApi, "getRevision");
+    render(<ResponseWorkbench projectId="p-1" initialResponses={[response]} source="api" />);
+    await user.click(screen.getByRole("button", { name: "版本历史" }));
+    expect(await screen.findByText("目前只有一个版本")).toBeInTheDocument();
+    expect(screen.queryByLabelText("对比起始版本")).not.toBeInTheDocument();
+    expect(getRevision).not.toHaveBeenCalled();
+    listRevisions.mockRestore();
+    getRevision.mockRestore();
+  });
+
+  it("explains an approval-only revision without implying a text change", async () => {
+    const user = userEvent.setup();
+    const summaries = [
+      { id: "rev-4", responseItemId: "rsp-1", revisionNumber: 4, eventType: "approved" as const, status: "approved" as const, generationVersion: 1, createdBy: "user-1", createdByName: "刘畅", createdAt: "2026-07-27T10:40:00Z" },
+      { id: "rev-3", responseItemId: "rsp-1", revisionNumber: 3, eventType: "edited" as const, status: "needs_review" as const, generationVersion: 1, createdBy: "user-1", createdByName: "刘畅", createdAt: "2026-07-27T10:30:00Z" },
+    ];
+    const listRevisions = vi.spyOn(responseApi, "listRevisions").mockResolvedValue(summaries);
+    const getRevision = vi.spyOn(responseApi, "getRevision").mockImplementation(async (_id, revisionNumber) => ({
+      ...summaries.find((revision) => revision.revisionNumber === revisionNumber)!,
+      draftText: "原始响应内容",
+      editedText: "批准时未修改的响应内容",
+    }));
+
+    render(<ResponseWorkbench projectId="p-1" initialResponses={[{ ...response, revisionNumber: 4 }]} source="api" />);
+    await user.click(screen.getByRole("button", { name: "版本历史" }));
+    expect(await screen.findByText("响应内容未变化")).toBeInTheDocument();
+    expect(screen.getByText("v4 · 仅记录人工批准事件")).toBeInTheDocument();
+
+    listRevisions.mockRestore();
+    getRevision.mockRestore();
+  });
+
+  it("builds deterministic changed, removed and added response blocks", () => {
+    expect(diffResponseText("保留段落\n删除段落\n共同结尾", "保留段落\n共同结尾\n新增段落")).toEqual([
+      { before: "保留段落", after: "保留段落", kind: "same" },
+      { before: "删除段落", after: null, kind: "removed" },
+      { before: "共同结尾", after: "共同结尾", kind: "same" },
+      { before: null, after: "新增段落", kind: "added" },
+    ]);
   });
 });

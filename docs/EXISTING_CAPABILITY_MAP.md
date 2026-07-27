@@ -43,14 +43,14 @@
 - 草稿正文编辑、修改原因、保存和批准；
 - 缺材料阻止批准；
 - API 失败与空列表区分；
-- 版本号、置信度、风险提示和证据 Claim ID；
+- 用户可见内容版本号、不可变版本历史、任意版本比较、置信度、风险提示和证据 Claim ID；
 - 对应实现：`frontend/features/responses/response-workbench.tsx`、`frontend/lib/api/responses.ts`。
 
 ### 后端已有
 
 - 项目响应列表、人工编辑、人工批准 API；
-- 编辑后重新进入复核、版本递增、理由和人工动作审计；
-- `ResponseItem`、`ResponseEvidenceLink` 和确定性草稿生成服务；
+- 编辑后重新进入复核、内容版本递增、理由和人工动作审计；
+- `ResponseItem`、不可变 `ResponseRevision`、`ResponseEvidenceLink` 和确定性草稿生成服务；
 - Requirement、Source、Document、EvidenceClaim 与 ResponseEvidenceLink 已有底层关系，可供原响应列表端点聚合；基线响应 DTO 只暴露 Claim ID，尚未完整暴露要求原文和证据来源；
 - 对应实现：`backend/app/api/domain_routes.py`、`backend/app/schemas/domain.py`、`backend/app/services/responses.py`。
 
@@ -68,18 +68,17 @@
 - 不新建平行 response API、DTO、状态枚举或审批流程；
 - 不重写现有保存、批准、键盘复核和错误反馈；
 - 不新建通用富文本编辑器、聊天侧栏或第二套文档查看器；
-- 不因为竞品有版本按钮就伪造版本历史；现有 `version` 只表示当前版本，历史比较需要后续真实契约。
+- 不新增恢复/回滚或平行版本端点；现有只读历史继续复用 `ResponseRevision` 与原工作台内的版本面板。
 
 ## 4. 尚未完整具备的竞品能力
 
 以下能力可以进入后续差距清单，但必须继续优先复用现有模型：
 
 1. 响应编制的连续文档大纲、章节级负责人和复核人。
-2. 响应版本历史、版本比较和不可变快照。
-3. 章节评论、@协作和复核队列。
-4. 从企业材料/历史响应中检索并插入已批准内容。
-5. 响应内容的 DOCX 预览、样式模板和独立导出入口。
-6. 大批量响应的批量分派、批量状态更新和批量复核。
+2. 章节评论、@协作和复核队列。
+3. 从企业材料/历史响应中检索并插入已批准内容。
+4. 响应内容的 DOCX 预览、样式模板和独立导出入口。
+5. 大批量响应的批量分派、批量状态更新和批量复核。
 
 这些是“缺失或部分缺失”，不是当前页面全部推倒重建的理由。
 

@@ -6,7 +6,7 @@
 
 推荐 description：
 
-> BidEvidence: an agent-native bidding workspace for durable, bounded runs and human-controlled bid decisions.
+> BidEvidence: a traceable bidding workspace connecting requirements, evidence, responses, and human review.
 
 如果使用中文：
 
@@ -35,7 +35,7 @@
 
 `docs/assets/portfolio/social-preview-agent-native.png`
 
-它以真实合规审阅截图为主体，只增加一条清晰的 Agent loop：Observe → Plan → Act → Verify → Human gate → Resume。展示重点是持久化运行、封闭工具、类型化产物和人工决策，而不是通用聊天界面。
+它以真实合规审阅截图为主体，首屏先说明要求、证据、响应与人工复核；底部的 Observe → Plan → Act → Verify → Human gate → Resume 只作为运行机制证据，不把 `agent-native` 当作主口号。
 
 ## 发布前检查
 
