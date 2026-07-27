@@ -1,5 +1,11 @@
 import { expect, test } from "@playwright/test";
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("bidevidence.locale", "zh");
+  });
+});
+
 test("project list opens the compliance workbench and source citation", async ({ page }) => {
   await page.goto("/projects");
   await expect(page.getByRole("heading", { name: "项目" })).toBeVisible();

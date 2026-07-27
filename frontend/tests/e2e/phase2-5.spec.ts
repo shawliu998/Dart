@@ -8,6 +8,12 @@ const demoIdentityHeaders = {
   "X-Role": "admin",
 };
 
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    window.localStorage.setItem("bidevidence.locale", "zh");
+  });
+});
+
 test("legacy login route redirects to the project workbench", async ({
   page,
 }) => {
