@@ -1,7 +1,8 @@
 SHELL := /bin/bash
 .DEFAULT_GOAL := help
+PYTHON ?= $(if $(wildcard backend/.venv/bin/python),backend/.venv/bin/python,python3)
 
-.PHONY: help setup dev dev-infra down logs test lint seed demo generate-demo verify-demo acceptance acceptance-api verify desktop-dev desktop-build desktop-test verify-desktop clean
+.PHONY: help setup dev dev-infra down logs test lint seed demo generate-demo verify-demo eval-requirements acceptance acceptance-api acceptance-agent verify desktop-dev desktop-build desktop-test verify-desktop clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "BidEvidence commands:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -34,16 +35,22 @@ demo: ## Build/start/seed the complete local demo and create acceptance artifact
 	bash scripts/demo.sh
 
 generate-demo: ## Rebuild deterministic PDF/DOCX/XLSX demo documents
-	python3 scripts/generate_demo_assets.py
+	$(PYTHON) scripts/generate_demo_assets.py
 
 verify-demo: ## Validate fixture inventory, formats, hashes and expected results
-	python3 scripts/verify_demo.py
+	$(PYTHON) scripts/verify_demo.py
+
+eval-requirements: ## Validate the requirement-extraction eval dataset offline (never calls a model)
+	$(PYTHON) scripts/evaluate_requirements.py
 
 acceptance: ## Validate Phase 0-5 oracle and build a local preview ZIP/manifest
-	python3 scripts/acceptance_mvp.py --artifacts-dir .data/acceptance --clean
+	$(PYTHON) scripts/acceptance_mvp.py --artifacts-dir .data/acceptance --clean
 
 acceptance-api: ## Validate a seeded running API and its real ZIP/audit artifacts
 	python3 scripts/acceptance_api.py --artifacts-dir .data/service-acceptance --clean
+
+acceptance-agent: ## Validate a complete autonomous draft run against a seeded API
+	python3 scripts/acceptance_agent.py --artifacts-dir .data/agent-acceptance
 
 verify: ## Run the complete local delivery gate including E2E and production build
 	bash scripts/verify.sh

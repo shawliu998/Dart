@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import re
 import shutil
 import tempfile
 import zipfile
@@ -57,14 +58,16 @@ def validate_reference(reference: str, files: dict[str, Path]) -> None:
         require(page == 1, f"演示OOXML仅声明第1页：{reference}")
         return
     data = path.read_bytes()
-    marker = b"/Type /Pages /Kids"
-    location = data.find(marker)
-    require(location >= 0, f"PDF缺少页面树：{filename}")
-    segment = data[location : location + 500]
-    try:
-        count = int(segment.split(b"/Count ", 1)[1].split(b" ", 1)[0])
-    except (IndexError, ValueError) as exc:
-        raise SystemExit(f"MVP验收失败：无法读取PDF页数：{filename}") from exc
+    page_tree = re.search(
+        rb"/Count\s+(\d+)\s+/Kids\s*\[[^\]]*\]\s+/Type\s+/Pages\b", data
+    )
+    if page_tree:
+        count = int(page_tree.group(1))
+    else:
+        # Some valid producers order page-tree keys differently. Counting /Page
+        # dictionaries is a safe fallback for these small, non-incremental fixtures.
+        count = len(re.findall(rb"/Type\s*/Page\b", data))
+    require(count > 0, f"PDF缺少可读页面树：{filename}")
     require(page <= count, f"来源页码越界：{reference}，文档共{count}页")
 
 

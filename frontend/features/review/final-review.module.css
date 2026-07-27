@@ -1,0 +1,397 @@
+.summary {
+  min-height: 56px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  margin-bottom: 12px;
+  padding: 10px 14px;
+  background: #fff;
+  border-block: 1px solid var(--line);
+}
+
+.summary > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.summary strong {
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.summary > div > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.summaryState,
+.count {
+  flex-shrink: 0;
+  padding: 3px 7px;
+  border-radius: 3px;
+  font-size: 10px;
+  font-weight: 700;
+}
+
+.summaryState.attention,
+.count.attention {
+  color: #875516;
+  background: #fff5e5;
+}
+
+.summaryState.ready,
+.count.ready {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.count.fatal {
+  color: var(--fatal);
+  background: var(--fatal-bg);
+}
+
+.layout {
+  min-height: 590px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 330px;
+  align-items: start;
+  gap: 12px;
+}
+
+.queue {
+  min-width: 0;
+  overflow: hidden;
+  border-radius: 5px;
+  box-shadow: none;
+}
+
+.queue :global(.panel-header) {
+  min-height: 59px;
+}
+
+.queue :global(.panel-header) > span {
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.reviewList {
+  display: grid;
+}
+
+.reviewRow {
+  min-height: 67px;
+  display: grid;
+  grid-template-columns: 26px 19px minmax(220px, 1fr) 58px 92px;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 13px;
+  background: #fff;
+  border-top: 1px solid var(--line);
+}
+
+.reviewRow:hover {
+  background: #fafcfc;
+}
+
+.reviewState {
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+}
+
+.reviewState.fatal {
+  color: var(--fatal);
+  background: var(--fatal-bg);
+}
+
+.reviewState.attention {
+  color: var(--warning);
+  background: var(--warning-bg);
+}
+
+.reviewState.ready {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+.sequence {
+  color: #8b969d;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.reviewRow > div {
+  min-width: 0;
+  display: grid;
+  gap: 4px;
+}
+
+.reviewRow strong {
+  color: var(--ink);
+  font-size: 12px;
+}
+
+.reviewRow small {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.reviewRow > a,
+.packageStatus > a {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 4px;
+  color: var(--review);
+  font-size: 11px;
+  font-weight: 700;
+  text-decoration: none;
+}
+
+.reviewRow > a:hover,
+.packageStatus > a:hover {
+  color: var(--teal);
+  text-decoration: underline;
+  text-underline-offset: 3px;
+}
+
+.side {
+  display: grid;
+  gap: 12px;
+}
+
+.packageStatus,
+.approval {
+  overflow: hidden;
+  border-radius: 5px;
+  box-shadow: none;
+}
+
+.packageStatus > header,
+.approval > header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 12px 13px;
+  border-bottom: 1px solid var(--line);
+}
+
+.packageStatus > header > div,
+.approval > header > div {
+  min-width: 0;
+  display: grid;
+  gap: 3px;
+}
+
+.packageStatus h2,
+.approval h2 {
+  margin: 0;
+  color: var(--ink);
+  font-size: 13px;
+}
+
+.packageStatus header p,
+.approval header p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.packageStatus > header > svg,
+.approval > header > svg {
+  flex-shrink: 0;
+  color: var(--teal);
+}
+
+.packageStatus dl {
+  margin: 0;
+}
+
+.packageStatus dl > div {
+  display: grid;
+  grid-template-columns: 86px minmax(0, 1fr);
+  gap: 8px;
+  padding: 9px 13px;
+  border-bottom: 1px solid #e9edef;
+}
+
+.packageStatus dt {
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.packageStatus dd {
+  margin: 0;
+  color: #3d484e;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.packageStatus > a {
+  padding: 10px 13px;
+}
+
+.approval > header {
+  justify-content: flex-start;
+}
+
+.approval > label {
+  display: grid;
+  gap: 6px;
+  padding: 12px 13px 0;
+}
+
+.approval > label > span {
+  color: #47535a;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.approval textarea {
+  min-height: 88px;
+  padding: 9px 10px;
+  resize: vertical;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid var(--line-strong);
+  border-radius: 4px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.approval textarea:focus-visible {
+  border-color: var(--focus);
+  outline: 2px solid rgb(22 133 209 / 18%);
+  outline-offset: 1px;
+}
+
+.approval footer {
+  display: grid;
+  gap: 10px;
+  padding: 10px 13px 13px;
+}
+
+.approval footer small {
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.45;
+}
+
+.approval footer button {
+  width: 100%;
+  justify-content: center;
+}
+
+.pending {
+  margin: 0;
+  padding: 13px;
+  color: var(--muted);
+  background: #f8fafb;
+  font-size: 11px;
+  line-height: 1.55;
+}
+
+.approvalError,
+.approvalSuccess {
+  margin: 0 13px 13px;
+  padding: 8px 9px;
+  border-radius: 4px;
+  font-size: 11px;
+  line-height: 1.45;
+}
+
+.approvalError {
+  color: var(--fatal);
+  background: var(--fatal-bg);
+}
+
+.approvalSuccess {
+  color: var(--success);
+  background: var(--success-bg);
+}
+
+@media (max-width: 980px) {
+  .layout {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .side {
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 680px) {
+  .summary {
+    align-items: flex-start;
+    gap: 9px;
+    margin-inline: -12px;
+    padding-inline: 12px;
+  }
+
+  .summary > div > span {
+    line-height: 1.45;
+  }
+
+  .layout {
+    min-height: 0;
+    padding-bottom: 72px;
+  }
+
+  .queue :global(.panel-header) {
+    align-items: flex-start;
+  }
+
+  .queue :global(.panel-header) > span {
+    display: none;
+  }
+
+  .reviewRow {
+    grid-template-columns: 25px minmax(0, 1fr) auto;
+    gap: 8px;
+    min-height: 76px;
+    padding: 10px;
+  }
+
+  .reviewRow .sequence {
+    display: none;
+  }
+
+  .reviewRow > div {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+  }
+
+  .reviewRow small {
+    white-space: normal;
+    line-height: 1.45;
+  }
+
+  .reviewRow .count {
+    grid-column: 3;
+    grid-row: 1;
+  }
+
+  .reviewRow > a {
+    grid-column: 3;
+    grid-row: 2;
+    align-self: end;
+  }
+
+  .side {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .approval footer button {
+    min-height: 40px;
+  }
+}

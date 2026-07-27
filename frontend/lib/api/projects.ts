@@ -48,21 +48,93 @@ type JobDto = {
   status?: string;
 };
 
+export type ProjectDocument = {
+  id: string;
+  projectId: string;
+  filename: string;
+  documentType: string;
+  mimeType: string;
+  size: number;
+  parseRevision: number;
+  parseStatus: string;
+  pageCount: number;
+  createdAt: string;
+};
+
+type DocumentDto = {
+  id: string;
+  project_id: string;
+  filename: string;
+  document_type: string;
+  mime_type: string;
+  size: number;
+  parse_revision: number;
+  parse_status: string;
+  page_count: number;
+  created_at: string;
+};
+
+export function mapDocumentDto(dto: DocumentDto): ProjectDocument {
+  return {
+    id: dto.id,
+    projectId: dto.project_id,
+    filename: dto.filename,
+    documentType: dto.document_type,
+    mimeType: dto.mime_type,
+    size: dto.size,
+    parseRevision: dto.parse_revision,
+    parseStatus: dto.parse_status,
+    pageCount: dto.page_count,
+    createdAt: dto.created_at,
+  };
+}
+
 const reviewStatusMap: Record<string, Requirement["status"]> = {
   satisfied: "met", missing_evidence: "missing", manual_review: "review", unreviewed: "review", not_satisfied: "failed", conflict: "conflict",
 };
 
+const projectStageMap: Record<string, string> = {
+  file_ingestion: "文件导入",
+  ingesting: "文件导入",
+  requirement_review: "要求确认",
+  compliance_review: "合规审阅",
+  evidence_matching: "证据匹配",
+  response_drafting: "标书编制",
+  remediation: "整改处理",
+  packaging: "文件封装",
+  final_review: "最终复核",
+  completed: "已完成",
+};
+
+function formatShanghaiDate(value: unknown, fallback: string): string {
+  if (typeof value !== "string" || !value.trim()) return fallback;
+  const parsed = new Date(value);
+  if (Number.isNaN(parsed.getTime())) return value;
+  const parts = new Intl.DateTimeFormat("zh-CN", {
+    timeZone: "Asia/Shanghai",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+    hourCycle: "h23",
+  }).formatToParts(parsed);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find((item) => item.type === type)?.value ?? "";
+  return `${part("year")}-${part("month")}-${part("day")} ${part("hour")}:${part("minute")}`;
+}
+
 export function mapProjectDto(dto: ProjectDto): Project {
+  const rawStage = String(dto.stage ?? dto.current_stage ?? "draft");
   return {
     id: String(dto.id ?? ""), name: String(dto.name ?? "未命名项目"),
     buyerName: String(dto.buyerName ?? dto.buyer_name ?? "未填写采购人"),
     projectCode: String(dto.projectCode ?? dto.project_code ?? "未编号"),
-    stage: String(dto.stage ?? dto.current_stage ?? "草稿"),
+    stage: projectStageMap[rawStage] ?? rawStage,
     progress: Number(dto.progress ?? dto.completion_percentage ?? 0),
     highRiskCount: Number(dto.highRiskCount ?? dto.high_risk_count ?? 0),
     taskCount: Number(dto.taskCount ?? dto.task_count ?? 0),
-    deadline: String(dto.deadline ?? "待确定"), owner: String(dto.owner ?? "未分配"),
-    updatedAt: String(dto.updatedAt ?? dto.updated_at ?? "刚刚"),
+    deadline: formatShanghaiDate(dto.deadline, "待确定"), owner: String(dto.owner ?? "未分配"),
+    updatedAt: formatShanghaiDate(dto.updatedAt ?? dto.updated_at, "刚刚"),
     risk: dto.risk ?? dto.risk_level ?? "low",
   };
 }
@@ -109,6 +181,10 @@ export const projectApi = {
   async disqualifications(projectId: string): Promise<DisqualificationItem[]> {
     return remoteOrFallback(() => apiRequest<DisqualificationDto[]>(`/api/projects/${projectId}/disqualifications`), disqualifications, mapDisqualificationDto);
   },
+  async documents(projectId: string): Promise<ProjectDocument[]> {
+    if (useDemo) return [];
+    return (await apiRequest<DocumentDto[]>(`/api/projects/${projectId}/documents`)).map(mapDocumentDto);
+  },
   async create(input: { name: string; projectCode?: string; buyerName?: string }): Promise<Project> {
     const dto = await apiRequest<ProjectDto>("/api/projects", { method: "POST", body: JSON.stringify({ name: input.name, project_code: input.projectCode || "待提取", buyer_name: input.buyerName || "待提取", status: "draft", current_stage: "ingesting" }) });
     return mapProjectDto(dto);
@@ -119,6 +195,10 @@ export const projectApi = {
   },
   async parseDocument(documentId: string): Promise<{ job_id?: string; status?: string }> {
     const job = await apiRequest<JobDto>(`/api/documents/${documentId}/parse`, { method: "POST" });
+    return { job_id: job.job_id ?? job.id, status: job.status };
+  },
+  async reanalyzeDocument(documentId: string): Promise<{ job_id?: string; status?: string }> {
+    const job = await apiRequest<JobDto>(`/api/documents/${documentId}/reanalyze`, { method: "POST" });
     return { job_id: job.job_id ?? job.id, status: job.status };
   },
   async extractRequirements(projectId: string, documentId: string): Promise<{ job_id?: string; status?: string }> {

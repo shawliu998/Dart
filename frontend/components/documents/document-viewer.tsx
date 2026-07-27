@@ -14,6 +14,7 @@ import {
   Trash2,
 } from "lucide-react";
 import styles from "./document-viewer.module.css";
+import { useI18n } from "@/lib/i18n";
 
 export type DocumentState =
   "ready" | "loading" | "error" | "permission" | "deleted";
@@ -71,6 +72,7 @@ export function DocumentViewer({
   demo = !url,
   onPageChange,
 }: DocumentViewerProps) {
+  const { t } = useI18n();
   const safePageCount = Math.max(1, pageCount);
   const [page, setPage] = useState(
     Math.min(Math.max(initialPage, 1), safePageCount),
@@ -188,13 +190,13 @@ export function DocumentViewer({
             {frameLoading && (
               <div className={styles.overlay} role="status">
                 <LoaderCircle className={styles.spin} />
-                正在加载第 {page} 页…
+                {t("正在加载第 {page} 页…", { page })}
               </div>
             )}
             <iframe
               key={framedUrl}
               src={framedUrl}
-              title={`${name} 第 ${page} 页`}
+              title={t("{name} 第 {page} 页", { name, page })}
               onLoad={() => setFrameLoading(false)}
               onError={() => {
                 setFrameLoading(false);
@@ -209,7 +211,7 @@ export function DocumentViewer({
           >
             <div>
               <span>BidEvidence 文档定位预览</span>
-              <span>第 {page} 页</span>
+              <span>{t("第 {page} 页", { page })}</span>
             </div>
             <h3>{focusLabel ?? "来源页内容"}</h3>
             <p>
@@ -225,8 +227,8 @@ export function DocumentViewer({
         )}
       </div>
       <footer className={styles.footer}>
-        <strong>第 {page} 页</strong>
-        <span>缩放 {zoom}%</span>
+        <strong>{t("第 {page} 页", { page })}</strong>
+        <span>{t("缩放 {zoom}%", { zoom })}</span>
         <span>{sourceLocation ?? "未提供条款定位"}</span>
       </footer>
     </section>

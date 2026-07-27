@@ -12,6 +12,7 @@ from app.core.config import get_settings
 from app.db.session import SessionLocal
 from app.models.entities import AsyncJob, Document, DocumentPage
 from app.parsers.deterministic import DeterministicTextParser
+from app.parsers.ocr import apply_ocr, get_ocr_adapter
 from app.storage.adapter import get_storage_adapter
 from app.storage.local import (
     sanitize_filename,
@@ -146,9 +147,21 @@ def run_parse_job(job_id: UUID, principal: Principal) -> None:
         document.parse_status = "parsing"
         db.commit()
         data = get_storage_adapter().read(document.storage_key)
+        settings = get_settings()
         pages = DeterministicTextParser().parse(data, document.mime_type)
+        pages = apply_ocr(
+            pages,
+            data,
+            document.mime_type,
+            get_ocr_adapter(settings.ocr_mode, settings.ocr_languages),
+        )
         job.progress, job.current_step = 55, "saving_pages"
-        db.execute(delete(DocumentPage).where(DocumentPage.document_id == document.id))
+        db.execute(
+            delete(DocumentPage).where(
+                DocumentPage.document_id == document.id,
+                DocumentPage.parse_revision == document.parse_revision,
+            )
+        )
         for page in pages:
             db.add(
                 DocumentPage(
@@ -156,6 +169,7 @@ def run_parse_job(job_id: UUID, principal: Principal) -> None:
                     created_by=principal.user_id,
                     document_id=document.id,
                     page_number=page.page_number,
+                    parse_revision=document.parse_revision,
                     raw_text=page.raw_text,
                     markdown=page.raw_text,
                     layout_json=page.layout_json,
@@ -177,7 +191,14 @@ def run_parse_job(job_id: UUID, principal: Principal) -> None:
             entity_type="document",
             entity_id=document.id,
             project_id=document.project_id,
-            after={"page_count": len(pages), "adapter": "deterministic-text-v1"},
+            after={
+                "page_count": len(pages),
+                "adapter": "deterministic-text-v1",
+                "ocr_used_count": sum(page.ocr_used for page in pages),
+                "ocr_required_count": sum(
+                    page.layout_json.get("ocr_required") is True for page in pages
+                ),
+            },
         )
         db.commit()
     except Exception as exc:

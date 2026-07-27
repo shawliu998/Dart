@@ -1,6 +1,6 @@
 import { apiRequest, isDemoMode } from "./client";
 import { createAgentRunBundle } from "@/lib/agent/demo";
-import type { AgentApproval, AgentDataResult, AgentOutput, AgentRun, AgentRunBundle, AgentSourceRef, AgentStep } from "@/lib/agent/types";
+import type { AgentApproval, AgentDataResult, AgentEvent, AgentOutput, AgentPlanStage, AgentRun, AgentRunBundle, AgentRunCreateInput, AgentSourceRef, AgentStep } from "@/lib/agent/types";
 
 type JsonObject = Record<string, unknown>;
 export type AgentRequest = <T>(path: string, init?: RequestInit) => Promise<T>;
@@ -21,7 +21,9 @@ const number = (value: unknown, fallback = 0): number => {
   return Number.isFinite(parsed) ? parsed : fallback;
 };
 const nullableText = (value: unknown): string | null => typeof value === "string" ? value : null;
+const boundedInteger = (value: unknown, fallback: number, minimum: number, maximum: number): number => Math.min(maximum, Math.max(minimum, Math.floor(number(value, fallback))));
 const oneOf = <T extends string>(value: unknown, allowed: readonly T[], fallback: T): T => allowed.includes(value as T) ? value as T : fallback;
+const optionalOneOf = <T extends string>(value: unknown, allowed: readonly T[]): T | undefined => allowed.includes(value as T) ? value as T : undefined;
 const source = (value: unknown): AgentSourceRef => {
   const item = object(value);
   const confidenceValue = item.confidence ?? item.extraction_confidence;
@@ -36,6 +38,40 @@ const source = (value: unknown): AgentSourceRef => {
 };
 const sourceRows = (value: unknown) => rows(value, ["source_references", "sourceReferences", "sources", "provenance"]).map(source);
 const strings = (value: unknown): string[] => Array.isArray(value) ? value.filter((entry): entry is string => typeof entry === "string") : [];
+const planStageKeys = ["understand", "evidence", "draft", "deliver", "review"] as const;
+const planStageStatuses = ["pending", "in_progress", "completed", "waiting_approval"] as const;
+const planStageTitles: Record<AgentPlanStage["key"], string> = {
+  understand: "理解项目与招标文件", evidence: "匹配证据并运行检查", draft: "生成内部响应草稿", deliver: "生成交付工作包", review: "统一人工复核",
+};
+
+function isPlanStageKey(value: unknown): value is AgentPlanStage["key"] {
+  return typeof value === "string" && planStageKeys.some((key) => key === value);
+}
+
+function isPlanStageStatus(value: unknown): value is AgentPlanStage["status"] {
+  return typeof value === "string" && planStageStatuses.some((status) => status === value);
+}
+
+function mapPlanStages(value: unknown): AgentPlanStage[] {
+  const seen = new Set<string>();
+  return rows(value, ["stages"]).flatMap((item) => {
+    if (!isPlanStageKey(item.key) || !isPlanStageStatus(item.status) || seen.has(item.key)) return [];
+    const key = item.key;
+    seen.add(key);
+    return [{ key, title: text(item.title, planStageTitles[key]), status: item.status }];
+  });
+}
+
+/** Strict adapter for the append-only /events response. Invalid rows are omitted, never invented. */
+export function agentEventsFromApiPayload(payload: unknown): AgentEvent[] {
+  return rows(payload, ["items", "events"]).flatMap((item) => {
+    const sequence = number(item.sequence, 0);
+    const eventType = text(item.event_type ?? item.eventType);
+    const timestamp = text(item.created_at ?? item.createdAt ?? item.timestamp);
+    if (sequence <= 0 || !eventType || !timestamp) return [];
+    return [{ sequence, eventType, payload: object(item.payload), timestamp }];
+  }).sort((left, right) => left.sequence - right.sequence);
+}
 
 type StepPresentation = Pick<AgentStep, "title" | "description" | "actor" | "tool">;
 
@@ -51,7 +87,28 @@ export const bidStepPresentation: Record<string, StepPresentation> = {
   run_compliance_rules: { title: "运行确定性合规检查", description: "基于已确认要求和证据计算合规状态。", actor: "deterministic_rule", tool: "ComplianceRuleEngine" },
   draft_responses: { title: "生成投标响应草稿", description: "根据已接受证据生成可编辑的响应草稿。", actor: "mock_model", tool: "ResponseDraftService" },
   review_responses: { title: "人工复核投标响应", description: "在响应工作台编辑并确认响应草稿。", actor: "human_gate", tool: "ResponsesWorkbench" },
+  extract_evidence_claims: { title: "抽取企业材料 Claim", description: "从企业材料抽取可回溯的证据 Claim；失败的材料单独隔离。", actor: "deterministic_rule", tool: "企业材料 Claim 抽取器" },
+  check_response_quality: { title: "检查并修补响应草稿", description: "对内部响应草稿运行确定性质量检查并应用安全标注修补。", actor: "deterministic_rule", tool: "响应质量检查器" },
+  create_remediation_tasks: { title: "生成缺口补救任务", description: "把未解决的合规与响应缺口映射为项目整改任务。", actor: "deterministic_rule", tool: "补救任务服务" },
   export_artifacts: { title: "导出交付物", description: "生成可下载的合规矩阵、响应初稿和风险待办。", actor: "deterministic_rule", tool: "ProjectExportService" },
+};
+
+/** Chinese product labels for autonomous tool names persisted in events and step payloads. */
+export const toolLabels: Record<string, string> = {
+  inspect_project: "检查项目",
+  parse_pending_documents: "解析待处理文档",
+  extract_project_profile: "提取项目摘要",
+  extract_requirements: "抽取招标要求",
+  classify_bid_risks: "分类招标风险",
+  extract_evidence_claims: "抽取企业材料 Claim",
+  match_evidence: "匹配证据",
+  run_compliance_checks: "运行合规检查",
+  generate_responses: "生成响应草稿",
+  check_response_quality: "检查响应草稿质量",
+  revise_responses: "修补响应草稿",
+  create_remediation_tasks: "创建整改任务",
+  assemble_work_package: "组装交付工作包",
+  finish_run: "结束运行",
 };
 
 const stepKey = (item: JsonObject) => text(item.step_key ?? item.stepKey);
@@ -70,38 +127,139 @@ function mapStep(value: unknown, runId: string, index: number): AgentStep {
   };
 }
 
-function mapApproval(value: unknown, runId: string): AgentApproval {
+function mapApproval(value: unknown, runId: string, projectId: string): AgentApproval {
   const item = object(value);
-  const approvalType = oneOf(item.approval_type ?? item.type, ["review_requirements", "review_evidence_matches", "review_responses", "evidence_match", "compliance_override", "consistency_resolution", "amendment_apply", "package_warning", "package_build", "unknown"] as const, "unknown");
+  const approvalType = oneOf(item.approval_type ?? item.type, ["review_requirements", "review_evidence_matches", "review_responses", "evidence_match", "compliance_override", "consistency_resolution", "amendment_apply", "package_warning", "package_build", "final_work_package_review", "unknown"] as const, "unknown");
   const impactSummary = text(item.impact_summary ?? item.impactSummary);
   const destinations: Partial<Record<AgentApproval["type"], string>> = {
     review_requirements: "打开要求工作台",
     review_evidence_matches: "打开证据匹配工作台",
     review_responses: "打开响应工作台",
+    final_work_package_review: "打开最终工作包复核",
   };
   const destination = destinations[approvalType] ?? "打开审批工作台";
+  const defaultHref = approvalType === "final_work_package_review" ? `/projects/${projectId}/review` : "/agent";
   return {
     id: text(item.id), runId: text(item.run_id ?? item.runId, runId), stepId: text(item.step_run_id ?? item.stepRunId ?? item.step_id ?? item.stepId),
     type: approvalType,
     title: text(item.title), description: text(item.description), impactSummary, reversible: Boolean(item.reversible), reason: text(item.decision_reason ?? item.decisionReason),
-    risk: oneOf(item.risk, ["fatal", "high", "medium", "low"] as const, "medium"), status: oneOf(item.status, ["pending", "approved", "rejected"] as const, "pending"),
-    requiredRole: text(item.requested_role ?? item.required_role ?? item.requiredRole, "项目负责人"), destinationLabel: text(item.destination_label ?? item.destinationLabel, destination), href: text(item.href, impactSummary.startsWith("/projects/") ? impactSummary : "/agent"), sourceReferences: sourceRows(item),
+    risk: oneOf(item.risk, ["fatal", "high", "medium", "low"] as const, "medium"), status: oneOf(item.status, ["pending", "approved", "rejected", "cancelled"] as const, "pending"),
+    requiredRole: text(item.requested_role ?? item.required_role ?? item.requiredRole, "项目负责人"), destinationLabel: text(item.destination_label ?? item.destinationLabel, destination), href: text(item.href, impactSummary.startsWith("/projects/") ? impactSummary : defaultHref), sourceReferences: sourceRows(item),
   };
+}
+
+/** Build a human-readable summary for artifact types that expose structured runtime counts. */
+function artifactSummary(artifactType: string, metadata: JsonObject): string {
+  if (artifactType === "evidence_claims") {
+    const assetCount = number(metadata.asset_count, 0);
+    const newClaimCount = number(metadata.new_claim_count, 0);
+    const failedAssets = strings(metadata.failed_assets);
+    const failedCount = failedAssets.length;
+    const reviewState = text(metadata.review_state);
+    const parts: string[] = [`已处理 ${assetCount} 份企业材料，新增 ${newClaimCount} 条 Claim。`];
+    if (failedCount) parts.push(`${failedCount} 份材料抽取失败，已隔离待人工处理。`);
+    if (reviewState === "manual_review") parts.push("全部 Claim 处于待人工复核状态，不会自动进入合规结论。");
+    return parts.join(" ");
+  }
+  if (artifactType === "response_drafts") {
+    const count = number(metadata.count, 0);
+    const missingEvidenceCount = number(metadata.missing_evidence_count, 0);
+    return `共生成 ${count} 条响应草稿，其中 ${missingEvidenceCount} 条缺少证据链接。`;
+  }
+  if (artifactType === "response_quality_check") {
+    const issueCount = number(metadata.issue_count, 0);
+    const repairedCount = number(metadata.repaired_count, 0);
+    const manualReviewRequired = Boolean(metadata.manual_review_required);
+    const parts: string[] = [`剩余 ${issueCount} 项质量问题。`];
+    if (repairedCount) parts.push(`已自动修补 ${repairedCount} 项安全标注。`);
+    if (manualReviewRequired) parts.push("其余问题需人工复核，不会自动形成最终响应。");
+    return parts.join(" ");
+  }
+  if (artifactType === "remediation_tasks") {
+    const createdCount = number(metadata.created_count, 0);
+    return `本次运行创建 ${createdCount} 项整改任务，已加入项目任务工作台。`;
+  }
+  return text(metadata.summary, "");
 }
 
 function mapOutput(value: unknown, runId: string, projectId: string): AgentOutput {
   const item = object(value);
   const metadata = object(item.metadata_json ?? item.metadata);
-  const artifactType = item.artifact_type ?? item.artifactType;
+  const artifactType = text(item.artifact_type ?? item.artifactType);
   const isEvidenceMatchCandidates = artifactType === "evidence_match_candidates";
+  const isResponseQualityCheck = artifactType === "response_quality_check";
+  const isEvidenceClaims = artifactType === "evidence_claims";
+  const isResponseDrafts = artifactType === "response_drafts";
+  const isRemediationTasks = artifactType === "remediation_tasks";
   const storageKey = text(item.storage_key ?? item.storageKey);
   const downloadHref = text(item.download_url ?? item.downloadUrl ?? metadata.download_url ?? metadata.downloadUrl);
   const isDownloadable = typeof artifactType === "string" && (artifactType.endsWith("_xlsx") || artifactType === "response_draft_docx") || storageKey.startsWith("exports/");
+
+  const defaultHref = (() => {
+    if (isEvidenceClaims) return `/projects/${projectId}/evidence-matching`;
+    if (isResponseDrafts || isResponseQualityCheck) return `/projects/${projectId}/responses`;
+    if (isRemediationTasks) return `/projects/${projectId}/tasks`;
+    if (artifactType === "compliance_summary") return `/projects/${projectId}/evidence-matching`;
+    return "/agent";
+  })();
+
+  const derivedSummary = artifactSummary(artifactType, metadata) || text(item.summary ?? metadata.summary ?? (isResponseQualityCheck ? metadata.after_summary : undefined), "");
+  const derivedCount = number(
+    item.count ?? metadata.count ?? (isResponseQualityCheck ? metadata.issue_count : isEvidenceClaims ? metadata.new_claim_count : isRemediationTasks ? metadata.created_count : undefined),
+    0,
+  );
+  const derivedSeverity = oneOf(
+    item.severity ?? metadata.severity,
+    ["fatal", "high", "medium", "low", "info"] as const,
+    (() => {
+      if (isResponseQualityCheck && Boolean(metadata.manual_review_required)) return "high";
+      if (isEvidenceClaims && (strings(metadata.failed_assets).length > 0 || text(metadata.review_state) === "manual_review")) return "high";
+      if (isResponseDrafts && number(metadata.missing_evidence_count, 0) > 0) return "medium";
+      if (isRemediationTasks && number(metadata.created_count, 0) > 0) return "medium";
+      return "info";
+    })(),
+  );
+  const metrics = ((): AgentOutput["metrics"] => {
+    if (isEvidenceClaims) {
+      return {
+        assetCount: number(metadata.asset_count, 0),
+        newClaimCount: number(metadata.new_claim_count, 0),
+        failedAssetCount: strings(metadata.failed_assets).length,
+      };
+    }
+    if (isResponseDrafts) {
+      return {
+        responseCount: number(metadata.count, 0),
+        missingEvidenceCount: number(metadata.missing_evidence_count, 0),
+      };
+    }
+    if (isResponseQualityCheck) {
+      return {
+        qualityIssueCount: number(metadata.issue_count, 0),
+        qualityRepairedCount: number(metadata.repaired_count, 0),
+      };
+    }
+    if (isRemediationTasks) {
+      return {
+        remediationTaskCount: number(metadata.created_count, 0),
+      };
+    }
+    return undefined;
+  })();
+
   return {
     id: text(item.id), runId: text(item.run_id ?? item.runId, runId), stepId: text(item.step_run_id ?? item.stepRunId ?? item.step_id ?? item.stepId),
-    type: oneOf(isEvidenceMatchCandidates ? "evidence" : item.type ?? artifactType, ["requirement", "risk", "evidence", "task", "report", "package"] as const, "report"),
-    kind: oneOf(isEvidenceMatchCandidates ? "evidence" : item.kind ?? artifactType, ["requirements", "risk", "evidence", "consistency", "amendment", "task", "package", "audit"] as const, "audit"),
-    title: text(item.title, isEvidenceMatchCandidates ? "候选匹配" : ""), description: text(item.description), summary: text(item.summary ?? metadata.summary), count: number(item.count ?? metadata.count), severity: oneOf(item.severity ?? metadata.severity, ["fatal", "high", "medium", "low", "info"] as const, "info"), href: downloadHref || (isDownloadable ? `/api/agent-artifacts/${text(item.id)}/download` : text(item.href ?? metadata.href, artifactType === "response_drafts" ? `/projects/${projectId}/responses` : artifactType === "compliance_summary" ? `/projects/${projectId}/evidence-matching` : "/agent")), createdAt: text(item.created_at ?? item.createdAt), provenance: sourceRows(item.provenance ?? metadata.provenance),
+    type: oneOf(isEvidenceMatchCandidates || isEvidenceClaims ? "evidence" : isRemediationTasks ? "task" : item.type ?? artifactType, ["requirement", "risk", "evidence", "task", "report", "package"] as const, "report"),
+    kind: oneOf(isEvidenceMatchCandidates || isEvidenceClaims ? "evidence" : isRemediationTasks ? "task" : isResponseDrafts || isResponseQualityCheck ? "audit" : item.kind ?? artifactType, ["requirements", "risk", "evidence", "consistency", "amendment", "task", "package", "audit"] as const, "audit"),
+    artifactType,
+    metrics,
+    title: text(item.title, isEvidenceMatchCandidates ? "候选匹配" : isResponseQualityCheck ? "响应草稿质量自查" : isEvidenceClaims ? "企业材料 Claim" : isResponseDrafts ? "投标响应草稿" : isRemediationTasks ? "缺口补救任务" : ""),
+    description: text(item.description),
+    summary: derivedSummary,
+    count: derivedCount,
+    severity: derivedSeverity,
+    href: downloadHref || (isDownloadable ? `/api/agent-artifacts/${text(item.id)}/download` : text(item.href ?? metadata.href ?? (isResponseQualityCheck ? metadata.review_href : undefined), defaultHref)),
+    createdAt: text(item.created_at ?? item.createdAt), provenance: sourceRows(item.provenance ?? metadata.provenance),
   };
 }
 
@@ -129,18 +287,28 @@ export function agentRunBundleFromApiPayload(payload: unknown, projectId: string
   const runId = text(runValue.id);
   if (!runId) throw new Error("invalid_agent_payload");
   const steps = rows(root.steps ?? runValue.steps, ["items", "step_runs", "stepRuns"]).map((item, index) => mapStep(item, runId, index));
-  const approvals = rows(root.approvals ?? runValue.approvals, ["items", "approval_requests", "approvalRequests"]).map((item) => mapApproval(item, runId));
+  const approvals = rows(root.approvals ?? runValue.approvals, ["items", "approval_requests", "approvalRequests"]).map((item) => mapApproval(item, runId, projectId));
   const outputs = rows(root.outputs ?? root.artifacts ?? runValue.outputs ?? runValue.artifacts, ["items", "artifacts"]).map((item) => mapOutput(item, runId, projectId));
+  const planStages = mapPlanStages(runValue.plan_json ?? runValue.planJson);
   const run: AgentRun = {
     id: runId, projectId: text(runValue.project_id ?? runValue.projectId, projectId), projectName: text(runValue.project_name ?? runValue.projectName, "本地项目"),
-    title: text(runValue.title ?? runValue.workflow_type ?? runValue.workflowType, "投标分析运行"), goal: text(runValue.goal),
+    title: text(runValue.title ?? runValue.workflow_type ?? runValue.workflowType, "投标分析运行"), goal: text(runValue.goal ?? runValue.objective, "完成投标分析与响应草稿工作包。"),
+    mode: oneOf(runValue.mode ?? runValue.run_mode ?? runValue.runMode, ["autonomous_draft", "supervised"] as const, "supervised"),
+    scope: oneOf(runValue.scope, ["full_bid_draft", "risk_review", "material_gap_analysis", "response_improvement", "amendment_reanalysis", "work_package_check"] as const, "full_bid_draft"),
+    outcome: optionalOneOf(runValue.outcome, ["success", "partial", "blocked", "no_result"] as const),
+    maxIterations: boundedInteger(runValue.max_iterations ?? runValue.maxIterations, 20, 1, 100),
+    iteration: boundedInteger(runValue.iteration ?? runValue.current_iteration ?? runValue.currentIteration, 0, 0, 100),
+    currentAction: text(runValue.current_action ?? runValue.currentAction ?? runValue.action) || undefined,
+    nextAction: text(runValue.next_action ?? runValue.nextAction) || undefined,
+    observation: text(runValue.last_observation ?? runValue.lastObservation ?? runValue.observation ?? runValue.current_observation ?? runValue.currentObservation ?? runValue.findings_summary ?? runValue.findingsSummary) || undefined,
+    completionReason: text(runValue.completion_reason ?? runValue.completionReason) || undefined,
     status: oneOf(runValue.status, ["queued", "planning", "running", "waiting_approval", "completed", "failed", "cancelled"] as const, "queued"),
     trigger: oneOf(runValue.trigger, ["project_opened", "document_updated", "amendment_received", "manual_rerun"] as const, "manual_rerun"),
     startedAt: text(runValue.started_at ?? runValue.startedAt ?? runValue.created_at ?? runValue.createdAt), updatedAt: text(runValue.updated_at ?? runValue.updatedAt ?? runValue.created_at ?? runValue.createdAt), completedAt: text(runValue.completed_at ?? runValue.completedAt) || undefined,
     progress: progressFromSteps(steps), currentStepId: text(runValue.current_step_id ?? runValue.currentStepId ?? runValue.current_step ?? runValue.currentStep) || undefined, initiatedBy: text(runValue.created_by ?? runValue.createdBy, "本地工作区"),
-    promptVersion: text(runValue.prompt_version ?? runValue.promptVersion), policyVersion: text(runValue.policy_version ?? runValue.policyVersion), summary: summaryFromSteps(steps, approvals, oneOf(runValue.status, ["queued", "planning", "running", "waiting_approval", "completed", "failed", "cancelled"] as const, "queued")), steps, approvals, outputs,
+    promptVersion: text(runValue.prompt_version ?? runValue.promptVersion), policyVersion: text(runValue.policy_version ?? runValue.policyVersion), summary: text(runValue.agent_summary ?? runValue.agentSummary) || summaryFromSteps(steps, approvals, oneOf(runValue.status, ["queued", "planning", "running", "waiting_approval", "completed", "failed", "cancelled"] as const, "queued")), planStages, steps, approvals, outputs,
   };
-  return { run, steps, approvals, outputs };
+  return { run, steps, approvals, outputs, events: [] };
 }
 
 function failure(error: unknown): AgentDataResult<AgentRunBundle> {
@@ -153,13 +321,19 @@ export async function getLatestAgentRun(projectId: string, request: AgentRequest
   try {
     const payload = await request<AgentRunListPayload | unknown>(`/api/projects/${projectId}/agent-runs`);
     const list = rows(payload, ["items", "runs", "agent_runs"]);
-    if (!list.length) throw new Error("未找到 Agent 运行记录");
+    if (!list.length) return { source: "empty", data: null, error: null };
     return { source: "api", data: agentRunBundleFromApiPayload(list[0], projectId), error: null };
   } catch (error) { return failure(error); }
 }
 
-export async function createAgentRun(projectId: string, request: AgentRequest = apiRequest): Promise<AgentDataResult<AgentRunBundle>> {
-  try { return { source: "api", data: agentRunBundleFromApiPayload(await request(`/api/projects/${projectId}/agent-runs`, { method: "POST", body: JSON.stringify({}) }), projectId), error: null }; } catch (error) { return failure(error); }
+export async function createAgentRun(projectId: string, input: AgentRunCreateInput = {}, request: AgentRequest = apiRequest): Promise<AgentDataResult<AgentRunBundle>> {
+  const payload = {
+    goal: input.goal?.trim() || undefined,
+    mode: input.mode ?? "autonomous_draft",
+    scope: input.scope ?? "full_bid_draft",
+    max_iterations: boundedInteger(input.maxIterations, 20, 1, 100),
+  };
+  try { return { source: "api", data: agentRunBundleFromApiPayload(await request(`/api/projects/${projectId}/agent-runs`, { method: "POST", body: JSON.stringify(payload) }), projectId), error: null }; } catch (error) { return failure(error); }
 }
 
 export async function getAgentRun(runId: string, projectId: string, request: AgentRequest = apiRequest): Promise<AgentDataResult<AgentRunBundle>> {
@@ -170,7 +344,7 @@ export const agentApi = {
   getRun: getLatestAgentRun,
   createRun: createAgentRun,
   getRunById: getAgentRun,
-  events: (runId: string, request: AgentRequest = apiRequest) => request(`/api/agent-runs/${runId}/events`),
+  events: async (runId: string, request: AgentRequest = apiRequest): Promise<AgentEvent[]> => agentEventsFromApiPayload(await request(`/api/agent-runs/${runId}/events`)),
   cancel: (runId: string, request: AgentRequest = apiRequest) => request(`/api/agent-runs/${runId}/cancel`, { method: "POST", body: JSON.stringify({}) }),
   retry: (runId: string, request: AgentRequest = apiRequest) => request(`/api/agent-runs/${runId}/retry`, { method: "POST", body: JSON.stringify({}) }),
   approve: (approvalId: string, input: AgentActionInput, request: AgentRequest = apiRequest) => request(`/api/approvals/${approvalId}/approve`, { method: "POST", body: JSON.stringify(input) }),

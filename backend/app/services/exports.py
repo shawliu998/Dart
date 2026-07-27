@@ -67,7 +67,11 @@ def export_project_artifacts(db: Session, principal: Principal, project_id: UUID
     requirements = list(
         db.scalars(
             select(Requirement)
-            .where(Requirement.project_id == project_id, Requirement.tenant_id == principal.tenant_id)
+            .where(
+                Requirement.project_id == project_id,
+                Requirement.tenant_id == principal.tenant_id,
+                Requirement.is_current.is_(True),
+            )
             .order_by(Requirement.source_page, Requirement.requirement_code)
         )
     )
@@ -91,7 +95,7 @@ def export_project_artifacts(db: Session, principal: Principal, project_id: UUID
     if sheet is None:
         raise RuntimeError("XLSX workbook did not create an active sheet")
     sheet.title = "合规矩阵"
-    sheet.append(["编号", "分类", "风险", "招标原文", "结构化要求", "来源页码", "是否强制", "否决候选", "已接受证据", "合规结果", "响应状态", "响应内容", "缺失信息"])
+    sheet.append(["编号", "分类", "风险", "招标原文", "结构化要求", "来源页码", "是否强制", "否决候选", "关联证据（可能尚未人工确认）", "合规结果", "响应状态", "响应内容", "缺失信息"])
     for requirement in requirements:
         response = responses.get(requirement.id)
         claims = _response_claims(db, response.id) if response else []
@@ -120,6 +124,7 @@ def export_project_artifacts(db: Session, principal: Principal, project_id: UUID
     document.add_paragraph(f"项目编号：{project.project_code}")
     document.add_paragraph(f"采购人：{project.buyer_name}")
     document.add_paragraph(f"生成时间：{datetime.now().strftime('%Y-%m-%d %H:%M')}")
+    document.add_paragraph("内部草稿：要求、证据与响应可能包含尚未人工确认的暂定结果，不得直接用于外部提交。")
     for requirement in requirements:
         response = responses.get(requirement.id)
         document.add_heading(f"{requirement.requirement_code or ''} {requirement.title}", level=1)

@@ -4,7 +4,7 @@ import { ConfidenceIndicator, RiskBadge, StatusBadge } from "@/components/ui/bad
 describe("compliance badges", () => {
   it("renders text in addition to risk color", () => {
     render(<><RiskBadge level="fatal" /><StatusBadge status="review" /></>);
-    expect(screen.getByText("致命")).toBeInTheDocument();
+    expect(screen.getByText("否决风险")).toBeInTheDocument();
     expect(screen.getByText("人工复核")).toBeInTheDocument();
   });
 

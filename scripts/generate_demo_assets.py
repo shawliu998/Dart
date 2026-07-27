@@ -1,17 +1,27 @@
 #!/usr/bin/env python3
-"""Generate deterministic, valid PDF/DOCX/XLSX demo documents with stdlib only."""
+"""Generate deterministic, valid PDF/DOCX/XLSX demo documents."""
 
 from __future__ import annotations
 
 import hashlib
 import json
+import shutil
 import zipfile
 from pathlib import Path
 from xml.sax.saxutils import escape
 
+from reportlab.lib import colors
+from reportlab.lib.pagesizes import A4
+from reportlab.pdfbase import pdfmetrics
+from reportlab.pdfbase.ttfonts import TTFont
+from reportlab.pdfgen import canvas
+
 ROOT = Path(__file__).resolve().parents[1]
 DEMO = ROOT / "demo"
 ZIP_TIME = (2026, 1, 1, 0, 0, 0)
+PDF_FONT_NAME = "BidEvidenceFixtureSans"
+PDF_FONT_PATH = DEMO / "fonts/BidEvidenceFixtureSans.ttf"
+XLSX_TEMPLATE_DIR = DEMO / "templates"
 
 
 def _zip_write(archive: zipfile.ZipFile, name: str, data: str | bytes) -> None:
@@ -22,59 +32,50 @@ def _zip_write(archive: zipfile.ZipFile, name: str, data: str | bytes) -> None:
 
 
 def make_pdf(path: Path, pages: list[list[str]], title: str) -> None:
-    """Create a small Unicode CJK PDF using the standard STSong-Light CID font."""
-    objects: list[bytes] = []
+    """Create a deterministic, self-contained CJK PDF with an embedded OFL font subset."""
+    if not PDF_FONT_PATH.is_file():
+        raise FileNotFoundError(f"missing demo PDF font: {PDF_FONT_PATH}")
+    if PDF_FONT_NAME not in pdfmetrics.getRegisteredFontNames():
+        pdfmetrics.registerFont(TTFont(PDF_FONT_NAME, str(PDF_FONT_PATH)))
 
-    def add(value: bytes) -> int:
-        objects.append(value)
-        return len(objects)
-
-    catalog_id = add(b"")
-    pages_id = add(b"")
-    font_id = add(
-        b"<< /Type /Font /Subtype /Type0 /BaseFont /STSong-Light "
-        b"/Encoding /UniGB-UCS2-H /DescendantFonts [<< /Type /Font /Subtype /CIDFontType0 "
-        b"/BaseFont /STSong-Light /CIDSystemInfo << /Registry (Adobe) /Ordering (GB1) "
-        b"/Supplement 4 >> >>] >>"
-    )
-    page_ids: list[int] = []
-    for page_no, lines in enumerate(pages, 1):
-        content = [b"BT /F1 12 Tf 50 790 Td 16 TL"]
-        all_lines = [title, f"第 {page_no} 页 / 共 {len(pages)} 页", *lines]
-        for index, line in enumerate(all_lines):
-            if index:
-                content.append(b"T*")
-            encoded = line.encode("utf-16-be").hex().upper().encode("ascii")
-            content.append(b"<" + encoded + b"> Tj")
-        content.append(b"ET")
-        stream = b"\n".join(content)
-        stream_id = add(b"<< /Length %d >>\nstream\n%s\nendstream" % (len(stream), stream))
-        page_id = add(
-            b"<< /Type /Page /Parent %d 0 R /MediaBox [0 0 595 842] "
-            b"/Resources << /Font << /F1 %d 0 R >> >> /Contents %d 0 R >>"
-            % (pages_id, font_id, stream_id)
-        )
-        page_ids.append(page_id)
-    objects[catalog_id - 1] = b"<< /Type /Catalog /Pages %d 0 R >>" % pages_id
-    kids = b" ".join(f"{page_id} 0 R".encode() for page_id in page_ids)
-    objects[pages_id - 1] = b"<< /Type /Pages /Kids [%s] /Count %d >>" % (kids, len(page_ids))
-
-    payload = bytearray(b"%PDF-1.7\n%\xe2\xe3\xcf\xd3\n")
-    offsets = [0]
-    for number, obj in enumerate(objects, 1):
-        offsets.append(len(payload))
-        payload.extend(f"{number} 0 obj\n".encode() + obj + b"\nendobj\n")
-    xref = len(payload)
-    payload.extend(f"xref\n0 {len(objects) + 1}\n".encode())
-    payload.extend(b"0000000000 65535 f \n")
-    for offset in offsets[1:]:
-        payload.extend(f"{offset:010d} 00000 n \n".encode())
-    payload.extend(
-        b"trailer\n<< /Size %d /Root %d 0 R >>\nstartxref\n%d\n%%%%EOF\n"
-        % (len(objects) + 1, catalog_id, xref)
-    )
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_bytes(payload)
+    width, height = A4
+    document = canvas.Canvas(
+        str(path), pagesize=A4, pageCompression=1, invariant=1, initialFontName=PDF_FONT_NAME
+    )
+    document.setTitle(title)
+    document.setAuthor("BidEvidence deterministic fixture generator")
+    document.setSubject("完全虚构的中文招投标测试材料")
+
+    for page_no, lines in enumerate(pages, 1):
+        document.setFillColor(colors.HexColor("#5B6472"))
+        document.setFont(PDF_FONT_NAME, 8.5)
+        document.drawString(48, height - 40, "BidEvidence 合成测试夹具｜完全虚构")
+
+        document.setFillColor(colors.HexColor("#152238"))
+        document.setFont(PDF_FONT_NAME, 16)
+        document.drawCentredString(width / 2, height - 78, title)
+        document.setStrokeColor(colors.HexColor("#CBD5E1"))
+        document.line(48, height - 92, width - 48, height - 92)
+
+        document.setFillColor(colors.HexColor("#334155"))
+        document.setFont(PDF_FONT_NAME, 10)
+        document.drawString(48, height - 120, "条款内容")
+        y = height - 148
+        for line in lines:
+            for segment_start in range(0, len(line), 42):
+                document.drawString(58, y, line[segment_start : segment_start + 42])
+                y -= 22
+            y -= 4
+
+        document.setStrokeColor(colors.HexColor("#E2E8F0"))
+        document.line(48, 52, width - 48, 52)
+        document.setFillColor(colors.HexColor("#64748B"))
+        document.setFont(PDF_FONT_NAME, 8.5)
+        document.drawString(48, 36, "仅用于产品测试，不代表任何真实采购人、投标人或法律结论")
+        document.drawRightString(width - 48, 36, f"第 {page_no} 页 / 共 {len(pages)} 页")
+        document.showPage()
+    document.save()
 
 
 def make_docx(path: Path, paragraphs: list[str], *, tracked_change: str | None = None) -> None:
@@ -112,63 +113,14 @@ def make_docx(path: Path, paragraphs: list[str], *, tracked_change: str | None =
         _zip_write(archive, "word/document.xml", document)
 
 
-def _cell(ref: str, value: str | int | float) -> str:
-    if isinstance(value, (int, float)):
-        return f'<c r="{ref}"><v>{value}</v></c>'
-    return f'<c r="{ref}" t="inlineStr"><is><t>{escape(value)}</t></is></c>'
-
-
-def make_xlsx(path: Path, rows: list[list[str | int | float]]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    sheet_rows = []
-    for row_no, row in enumerate(rows, 1):
-        cells = []
-        for column_no, value in enumerate(row, 1):
-            column = ""
-            number = column_no
-            while number:
-                number, remainder = divmod(number - 1, 26)
-                column = chr(65 + remainder) + column
-            cells.append(_cell(f"{column}{row_no}", value))
-        sheet_rows.append(f'<row r="{row_no}">{"".join(cells)}</row>')
-    worksheet = (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">'
-        f'<sheetData>{"".join(sheet_rows)}</sheetData></worksheet>'
-    )
-    workbook = (
-        '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>'
-        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" '
-        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">'
-        '<sheets><sheet name="演示数据" sheetId="1" r:id="rId1"/></sheets></workbook>'
-    )
-    workbook_rels = (
-        '<?xml version="1.0" encoding="UTF-8"?>'
-        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>'
-        '</Relationships>'
-    )
-    root_rels = (
-        '<?xml version="1.0" encoding="UTF-8"?>'
-        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">'
-        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>'
-        '</Relationships>'
-    )
-    content_types = (
-        '<?xml version="1.0" encoding="UTF-8"?>'
-        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">'
-        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>'
-        '<Default Extension="xml" ContentType="application/xml"/>'
-        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>'
-        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>'
-        '</Types>'
-    )
-    with zipfile.ZipFile(path, "w") as archive:
-        _zip_write(archive, "[Content_Types].xml", content_types)
-        _zip_write(archive, "_rels/.rels", root_rels)
-        _zip_write(archive, "xl/workbook.xml", workbook)
-        _zip_write(archive, "xl/_rels/workbook.xml.rels", workbook_rels)
-        _zip_write(archive, "xl/worksheets/sheet1.xml", worksheet)
+def copy_xlsx_template(filename: str) -> None:
+    """Copy a visually QA'd, deterministic workbook fixture into the bid package."""
+    source = XLSX_TEMPLATE_DIR / filename
+    if not source.is_file():
+        raise FileNotFoundError(f"missing demo XLSX template: {source}")
+    destination = DEMO / "bid_documents" / filename
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(source, destination)
 
 
 def main() -> None:
@@ -197,13 +149,14 @@ def main() -> None:
         make_pdf(DEMO / "evidence" / filename, [lines], filename.removesuffix(".pdf"))
 
     make_docx(DEMO / "bid_documents/投标函.docx", ["投标函", "投标人：上海智园科技有限公司（故意与营业执照不完全一致）", "投标总价：5,820,000元", "大写：伍佰捌拾贰万元整", "项目编号：2026-ZHYY-001", "投标有效期：90日"])
-    make_xlsx(DEMO / "bid_documents/商务响应表.xlsx", [["要求", "响应"], ["交付期", "90日"], ["质保期", "3年"], ["税率", "6%"]])
+    copy_xlsx_template("商务响应表.xlsx")
     make_docx(DEMO / "bid_documents/技术响应文件.docx", ["技术响应文件", "并发用户数：5000", "视频接入：1000路", "日志留存：180天"], tracked_change="修订内容：视频接入能力待升级至1200路")
-    make_xlsx(DEMO / "bid_documents/报价表.xlsx", [["项目", "金额（元）", "金额大写"], ["智慧园区综合管理平台", 5802000, "伍佰捌拾万零贰仟元整"], ["税率", "6%", ""]])
+    copy_xlsx_template("报价表.xlsx")
 
     generated = sorted(
         path.relative_to(DEMO).as_posix()
-        for path in DEMO.rglob("*")
+        for directory in ("tender", "amendments", "evidence", "bid_documents")
+        for path in (DEMO / directory).rglob("*")
         if path.suffix.lower() in {".pdf", ".docx", ".xlsx"}
     )
     manifest = {

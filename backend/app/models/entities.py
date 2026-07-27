@@ -18,6 +18,7 @@ from sqlalchemy import (
     String,
     Text,
     UniqueConstraint,
+    text,
 )
 from sqlalchemy.orm import Mapped, mapped_column
 
@@ -70,6 +71,7 @@ class Document(UUIDAuditMixin, SoftDeleteMixin, Base):
     size: Mapped[int]
     sha256: Mapped[str] = mapped_column(String(64), index=True)
     version_number: Mapped[int] = mapped_column(Integer, default=1)
+    parse_revision: Mapped[int] = mapped_column(Integer, default=1)
     parse_status: Mapped[str] = mapped_column(String(30), default="pending")
     page_count: Mapped[int] = mapped_column(Integer, default=0)
     uploaded_by: Mapped[UUID]
@@ -77,9 +79,12 @@ class Document(UUIDAuditMixin, SoftDeleteMixin, Base):
 
 class DocumentPage(UUIDAuditMixin, Base):
     __tablename__ = "document_pages"
-    __table_args__ = (UniqueConstraint("document_id", "page_number", name="uq_document_page"),)
+    __table_args__ = (
+        UniqueConstraint("document_id", "page_number", "parse_revision", name="uq_document_page"),
+    )
     document_id: Mapped[UUID] = mapped_column(ForeignKey("documents.id"), index=True)
     page_number: Mapped[int]
+    parse_revision: Mapped[int] = mapped_column(Integer, default=1)
     raw_text: Mapped[str] = mapped_column(Text)
     markdown: Mapped[str] = mapped_column(Text)
     layout_json: Mapped[dict] = mapped_column(JSON, default=dict)
@@ -94,6 +99,7 @@ class Requirement(UUIDAuditMixin, Base):
             "source_document_id",
             "source_page",
             "original_hash",
+            "extraction_revision",
             name="uq_requirement_source",
         ),
     )
@@ -112,6 +118,11 @@ class Requirement(UUIDAuditMixin, Base):
     source_bbox: Mapped[dict | None] = mapped_column(JSON, nullable=True)
     clause_number: Mapped[str | None] = mapped_column(String(100), nullable=True)
     extraction_confidence: Mapped[Decimal] = mapped_column(Numeric(4, 3))
+    extraction_revision: Mapped[int] = mapped_column(Integer, default=1)
+    is_current: Mapped[bool] = mapped_column(Boolean, default=True, index=True)
+    superseded_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
     review_status: Mapped[str] = mapped_column(String(30), default="unreviewed")
     human_verified: Mapped[bool] = mapped_column(Boolean, default=False)
     review_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
@@ -132,6 +143,35 @@ class DisqualificationRule(UUIDAuditMixin, Base):
 
 class AsyncJob(UUIDAuditMixin, Base):
     __tablename__ = "async_jobs"
+    __table_args__ = (
+        Index(
+            "uq_async_jobs_active_agent_run",
+            "tenant_id",
+            "job_type",
+            "entity_id",
+            unique=True,
+            sqlite_where=text(
+                "job_type = 'agent_run' AND status IN ('queued', 'running', 'retrying')"
+            ),
+            postgresql_where=text(
+                "job_type = 'agent_run' AND status IN ('queued', 'running', 'retrying')"
+            ),
+        ),
+        Index(
+            "uq_async_jobs_active_document_analysis",
+            "tenant_id",
+            "entity_id",
+            unique=True,
+            sqlite_where=text(
+                "job_type IN ('document_parse', 'requirement_extraction', "
+                "'document_reanalysis') AND status IN ('queued', 'running', 'retrying')"
+            ),
+            postgresql_where=text(
+                "job_type IN ('document_parse', 'requirement_extraction', "
+                "'document_reanalysis') AND status IN ('queued', 'running', 'retrying')"
+            ),
+        ),
+    )
     job_type: Mapped[str] = mapped_column(String(40))
     entity_id: Mapped[UUID]
     status: Mapped[str] = mapped_column(String(20), default="queued")
@@ -161,12 +201,47 @@ class AgentRun(UUIDAuditMixin, Base):
             "'failed', 'cancelled')",
             name="ck_agent_runs_status",
         ),
+        CheckConstraint(
+            "outcome IS NULL OR outcome IN ('success', 'partial', 'blocked', 'no_result')",
+            name="ck_agent_runs_outcome",
+        ),
+        CheckConstraint(
+            "scope IN ('full_bid_draft', 'risk_review', 'material_gap_analysis', "
+            "'response_improvement', 'amendment_reanalysis', 'work_package_check')",
+            name="ck_agent_runs_scope",
+        ),
         Index("ix_agent_runs_tenant_project", "tenant_id", "project_id"),
+        Index(
+            "uq_agent_runs_active_project",
+            "tenant_id",
+            "project_id",
+            unique=True,
+            sqlite_where=text(
+                "status IN ('queued', 'planning', 'running', 'waiting_approval')"
+            ),
+            postgresql_where=text(
+                "status IN ('queued', 'planning', 'running', 'waiting_approval')"
+            ),
+        ),
     )
 
     project_id: Mapped[UUID] = mapped_column(ForeignKey("tender_projects.id"), index=True)
     workflow_type: Mapped[str] = mapped_column(String(100))
     goal: Mapped[str] = mapped_column(Text)
+    # `supervised` preserves the original three review gates.  The default is
+    # deliberately the local, draft-only agent mode; it never represents a
+    # human approval or a final compliance decision.
+    mode: Mapped[str] = mapped_column(String(30), default="autonomous_draft")
+    scope: Mapped[str] = mapped_column(String(60), default="full_bid_draft")
+    outcome: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    plan_json: Mapped[dict] = mapped_column(JSON, default=dict)
+    iteration: Mapped[int] = mapped_column(Integer, default=0)
+    max_iterations: Mapped[int] = mapped_column(Integer, default=20)
+    current_action: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_observation: Mapped[str | None] = mapped_column(Text, nullable=True)
+    next_action: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    agent_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    completion_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
     status: Mapped[str] = mapped_column(String(30), default="queued")
     current_step: Mapped[str | None] = mapped_column(String(100), nullable=True)
     input_revision: Mapped[int] = mapped_column(Integer, default=1)
@@ -264,6 +339,7 @@ class AgentArtifact(UUIDAuditMixin, Base):
 class AuditEvent(Base):
     __tablename__ = "audit_events"
     id: Mapped[UUID] = mapped_column(primary_key=True)
+    request_id: Mapped[UUID] = mapped_column(index=True, nullable=False)
     tenant_id: Mapped[UUID] = mapped_column(index=True)
     project_id: Mapped[UUID | None] = mapped_column(index=True, nullable=True)
     actor_type: Mapped[str] = mapped_column(String(20))
@@ -409,6 +485,7 @@ class ComplianceCheck(UUIDAuditMixin, Base):
     model_run_id: Mapped[UUID | None] = mapped_column(nullable=True)
     reviewed_by: Mapped[UUID | None] = mapped_column(nullable=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    metadata_json: Mapped[dict] = mapped_column("metadata", JSON, default=dict)
 
 
 class ConsistencyIssue(UUIDAuditMixin, Base):

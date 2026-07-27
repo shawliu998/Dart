@@ -6,12 +6,12 @@
 
 ## 2. 身份、租户与最小权限
 
-生产 tenant/user/roles 来自服务端认证；任何客户端 tenant_id 不能作为授权。Repository 查询和外键解析强制 tenant scope；项目成员与 admin/bid_manager/reviewer/legal/finance/viewer 权限在 service 层检查。敏感 EvidenceAsset 限制预览和下载，下载同样审计。演示可信请求头只允许本地开发，不能部署到公网。
+生产 tenant/user/roles 来自服务端认证；任何客户端 tenant_id 不能作为授权。Repository 查询和外键解析强制 tenant scope；项目成员与 admin/bid_manager/reviewer/legal/finance/viewer 权限在 service 层检查。敏感 EvidenceAsset 限制预览和下载，下载同样审计。演示可信请求头只允许 `APP_ENV=development` 的本地开发，不能部署到公网或其他服务环境。
 
 ## 3. 上传、解析和对象存储
 
 - 消毒文件名，拒绝绝对路径、`..`、控制字符、双扩展欺骗和保留名。
-- 结合扩展名、声明 MIME 和 magic bytes；限制单文件大小并先隔离后扫描。
+- 结合扩展名、声明 MIME 和 magic bytes；应用层在读取后、持久化前限制单文件大小并先隔离后扫描。反向代理或 ASGI server 必须另设总请求体限额，避免 multipart 解析阶段占用临时磁盘或网络资源。
 - ZIP 限制文件数、递归深度、压缩比和展开总量，防 Zip Slip/Bomb。
 - 不执行宏、脚本、嵌入对象、外链、二维码或文档指令。
 - 对象键使用 UUID，不使用原始路径；下载 URL 短期签名并绑定授权。
@@ -34,7 +34,7 @@ PackageItem 归档路径重新生成并拒绝路径穿越、重复名和软链�
 
 ## 8. 审计与事件响应
 
-记录上传、解析、模型、人工决定、证据接受/拒绝、规则、冲突、公告、任务、封装、审批、下载和导出。事件含 request_id、actor、实体、前后哈希和版本，不含密钥/token/不必要正文。审计失败时高风险写入失败关闭。跨租户访问、批量下载、恶意上传、反复模型错误和审计失败应告警。
+记录上传、解析、模型、人工决定、证据接受/拒绝、规则、冲突、公告、任务、封装、审批、下载和导出。事件含服务端生成的 UUID `request_id`、actor、实体、前后哈希和版本，不含密钥/token/不必要正文；客户端 `X-Request-ID` 不可信且会被忽略。后台写入脱离 HTTP 请求上下文，并使用新的 request_id。审计失败时高风险写入失败关闭。跨租户访问、批量下载、恶意上传、反复模型错误和审计失败应告警。
 
 ## 9. 发布安全门禁
 

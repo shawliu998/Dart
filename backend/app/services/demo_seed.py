@@ -24,10 +24,13 @@ from app.models.entities import (
     PackageItem,
     RemediationTask,
     Requirement,
+    ResponseItem,
     TenderProject,
     User,
 )
 from app.parsers.deterministic import DeterministicTextParser
+from app.auth.dependencies import Principal
+from app.services.responses import generate_project_responses
 from app.storage.adapter import get_storage_adapter
 
 
@@ -472,6 +475,19 @@ def seed_full_demo(db: Session, tenant_id: UUID, user_id: UUID, project_id: UUID
                     )
                 )
     db.commit()
+    existing_response = db.scalar(
+        select(ResponseItem.id).where(
+            ResponseItem.project_id == project_id,
+            ResponseItem.tenant_id == tenant_id,
+        )
+    )
+    if existing_response is None:
+        generate_project_responses(
+            db,
+            Principal(tenant_id=tenant_id, user_id=user_id, role="admin"),
+            project_id,
+            allow_provisional=False,
+        )
     return {
         "fixture_loaded": True,
         "documents": len(documents),
@@ -483,4 +499,8 @@ def seed_full_demo(db: Session, tenant_id: UUID, user_id: UUID, project_id: UUID
         "issues": len(issues),
         "tasks": len(tasks),
         "package_items": len(package_items),
+        "responses": db.query(ResponseItem).filter(
+            ResponseItem.project_id == project_id,
+            ResponseItem.tenant_id == tenant_id,
+        ).count(),
     }

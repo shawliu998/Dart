@@ -29,6 +29,10 @@ REQUIRED_FILES = {
     "bid_documents/技术响应文件.docx",
     "bid_documents/报价表.xlsx",
 }
+REQUIRED_TEMPLATE_FILES = {
+    "templates/商务响应表.xlsx",
+    "templates/报价表.xlsx",
+}
 
 
 def fail(message: str) -> None:
@@ -77,10 +81,10 @@ def main() -> None:
         if invariants.get(key) != len(items):
             fail(f"{key}计数不一致：预期{invariants.get(key)}，实际{len(items)}")
 
-    missing = sorted(name for name in REQUIRED_FILES if not (DEMO / name).exists())
+    missing = sorted(name for name in REQUIRED_FILES | REQUIRED_TEMPLATE_FILES if not (DEMO / name).exists())
     if missing:
         fail(f"缺少文件：{missing}；请先运行 make generate-demo")
-    for name in REQUIRED_FILES:
+    for name in REQUIRED_FILES | REQUIRED_TEMPLATE_FILES:
         path = DEMO / name
         if path.suffix == ".pdf" and not path.read_bytes().startswith(b"%PDF-"):
             fail(f"PDF签名无效：{name}")
@@ -90,6 +94,12 @@ def main() -> None:
             with zipfile.ZipFile(path) as archive:
                 if "[Content_Types].xml" not in archive.namelist():
                     fail(f"OOXML缺少Content Types：{name}")
+
+    for filename in ("商务响应表.xlsx", "报价表.xlsx"):
+        template_digest = hashlib.sha256((DEMO / "templates" / filename).read_bytes()).digest()
+        output_digest = hashlib.sha256((DEMO / "bid_documents" / filename).read_bytes()).digest()
+        if template_digest != output_digest:
+            fail(f"XLSX生成物与已验收模板不一致：{filename}")
 
     if not MANIFEST_PATH.exists():
         fail("缺少生成清单；请运行 make generate-demo")

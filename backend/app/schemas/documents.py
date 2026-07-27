@@ -15,6 +15,7 @@ class DocumentRead(ORMModel):
     size: int
     sha256: str
     version_number: int
+    parse_revision: int
     parse_status: str
     page_count: int
     created_at: datetime
@@ -23,6 +24,7 @@ class DocumentRead(ORMModel):
 class PageRead(ORMModel):
     document_id: UUID
     page_number: int
+    parse_revision: int
     raw_text: str
     markdown: str
     layout_json: dict

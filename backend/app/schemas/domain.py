@@ -126,6 +126,43 @@ class ResponseEdit(BaseModel):
     reason: str = Field(min_length=3, max_length=2000)
 
 
+class ResponseRequirementContext(BaseModel):
+    code: str | None
+    title: str
+    category: str
+    normalized_text: str
+    mandatory: bool
+    risk_level: str
+
+
+class ResponseRequirementSource(BaseModel):
+    document_id: UUID
+    filename: str
+    version: int
+    page: int
+    clause: str | None
+    excerpt: str
+    bbox: dict | None
+
+
+class ResponseEvidenceSource(BaseModel):
+    claim_id: UUID
+    asset_id: UUID
+    asset_name: str
+    document_id: UUID
+    filename: str
+    document_version: int
+    claim_type: str
+    subject: str
+    predicate: str
+    value: str
+    valid_to: date | None
+    page: int
+    excerpt: str
+    confidence: float
+    human_verified: bool
+
+
 class ResponseItemRead(ORMModel):
     id: UUID
     project_id: UUID
@@ -145,3 +182,6 @@ class ResponseItemRead(ORMModel):
     created_at: datetime
     updated_at: datetime
     evidence_claim_ids: list[UUID] = Field(default_factory=list)
+    requirement: ResponseRequirementContext | None = None
+    requirement_source: ResponseRequirementSource | None = None
+    evidence_sources: list[ResponseEvidenceSource] = Field(default_factory=list)

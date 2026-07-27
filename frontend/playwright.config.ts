@@ -1,23 +1,32 @@
 import { defineConfig, devices } from "@playwright/test";
 
+const port = Number(process.env.E2E_PORT ?? 3100);
+const baseURL = `http://localhost:${port}`;
+const liveApiBaseUrl = process.env.E2E_LIVE_API_BASE_URL?.replace(/\/$/, "");
+const liveApiMode = Boolean(liveApiBaseUrl);
+
 export default defineConfig({
   testDir: "./tests/e2e",
-  fullyParallel: true,
+  fullyParallel: !liveApiMode,
+  workers: liveApiMode ? 1 : undefined,
   retries: process.env.CI ? 2 : 0,
   reporter: "list",
   use: {
-    baseURL: "http://localhost:3100",
+    baseURL,
     trace: "on-first-retry",
   },
   projects: [{ name: "chromium", use: { ...devices["Desktop Chrome"] } }],
   webServer: {
-    command: "npm run dev -- --port 3100",
+    command: `npm run dev -- --port ${port}`,
     env: {
       ...process.env,
-      NEXT_PUBLIC_DEMO_MODE: "true",
+      NEXT_PUBLIC_DEMO_MODE: liveApiMode ? "false" : "true",
+      ...(liveApiBaseUrl
+        ? { NEXT_PUBLIC_API_BASE_URL: liveApiBaseUrl }
+        : {}),
     },
-    url: "http://localhost:3100/projects",
-    reuseExistingServer: !process.env.CI,
+    url: `${baseURL}/projects`,
+    reuseExistingServer: liveApiMode ? false : !process.env.CI,
     timeout: 120_000,
   },
 });

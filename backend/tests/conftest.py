@@ -9,13 +9,21 @@ import pytest
 TEST_ROOT = Path(tempfile.mkdtemp(prefix="bidevidence-tests-"))
 os.environ["DATABASE_URL"] = f"sqlite:///{TEST_ROOT / 'test.db'}"
 os.environ["UPLOAD_DIR"] = str(TEST_ROOT / "uploads")
+# Starlette awaits endpoint background tasks before returning. Disabling the
+# competing lifespan worker keeps API tests deterministic while preserving the
+# same durable queue and dispatcher path.
+os.environ["BIDEVIDENCE_LOCAL_WORKER_ENABLED"] = "false"
 
 from fastapi.testclient import TestClient  # noqa: E402
+from app.db.base import Base  # noqa: E402
+from app.db.session import engine  # noqa: E402
 from app.main import app  # noqa: E402
 
 
 @pytest.fixture
 def client():
+    Base.metadata.drop_all(bind=engine)
+    Base.metadata.create_all(bind=engine)
     with TestClient(app) as test_client:
         yield test_client
 

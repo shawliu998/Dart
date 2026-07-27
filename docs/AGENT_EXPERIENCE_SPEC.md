@@ -11,7 +11,9 @@ type AgentRunStatus =
   | "queued" | "planning" | "running" | "waiting_approval"
   | "completed" | "failed" | "cancelled";
 
-type AgentStepStatus = "pending" | "running" | "completed" | "failed" | "blocked";
+type AgentStepStatus =
+  | "pending" | "running" | "waiting_approval" | "completed"
+  | "failed" | "blocked" | "cancelled";
 
 interface AgentRun {
   id: string;
@@ -44,8 +46,11 @@ interface ApprovalRequest {
   id: string;
   runId: string;
   stepId: string;
-  type: "evidence_match" | "compliance_override" | "consistency_resolution"
-    | "amendment_apply" | "package_warning" | "package_build";
+  type: "review_requirements" | "review_evidence_matches" | "review_responses"
+    | "evidence_match" | "compliance_override" | "consistency_resolution"
+    | "amendment_apply" | "package_warning" | "package_build"
+    | "final_work_package_review" | "unknown";
+  status: "pending" | "approved" | "rejected" | "cancelled";
   title: string;
   description: string;
   impactSummary: string;
@@ -61,7 +66,7 @@ interface ApprovalRequest {
 | 序号 | 步骤 | 执行者 | 允许产出 | 门禁 |
 |---|---|---|---|---|
 | 1 | 文档接收与解析 | DocumentIngestionService | 文件/页/版本索引 | 文件异常人工处理 |
-| 2 | 要求提取 | RequirementExtractionAgent + MockLLMProvider | 候选要求与来源 | `<0.70`、致命候选人工复核 |
+| 2 | 要求提取 | RequirementExtractionAgent + MockLLMProvider | 候选要求与来源 | `<0.70`、阻断性候选项人工复核 |
 | 3 | 证据候选匹配 | EvidenceMatchingAgent + MockLLMProvider | 排序候选和匹配理由 | 接受/拒绝必须人工执行 |
 | 4 | 合规与一致性 | ComplianceRuleEngine | 金额、日期、计数、冲突结果 | 规则失败阻塞后续就绪 |
 | 5 | 补充公告影响 | AmendmentImpactAgent + MockLLMProvider | 前后文差异和影响图 | 高影响变更重新审批 |
@@ -80,7 +85,7 @@ interface ApprovalRequest {
 - 任何未决审批阻止继续时为 `waiting_approval`。
 - 全部必要步骤完成且门禁通过后为 `completed`。
 - 技术执行错误为 `failed`；用户明确取消为 `cancelled`。
-- “有致命风险”不是 Run 状态；用输出严重度和 `blocked` 步骤表达。
+- “存在阻断项”不是 Run 状态；用输出严重度和 `blocked` 步骤表达。
 
 ### Step
 

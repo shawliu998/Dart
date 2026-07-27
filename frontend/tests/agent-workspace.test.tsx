@@ -1,4 +1,4 @@
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { AgentWorkspace } from "@/components/agent/agent-workspace";
 import { AgentStatusControl } from "@/components/agent";
@@ -18,6 +18,88 @@ describe("AgentWorkspace", () => {
     expect(screen.getByRole("link", { name: /打开证据匹配工作台/ })).toHaveAttribute("href", "/projects/project-1/evidence-matching");
     expect(screen.getAllByText("第 21 页").length).toBeGreaterThan(0);
     expect(screen.getByText(/不执行法律资格裁决/)).toBeInTheDocument();
+  });
+
+  it("shows the five-phase autonomous command center from API run fields", () => {
+    const bundle = createAgentRunBundle("project-autonomous");
+    bundle.run = { ...bundle.run, mode: "autonomous_draft", iteration: 4, maxIterations: 12, currentAction: "整理响应草稿段落", nextAction: "核对证据覆盖缺口", observation: "发现 3 项待补充材料", planStages: [{ key: "understand", title: "服务端计划：文件理解", status: "completed" }, { key: "evidence", title: "服务端计划：证据处理", status: "waiting_approval" }] };
+    render(<AgentWorkspace initialResult={{ source: "api", data: bundle, error: null }} />);
+    expect(screen.getByRole("heading", { name: "自主执行计划" })).toBeInTheDocument();
+    expect(screen.getByRole("list", { name: "五阶段执行计划" })).toBeInTheDocument();
+    expect(screen.getByText("整理响应草稿段落")).toBeInTheDocument();
+    expect(screen.getByText("核对证据覆盖缺口")).toBeInTheDocument();
+    expect(screen.getByText("发现 3 项待补充材料")).toBeInTheDocument();
+    expect(screen.getByText("第 4 / 12 次迭代")).toBeInTheDocument();
+    expect(screen.getByText(/当前产物均为内部草稿/)).toBeInTheDocument();
+    expect(screen.getByText("服务端计划：文件理解")).toBeInTheDocument();
+    expect(screen.getByText("服务端计划：证据处理")).toBeInTheDocument();
+    expect(screen.queryByText("交付物生成")).not.toBeInTheDocument();
+  });
+
+  it("shows a business outcome separately from the technical run status", () => {
+    const bundle = createAgentRunBundle("project-outcome");
+    bundle.run = { ...bundle.run, mode: "autonomous_draft", status: "completed", outcome: "partial" };
+    render(<AgentWorkspace initialResult={{ source: "api", data: bundle, error: null }} />);
+    expect(screen.getAllByText("已完成").length).toBeGreaterThan(0);
+    expect(screen.getByText("已生成部分结果")).toBeInTheDocument();
+  });
+
+  it("shows an explicit fallback instead of crashing when source arrays are empty", () => {
+    const bundle = createAgentRunBundle("project-no-source");
+    bundle.steps[0] = { ...bundle.steps[0], sources: [] };
+    bundle.approvals[0] = { ...bundle.approvals[0], sourceReferences: [] };
+    bundle.outputs[0] = { ...bundle.outputs[0], provenance: [] };
+    render(<AgentWorkspace initialResult={{ source: "api", data: bundle, error: null }} />);
+    expect(screen.getAllByText("当前输出暂未绑定可展示来源").length).toBeGreaterThanOrEqual(3);
+  });
+
+  it("keeps run polling available and shows the real event error when event refresh fails", async () => {
+    const bundle = createAgentRunBundle("project-events");
+    bundle.run = { ...bundle.run, mode: "autonomous_draft", status: "running", planStages: [{ key: "understand", title: "理解文件", status: "in_progress" }] };
+    const events = vi.spyOn(agentApi, "events").mockRejectedValue(new Error("EVENTS_503"));
+    const getRun = vi.spyOn(agentApi, "getRunById").mockResolvedValue({ source: "api", data: bundle, error: null });
+    render(<AgentWorkspace initialResult={{ source: "api", data: bundle, error: null }} />);
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("事件流刷新失败：EVENTS_503"));
+    expect(getRun).toHaveBeenCalledWith(bundle.run.id, bundle.run.projectId);
+    events.mockRestore();
+    getRun.mockRestore();
+  });
+
+  it("shows a real run refresh failure while retaining the last successful snapshot", async () => {
+    const bundle = createAgentRunBundle("project-run-refresh");
+    bundle.run = { ...bundle.run, mode: "autonomous_draft", status: "running", planStages: [{ key: "understand", title: "理解文件", status: "in_progress" }] };
+    const events = vi.spyOn(agentApi, "events").mockResolvedValue([]);
+    const getRun = vi.spyOn(agentApi, "getRunById").mockResolvedValue({ source: "failure", data: null, error: { code: "agent_run_request_failed", message: "RUN_503", retryable: true } });
+    render(<AgentWorkspace initialResult={{ source: "api", data: bundle, error: null }} />);
+    await waitFor(() => expect(screen.getByRole("alert")).toHaveTextContent("运行状态刷新失败：RUN_503"));
+    expect(screen.getAllByText(bundle.run.title).length).toBeGreaterThan(0);
+    events.mockRestore();
+    getRun.mockRestore();
+  });
+
+  it("keeps polling across a transient failed state until an automatic retry is queued", async () => {
+    const runningBundle = createAgentRunBundle("project-retry-bridge");
+    runningBundle.run = { ...runningBundle.run, mode: "autonomous_draft", status: "running" };
+    const failedBundle = {
+      ...runningBundle,
+      run: { ...runningBundle.run, status: "failed" as const, summary: "等待后台任务安排重试" },
+    };
+    const queuedBundle = {
+      ...runningBundle,
+      run: { ...runningBundle.run, status: "queued" as const, summary: "后台任务已重新排队" },
+    };
+    const events = vi.spyOn(agentApi, "events").mockResolvedValue([]);
+    const getRun = vi.spyOn(agentApi, "getRunById")
+      .mockResolvedValueOnce({ source: "api", data: failedBundle, error: null })
+      .mockResolvedValueOnce({ source: "api", data: failedBundle, error: null })
+      .mockResolvedValue({ source: "api", data: queuedBundle, error: null });
+
+    render(<AgentWorkspace initialResult={{ source: "api", data: runningBundle, error: null }} />);
+
+    await waitFor(() => expect(getRun).toHaveBeenCalledTimes(3), { timeout: 2500 });
+    expect(screen.getByText("后台任务已重新排队")).toBeInTheDocument();
+    events.mockRestore();
+    getRun.mockRestore();
   });
 
   it("opens the reusable status drawer with plan, tool calls, approvals and findings", async () => {
@@ -47,6 +129,13 @@ describe("AgentWorkspace", () => {
     expect(screen.queryByRole("link", { name: /打开要求复核工作台/ })).not.toBeInTheDocument();
   });
 
+  it("shows a neutral first-run state instead of an API failure", () => {
+    render(<AgentWorkspace initialResult={{ source: "empty", data: null, error: null }} />);
+    expect(screen.getByRole("status")).toHaveTextContent("尚无 Agent 运行记录");
+    expect(screen.queryByRole("alert")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "刷新重试" })).not.toBeInTheDocument();
+  });
+
   it("submits an API-only pending approval with its audited reason", async () => {
     const user = userEvent.setup();
     const approve = vi.spyOn(agentApi, "approve").mockResolvedValue({ ok: true });
@@ -70,6 +159,21 @@ describe("AgentWorkspace", () => {
     expect(screen.queryByRole("button", { name: "批准" })).not.toBeInTheDocument();
   });
 
+  it("routes the final work-package approval through the unified review page", () => {
+    const bundle = createAgentRunBundle("project-final-review");
+    bundle.approvals = [{
+      ...bundle.approvals[0],
+      type: "final_work_package_review",
+      status: "pending",
+      destinationLabel: "打开最终工作包复核",
+      href: "/projects/project-final-review/review",
+    }];
+    render(<AgentWorkspace initialResult={{ source: "api", data: bundle, error: null }} />);
+    expect(screen.queryByLabelText("审批理由")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "批准" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /打开最终工作包复核/ })).toHaveAttribute("href", "/projects/project-final-review/review");
+  });
+
   it("sends a rejection reason to the persisted approval endpoint", async () => {
     const user = userEvent.setup();
     const reject = vi.spyOn(agentApi, "reject").mockResolvedValue({ ok: true });
@@ -82,5 +186,32 @@ describe("AgentWorkspace", () => {
     expect(reject).toHaveBeenCalledWith(bundle.approvals[0].id, { reason: "来源页码不足，退回补充证据" });
     reject.mockRestore();
     consoleError.mockRestore();
+  });
+
+  it("surfaces new artifact cards with structured metrics and real workbench links", () => {
+    const bundle = createAgentRunBundle("project-artifacts");
+    render(<AgentWorkspace initialResult={{ source: "demo", data: bundle, error: null }} />);
+    expect(screen.getByRole("heading", { name: "企业材料 Claim" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "投标响应草稿" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "响应草稿质量自查" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "缺口补救任务" })).toBeInTheDocument();
+    expect(screen.getAllByText("需跟进").length).toBeGreaterThan(0);
+    const links = screen.getAllByRole("link", { name: /查看业务结果/ });
+    expect(links.some((link) => link.getAttribute("href") === "/projects/project-artifacts/evidence-matching")).toBe(true);
+    expect(links.some((link) => link.getAttribute("href") === "/projects/project-artifacts/responses")).toBe(true);
+    expect(links.some((link) => link.getAttribute("href") === "/projects/project-artifacts/tasks")).toBe(true);
+  });
+
+  it("shows clear Chinese labels for new autonomous tool events", () => {
+    const bundle = createAgentRunBundle("project-events");
+    bundle.events = [
+      { sequence: 1, eventType: "tool.completed", payload: { tool: "extract_evidence_claims", summary: "已抽取 Claim" }, timestamp: "2026-07-17T09:01:00Z" },
+      { sequence: 2, eventType: "step.completed", payload: { step_key: "check_response_quality", summary: "质量检查完成" }, timestamp: "2026-07-17T09:02:00Z" },
+      { sequence: 3, eventType: "tool.completed", payload: { tool: "create_remediation_tasks", summary: "已创建任务" }, timestamp: "2026-07-17T09:03:00Z" },
+    ];
+    render(<AgentWorkspace initialResult={{ source: "demo", data: bundle, error: null }} />);
+    expect(screen.getByText("抽取企业材料 Claim 已完成")).toBeInTheDocument();
+    expect(screen.getByText("检查并修补响应草稿 · 步骤已完成")).toBeInTheDocument();
+    expect(screen.getByText("创建整改任务 已完成")).toBeInTheDocument();
   });
 });

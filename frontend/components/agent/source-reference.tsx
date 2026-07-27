@@ -7,7 +7,14 @@ const reviewLabels: Record<AgentSourceRef["reviewState"], string> = {
   rule_result: "确定性规则",
 };
 
-export function SourceReference({ source, compact = false }: { source: AgentSourceRef; compact?: boolean }) {
+export function SourceReference({ source, compact = false }: { source: AgentSourceRef | null | undefined; compact?: boolean }) {
+  if (!source) {
+    return (
+      <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-500">
+        当前输出暂未绑定可展示来源
+      </div>
+    );
+  }
   const confidence = source.confidence === null ? null : `${Math.round(source.confidence * 100)}% 置信度`;
   return (
     <div className="rounded-md border border-slate-200 bg-slate-50 p-3 text-xs text-slate-600">

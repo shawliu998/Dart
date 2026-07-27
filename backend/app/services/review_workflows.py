@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 from datetime import datetime
+from typing import Literal
 from uuid import UUID
 
 from fastapi import HTTPException
-from sqlalchemy import select
+from sqlalchemy import delete, select
 from sqlalchemy.orm import Session
 
-from app.audit.service import append_event
+from app.audit.service import append_event, stable_hash
 from app.auth.dependencies import Principal
 from app.db.base import utcnow
 from app.models.entities import (
@@ -33,37 +34,140 @@ from app.schemas.domain import (
 )
 
 
-def run_compliance(db: Session, principal: Principal, project_id: UUID) -> list[ComplianceCheck]:
-    existing = list(
+_COMPLIANCE_RULE_VERSION = "EVIDENCE_PRESENCE_V2"
+
+
+def _evidence_status(
+    db: Session,
+    requirement: Requirement,
+    *,
+    evidence_mode: Literal["accepted_only", "accepted_and_provisional"],
+) -> tuple[bool, bool, list[EvidenceMatch]]:
+    """Return (has_accepted, has_provisional, relevant_matches)."""
+    matches = list(
         db.scalars(
-            select(ComplianceCheck).where(
-                ComplianceCheck.project_id == project_id,
-                ComplianceCheck.tenant_id == principal.tenant_id,
+            select(EvidenceMatch).where(
+                EvidenceMatch.requirement_id == requirement.id,
+                EvidenceMatch.tenant_id == requirement.tenant_id,
             )
         )
     )
-    if existing:
+    has_accepted = any(match.status == "accepted" for match in matches)
+    allowed_provisional = evidence_mode == "accepted_and_provisional"
+    has_provisional = allowed_provisional and any(
+        match.status == "provisional_match" for match in matches
+    )
+    return has_accepted, has_provisional, matches
+
+
+def _compliance_input_hash(requirement: Requirement, matches: list[EvidenceMatch]) -> str:
+    return stable_hash(
+        {
+            "requirement_id": str(requirement.id),
+            "source_document_id": str(requirement.source_document_id) if requirement.source_document_id else None,
+            "source_page": requirement.source_page,
+            "original_text": requirement.original_text,
+            "normalized_requirement": requirement.normalized_requirement,
+            "risk_level": requirement.risk_level,
+            "extraction_confidence": float(requirement.extraction_confidence),
+            "match_statuses": sorted(match.status for match in matches),
+            "rule_version": _COMPLIANCE_RULE_VERSION,
+        }
+    )
+
+
+def run_compliance(
+    db: Session,
+    principal: Principal,
+    project_id: UUID,
+    *,
+    evidence_mode: Literal["accepted_only", "accepted_and_provisional"] = "accepted_only",
+    force_recompute: bool = False,
+) -> list[ComplianceCheck]:
+    """Run deterministic evidence-presence compliance checks.
+
+    Human-overridden checks are always preserved. Provisional evidence never
+    produces ``pass``; it yields ``manual_review`` with an explicit reason.
+    """
+    existing = list(
+        db.scalars(
+            select(ComplianceCheck)
+            .join(Requirement, Requirement.id == ComplianceCheck.requirement_id, isouter=True)
+            .where(
+                ComplianceCheck.project_id == project_id,
+                ComplianceCheck.tenant_id == principal.tenant_id,
+                (ComplianceCheck.requirement_id.is_(None) | Requirement.is_current.is_(True)),
+            )
+        )
+    )
+    if existing and not force_recompute:
         return existing
+
     requirements = list(
         db.scalars(
             select(Requirement).where(
                 Requirement.project_id == project_id,
                 Requirement.tenant_id == principal.tenant_id,
+                Requirement.is_current.is_(True),
             )
         )
     )
-    for requirement in requirements:
-        accepted = db.scalar(
-            select(EvidenceMatch).where(
-                EvidenceMatch.requirement_id == requirement.id,
-                EvidenceMatch.status == "accepted",
+    preserved_requirement_ids = {
+        check.requirement_id for check in existing if check.reviewed_by is not None
+    }
+    if force_recompute:
+        current_requirement_ids = [item.id for item in requirements]
+        db.execute(
+            delete(ComplianceCheck).where(
+                ComplianceCheck.project_id == project_id,
+                ComplianceCheck.tenant_id == principal.tenant_id,
+                ComplianceCheck.check_type == "evidence_presence",
+                ComplianceCheck.reviewed_by.is_(None),
+                ComplianceCheck.requirement_id.in_(current_requirement_ids),
             )
         )
-        result = (
-            "pass"
-            if accepted
-            else ("manual_review" if requirement.extraction_confidence < 0.70 else "warning")
+        db.flush()
+    evaluated_at = utcnow()
+    for requirement in requirements:
+        if requirement.id in preserved_requirement_ids:
+            continue
+
+        has_accepted, has_provisional, matches = _evidence_status(
+            db, requirement, evidence_mode=evidence_mode
         )
+        input_hash = _compliance_input_hash(requirement, matches)
+
+        if has_accepted:
+            result = "pass"
+            actual = "accepted evidence"
+            reason = "人工已接受的证据通过证据存在性检查；不代表最终合规结论"
+        elif has_provisional:
+            result = "manual_review"
+            actual = "provisional evidence"
+            reason = "使用暂定证据（provisional），尚未人工接受，不自动判定满足"
+        elif requirement.extraction_confidence < 0.70:
+            result = "manual_review"
+            actual = "no accepted evidence; low extraction confidence"
+            reason = "确定性检查：提取置信度低于 0.70，需人工复核原始条款"
+        else:
+            result = "warning"
+            actual = "no accepted evidence"
+            reason = "确定性检查：未找到已接受证据，不自动判定满足"
+
+        source_references = [
+            {
+                "document_id": str(requirement.source_document_id) if requirement.source_document_id else None,
+                "page": requirement.source_page,
+                "text": requirement.original_text,
+            }
+        ]
+        metadata = {
+            "rule_version": _COMPLIANCE_RULE_VERSION,
+            "input_hash": input_hash,
+            "evaluated_at": evaluated_at.isoformat(),
+            "evidence_mode": evidence_mode,
+        }
+
         db.add(
             ComplianceCheck(
                 tenant_id=principal.tenant_id,
@@ -72,18 +176,13 @@ def run_compliance(db: Session, principal: Principal, project_id: UUID) -> list[
                 requirement_id=requirement.id,
                 check_type="evidence_presence",
                 expected=requirement.normalized_requirement,
-                actual="accepted evidence" if accepted else "no accepted evidence",
+                actual=actual,
                 result=result,
                 severity=requirement.risk_level,
-                rule_code="EVIDENCE_ACCEPTED_V1",
-                reason="确定性检查人工已接受的证据；未接受不自动判定满足",
-                source_references=[
-                    {
-                        "document_id": str(requirement.source_document_id),
-                        "page": requirement.source_page,
-                        "text": requirement.original_text,
-                    }
-                ],
+                rule_code=_COMPLIANCE_RULE_VERSION,
+                reason=reason,
+                source_references=source_references,
+                metadata_json=metadata,
             )
         )
     db.commit()
@@ -94,10 +193,25 @@ def run_compliance(db: Session, principal: Principal, project_id: UUID) -> list[
         entity_type="project",
         entity_id=project_id,
         project_id=project_id,
-        after={"count": len(requirements), "engine": "deterministic"},
+        after={
+            "count": len(requirements),
+            "engine": "deterministic",
+            "evidence_mode": evidence_mode,
+            "force_recompute": force_recompute,
+        },
     )
     db.commit()
-    return list(db.scalars(select(ComplianceCheck).where(ComplianceCheck.project_id == project_id)))
+    return list(
+        db.scalars(
+            select(ComplianceCheck)
+            .join(Requirement, Requirement.id == ComplianceCheck.requirement_id, isouter=True)
+            .where(
+                ComplianceCheck.project_id == project_id,
+                ComplianceCheck.tenant_id == principal.tenant_id,
+                (ComplianceCheck.requirement_id.is_(None) | Requirement.is_current.is_(True)),
+            )
+        )
+    )
 
 
 def override_compliance(

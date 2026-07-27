@@ -54,6 +54,7 @@ export function DisqualificationCenter({
     id: string;
     next: DisqualificationItem["status"];
   } | null>(null);
+  const [decisionReason, setDecisionReason] = useState("");
   const [feedback, setFeedback] = useState<MutationResult | null>(null);
   const [sourceItem, setSourceItem] = useState<DisqualificationItem | null>(
     null,
@@ -86,6 +87,7 @@ export function DisqualificationCenter({
           title: "后端未提供解决接口",
           message: "当前状态未更改；请先创建整改任务并由后端工作流完成关闭。",
         });
+        setDecisionReason("");
         setPending(null);
         return;
       }
@@ -95,7 +97,7 @@ export function DisqualificationCenter({
           {
             method: "POST",
             body: JSON.stringify({
-              reason: `${verb}：由授权人员在否决项中心复核`,
+              reason: decisionReason.trim(),
             }),
           },
         );
@@ -107,6 +109,7 @@ export function DisqualificationCenter({
           title: `${verb}失败`,
           message: error instanceof Error ? error.message : "未知错误",
         });
+        setDecisionReason("");
         setPending(null);
         return;
       }
@@ -126,6 +129,7 @@ export function DisqualificationCenter({
           ? "决定已写入 API 并保留审计原因。"
           : "仅更新本地演示状态，未写入后端。",
     });
+    setDecisionReason("");
     setPending(null);
   }
 
@@ -386,7 +390,16 @@ export function DisqualificationCenter({
         description="该操作会记录人工决定；规则或 AI 候选不会自动成为法律资格结论。"
         confirmLabel="确认并记录"
         tone={pending?.next === "confirmed" ? "danger" : "default"}
-        onClose={() => setPending(null)}
+        reason={{
+          label: "决定理由",
+          value: decisionReason,
+          onChange: setDecisionReason,
+          placeholder: "说明核对的原文、证据及作出该决定的依据。",
+        }}
+        onClose={() => {
+          setPending(null);
+          setDecisionReason("");
+        }}
         onConfirm={() => pending && update(pending.id, pending.next)}
       />
       <DocumentDialog

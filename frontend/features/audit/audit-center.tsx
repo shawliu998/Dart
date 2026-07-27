@@ -202,7 +202,7 @@ export function AuditCenter({
           }}
         >
           <option value="all">全部风险</option>
-          <option value="fatal">致命</option>
+          <option value="fatal">阻断项</option>
           <option value="high">高</option>
           <option value="medium">中</option>
           <option value="low">低</option>

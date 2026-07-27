@@ -5,15 +5,22 @@ import { DEMO_PROJECT_ID } from "@/lib/demo/data";
 import { DEMO_NOW } from "@/lib/product-context";
 
 export async function getDashboardData() {
-  const [projects, taskResult, auditResult, agentResult] = await Promise.all([projectApi.list(), phaseApi.tasks(DEMO_PROJECT_ID), phaseApi.audit(DEMO_PROJECT_ID), agentApi.getRun(DEMO_PROJECT_ID)]);
+  const projects = await projectApi.list();
+  const dashboardProjectId = projects[0]?.id ?? DEMO_PROJECT_ID;
+  const [taskResult, auditResult, agentResult] = await Promise.all([
+    phaseApi.tasks(dashboardProjectId),
+    phaseApi.audit(dashboardProjectId),
+    agentApi.getRun(dashboardProjectId),
+  ]);
   const agent = agentResult.data;
   const now = DEMO_NOW.getTime();
   const cutoff = now + 14 * 24 * 60 * 60 * 1000;
   const dueToday = taskResult.data.filter((task) => task.status !== "done" && new Date(`${task.dueDate}T23:59:59+08:00`).toDateString() === DEMO_NOW.toDateString()).length;
   const nearestProject = [...projects].filter((project) => !Number.isNaN(new Date(project.deadline.replace(" ", "T") + "+08:00").getTime())).sort((a, b) => a.deadline.localeCompare(b.deadline))[0] ?? null;
-  const source = agentResult.source === "failure" ? "error" as const : taskResult.source === "api" && auditResult.source === "api" && agentResult.source === "api" ? "api" as const : "demo" as const;
+  const source = agentResult.source === "failure" ? "error" as const : taskResult.source === "api" && auditResult.source === "api" && (agentResult.source === "api" || agentResult.source === "empty") ? "api" as const : "demo" as const;
   return {
     projects, tasks: taskResult.data, audit: auditResult.data, source, agent, agentError: agentResult.error,
+    agentState: agent ? "running" as const : agentResult.source === "empty" ? "idle" as const : "error" as const,
     nowLabel: new Intl.DateTimeFormat("zh-CN", { dateStyle: "full", timeZone: "Asia/Shanghai" }).format(DEMO_NOW),
     sourceLabel: source === "api" ? "API 聚合" : source === "error" ? "Agent API 聚合失败" : "确定性演示聚合",
     metrics: {

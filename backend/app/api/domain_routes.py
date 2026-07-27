@@ -19,6 +19,7 @@ from app.models.entities import (
     AmendmentImpact,
     AuditEvent,
     ComplianceCheck,
+    Document,
     EvidenceClaim,
     EvidenceAsset,
     EvidenceMatch,
@@ -56,19 +57,130 @@ from app.storage.adapter import get_storage_adapter
 router = APIRouter(prefix="/api")
 
 
-def _response_read(db: Session, item: ResponseItem) -> dict:
-    """Serialize source links without exposing claims from another tenant."""
-    return {
-        **model_dict(item),
-        "evidence_claim_ids": list(
-            db.scalars(
-                select(ResponseEvidenceLink.evidence_claim_id).where(
-                    ResponseEvidenceLink.response_item_id == item.id,
-                    ResponseEvidenceLink.tenant_id == item.tenant_id,
-                )
+def _response_reads(db: Session, items: list[ResponseItem]) -> dict[UUID, dict]:
+    """Build the workbench projection with tenant-scoped, batched source lookups."""
+    if not items:
+        return {}
+    tenant_id = items[0].tenant_id
+    response_ids = [item.id for item in items]
+    requirement_ids = [item.requirement_id for item in items]
+    requirements = {
+        requirement.id: requirement
+        for requirement in db.scalars(
+            select(Requirement).where(
+                Requirement.id.in_(requirement_ids), Requirement.tenant_id == tenant_id
             )
-        ),
+        )
     }
+    links = list(
+        db.scalars(
+            select(ResponseEvidenceLink).where(
+                ResponseEvidenceLink.response_item_id.in_(response_ids),
+                ResponseEvidenceLink.tenant_id == tenant_id,
+            )
+        )
+    )
+    claim_ids = [link.evidence_claim_id for link in links]
+    accepted_pairs = {
+        (match.requirement_id, match.evidence_claim_id)
+        for match in db.scalars(
+            select(EvidenceMatch).where(
+                EvidenceMatch.requirement_id.in_(requirement_ids),
+                EvidenceMatch.evidence_claim_id.in_(claim_ids),
+                EvidenceMatch.tenant_id == tenant_id,
+                EvidenceMatch.status == "accepted",
+            )
+        )
+    } if claim_ids else set()
+    claims = {
+        claim.id: claim
+        for claim in db.scalars(
+            select(EvidenceClaim).where(
+                EvidenceClaim.id.in_(claim_ids), EvidenceClaim.tenant_id == tenant_id
+            )
+        )
+    } if claim_ids else {}
+    asset_ids = [claim.evidence_asset_id for claim in claims.values()]
+    assets = {
+        asset.id: asset
+        for asset in db.scalars(
+            select(EvidenceAsset).where(
+                EvidenceAsset.id.in_(asset_ids), EvidenceAsset.tenant_id == tenant_id
+            )
+        )
+    } if asset_ids else {}
+    document_ids = {
+        requirement.source_document_id for requirement in requirements.values()
+    } | {asset.document_id for asset in assets.values()}
+    documents = {
+        document.id: document
+        for document in db.scalars(
+            select(Document).where(Document.id.in_(document_ids), Document.tenant_id == tenant_id)
+        )
+    } if document_ids else {}
+    links_by_response: dict[UUID, list[ResponseEvidenceLink]] = {}
+    for link in links:
+        links_by_response.setdefault(link.response_item_id, []).append(link)
+
+    result: dict[UUID, dict] = {}
+    for item in items:
+        requirement = requirements.get(item.requirement_id)
+        requirement_document = documents.get(requirement.source_document_id) if requirement else None
+        evidence_sources = []
+        for link in links_by_response.get(item.id, []):
+            if (item.requirement_id, link.evidence_claim_id) not in accepted_pairs:
+                continue
+            claim = claims.get(link.evidence_claim_id)
+            asset = assets.get(claim.evidence_asset_id) if claim else None
+            document = documents.get(asset.document_id) if asset else None
+            if claim is None or asset is None or document is None:
+                continue
+            evidence_sources.append(
+                {
+                    "claim_id": claim.id,
+                    "asset_id": asset.id,
+                    "asset_name": asset.name,
+                    "document_id": document.id,
+                    "filename": document.filename,
+                    "document_version": document.version_number,
+                    "claim_type": claim.claim_type,
+                    "subject": claim.subject,
+                    "predicate": claim.predicate,
+                    "value": claim.value,
+                    "valid_to": claim.valid_to,
+                    "page": claim.source_page,
+                    "excerpt": claim.source_text,
+                    "confidence": float(claim.extraction_confidence),
+                    "human_verified": claim.human_verified,
+                }
+            )
+        result[item.id] = {
+            **model_dict(item),
+            "evidence_claim_ids": [link.evidence_claim_id for link in links_by_response.get(item.id, [])],
+            "requirement": {
+                "code": requirement.requirement_code,
+                "title": requirement.title,
+                "category": requirement.category,
+                "normalized_text": requirement.normalized_requirement,
+                "mandatory": requirement.mandatory,
+                "risk_level": requirement.risk_level,
+            } if requirement else None,
+            "requirement_source": {
+                "document_id": requirement_document.id,
+                "filename": requirement_document.filename,
+                "version": requirement_document.version_number,
+                "page": requirement.source_page,
+                "clause": requirement.clause_number,
+                "excerpt": requirement.original_text,
+                "bbox": requirement.source_bbox,
+            } if requirement and requirement_document else None,
+            "evidence_sources": evidence_sources,
+        }
+    return result
+
+
+def _response_read(db: Session, item: ResponseItem) -> dict:
+    return _response_reads(db, [item])[item.id]
 
 
 def _get_response_item(db: Session, principal: Principal, response_id: UUID) -> ResponseItem:
@@ -156,6 +268,7 @@ def list_evidence_matches(
             .where(
                 EvidenceMatch.tenant_id == principal.tenant_id,
                 Requirement.project_id == project_id,
+                Requirement.is_current.is_(True),
             )
         )
     )
@@ -205,14 +318,17 @@ def list_responses(
     items = list(
         db.scalars(
             select(ResponseItem)
+            .join(Requirement, Requirement.id == ResponseItem.requirement_id)
             .where(
                 ResponseItem.project_id == project_id,
                 ResponseItem.tenant_id == principal.tenant_id,
+                Requirement.is_current.is_(True),
             )
             .order_by(ResponseItem.created_at)
         )
     )
-    return [_response_read(db, item) for item in items]
+    reads = _response_reads(db, items)
+    return [reads[item.id] for item in items]
 
 
 @router.patch("/responses/{response_id}", response_model=ResponseItemRead)
@@ -276,9 +392,12 @@ def list_compliance(
     return [
         model_dict(item)
         for item in db.scalars(
-            select(ComplianceCheck).where(
+            select(ComplianceCheck)
+            .join(Requirement, Requirement.id == ComplianceCheck.requirement_id, isouter=True)
+            .where(
                 ComplianceCheck.project_id == project_id,
                 ComplianceCheck.tenant_id == principal.tenant_id,
+                (ComplianceCheck.requirement_id.is_(None) | Requirement.is_current.is_(True)),
             )
         )
     ]

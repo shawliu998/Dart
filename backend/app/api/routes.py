@@ -8,6 +8,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session
 
 from app.auth.dependencies import Principal, get_principal, require_review, require_write
+from app.core.config import get_settings
 from app.db.session import get_db
 from app.models.entities import (
     AsyncJob,
@@ -18,6 +19,7 @@ from app.models.entities import (
     Requirement,
 )
 from app.schemas.common import DecisionRequest, JobRead
+from app.schemas.audit import AuditEventRead
 from app.schemas.documents import DocumentRead, PageRead
 from app.schemas.projects import ProjectCreate, ProjectRead, ProjectUpdate
 from app.schemas.requirements import (
@@ -27,6 +29,7 @@ from app.schemas.requirements import (
     RequirementVerify,
 )
 from app.services import documents as document_service
+from app.services import reanalysis as reanalysis_service
 from app.services import projects as project_service
 from app.services.extraction import detect_for_project
 from app.services.jobs import process_next_job
@@ -38,6 +41,31 @@ from app.services.review import (
 )
 
 router = APIRouter(prefix="/api")
+UPLOAD_READ_CHUNK_BYTES = 64 * 1024
+
+
+async def read_upload_with_limit(file: UploadFile, max_bytes: int) -> bytes:
+    """Bound application-side reads before data reaches ingestion or storage.
+
+    Starlette may already have parsed multipart data into a spooled temporary
+    file. Network request-body limits remain the responsibility of the ASGI
+    server or reverse proxy.
+    """
+    if max_bytes < 0:
+        raise ValueError("max_bytes must not be negative")
+    chunks: list[bytes] = []
+    total = 0
+    while True:
+        # Request only one byte beyond the remaining allowance. This keeps the
+        # endpoint from materializing an unbounded upload as Python bytes before
+        # rejecting it or handing it to ingestion.
+        chunk = await file.read(min(UPLOAD_READ_CHUNK_BYTES, max_bytes - total + 1))
+        if not chunk:
+            return b"".join(chunks)
+        total += len(chunk)
+        if total > max_bytes:
+            raise HTTPException(status_code=413, detail="file is too large")
+        chunks.append(chunk)
 
 
 @router.post("/projects", response_model=ProjectRead, status_code=201)
@@ -95,7 +123,7 @@ async def upload_document(
 ):
     require_write(principal)
     project_service.get_project(db, principal, project_id)
-    data = await file.read()
+    data = await read_upload_with_limit(file, get_settings().max_upload_bytes)
     return document_service.ingest_document(
         db,
         principal,
@@ -146,19 +174,39 @@ def parse_document(
     return job
 
 
+@router.post("/documents/{document_id}/reanalyze", response_model=JobRead, status_code=202)
+def reanalyze_document(
+    document_id: UUID,
+    background: BackgroundTasks,
+    db: Session = Depends(get_db),
+    principal: Principal = Depends(get_principal),
+):
+    require_write(principal)
+    document = document_service.get_document(db, principal, document_id)
+    try:
+        job = reanalysis_service.create_reanalysis_job(db, principal, document)
+    except reanalysis_service.ReanalysisConflict as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    background.add_task(process_next_job)
+    return job
+
+
 @router.get("/documents/{document_id}/pages/{page_number}", response_model=PageRead)
 def get_page(
     document_id: UUID,
     page_number: int,
+    revision: int | None = None,
     db: Session = Depends(get_db),
     principal: Principal = Depends(get_principal),
 ):
-    document_service.get_document(db, principal, document_id)
+    document = document_service.get_document(db, principal, document_id)
+    selected_revision = revision if revision is not None else document.parse_revision
     page = db.scalar(
         select(DocumentPage).where(
             DocumentPage.document_id == document_id,
             DocumentPage.page_number == page_number,
             DocumentPage.tenant_id == principal.tenant_id,
+            DocumentPage.parse_revision == selected_revision,
         )
     )
     if page is None:
@@ -199,7 +247,9 @@ def list_requirements(
         db.scalars(
             select(Requirement)
             .where(
-                Requirement.project_id == project_id, Requirement.tenant_id == principal.tenant_id
+                Requirement.project_id == project_id,
+                Requirement.tenant_id == principal.tenant_id,
+                Requirement.is_current.is_(True),
             )
             .order_by(Requirement.source_page, Requirement.requirement_code)
         )
@@ -259,6 +309,7 @@ def list_disqualifications(
             .join(Requirement, Requirement.id == DisqualificationRule.requirement_id)
             .where(
                 Requirement.project_id == project_id,
+                Requirement.is_current.is_(True),
                 DisqualificationRule.tenant_id == principal.tenant_id,
             )
         )
@@ -299,7 +350,7 @@ def get_job(
     return job
 
 
-@router.get("/projects/{project_id}/audit")
+@router.get("/projects/{project_id}/audit", response_model=list[AuditEventRead])
 def list_audit(
     project_id: UUID, db: Session = Depends(get_db), principal: Principal = Depends(get_principal)
 ):
@@ -314,6 +365,8 @@ def list_audit(
     return [
         {
             "id": str(e.id),
+            "request_id": str(e.request_id),
+            "project_id": str(e.project_id) if e.project_id else None,
             "action": e.action,
             "entity_type": e.entity_type,
             "entity_id": str(e.entity_id),
@@ -327,7 +380,7 @@ def list_audit(
     ]
 
 
-@router.get("/audit/{audit_id}")
+@router.get("/audit/{audit_id}", response_model=AuditEventRead)
 def audit_detail(
     audit_id: UUID,
     db: Session = Depends(get_db),
@@ -342,6 +395,7 @@ def audit_detail(
         raise HTTPException(status_code=404, detail="audit event not found")
     return {
         "id": str(event.id),
+        "request_id": str(event.request_id),
         "project_id": str(event.project_id) if event.project_id else None,
         "action": event.action,
         "entity_type": event.entity_type,

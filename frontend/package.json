@@ -1,6 +1,7 @@
 {
   "name": "bidevidence-frontend",
   "version": "0.1.0",
+  "license": "AGPL-3.0-only",
   "private": true,
   "scripts": {
     "dev": "next dev",
@@ -10,10 +11,12 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:e2e:live": "node -e \"if (!process.env.E2E_LIVE_API_BASE_URL) { console.error('E2E_LIVE_API_BASE_URL is required'); process.exit(1) }\" && playwright test tests/e2e/phase2-5.spec.ts --grep \"seeded response review\""
   },
   "dependencies": {
     "@hookform/resolvers": "^3.9.1",
+    "@phosphor-icons/react": "^2.1.10",
     "@tanstack/react-table": "^8.20.5",
     "fflate": "^0.8.2",
     "lucide-react": "^0.468.0",

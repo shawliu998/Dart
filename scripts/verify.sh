@@ -4,24 +4,27 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
-python3 scripts/generate_demo_assets.py
-python3 scripts/verify_demo.py
-python3 scripts/acceptance_mvp.py --artifacts-dir .data/acceptance --clean
-python3 scripts/validate_delivery.py
+PYTHON="$(command -v python3)"
+[[ -x backend/.venv/bin/python ]] && PYTHON="${ROOT_DIR}/backend/.venv/bin/python"
+
+"$PYTHON" scripts/generate_demo_assets.py
+"$PYTHON" scripts/verify_demo.py
+"$PYTHON" scripts/acceptance_mvp.py --artifacts-dir .data/acceptance --clean
+"$PYTHON" scripts/validate_delivery.py
 bash scripts/lint.sh
 bash scripts/test.sh
 
-PYTHON="$(command -v python3)"
-[[ -x backend/.venv/bin/python ]] && PYTHON="${ROOT_DIR}/backend/.venv/bin/python"
 RUNTIME_DIR="${ROOT_DIR}/.data/verify-runtime"
 rm -rf "$RUNTIME_DIR"
 mkdir -p "$RUNTIME_DIR/uploads"
+LIVE_E2E_PORT="$($PYTHON -c 'import socket; sock = socket.socket(); sock.bind(("127.0.0.1", 0)); print(sock.getsockname()[1]); sock.close()')"
 (
   cd backend
   export APP_ENV=development
   export AUTH_SECRET=verify-only-development-secret
   export DATABASE_URL="sqlite:///${RUNTIME_DIR}/verify.db"
   export UPLOAD_DIR="${RUNTIME_DIR}/uploads"
+  export CORS_ORIGINS="http://localhost:${LIVE_E2E_PORT}"
   "$PYTHON" -m alembic upgrade head
   exec "$PYTHON" -m uvicorn app.main:app --host 127.0.0.1 --port 18080
 ) >"${RUNTIME_DIR}/api.log" 2>&1 &
@@ -33,7 +36,7 @@ cleanup_api() {
 trap cleanup_api EXIT
 api_ready=0
 for _ in {1..30}; do
-  if python3 scripts/seed_running_api.py --base-url http://127.0.0.1:18080 --probe >/dev/null 2>&1; then
+  if "$PYTHON" scripts/seed_running_api.py --base-url http://127.0.0.1:18080 --probe >/dev/null 2>&1; then
     api_ready=1
     break
   fi
@@ -44,8 +47,15 @@ if [[ "$api_ready" != "1" ]]; then
   echo "错误：验收API未就绪。" >&2
   exit 1
 fi
-python3 scripts/seed_running_api.py --base-url http://127.0.0.1:18080
-python3 scripts/acceptance_api.py --base-url http://127.0.0.1:18080 --artifacts-dir .data/verify-runtime/service-acceptance --clean
+"$PYTHON" scripts/seed_running_api.py --base-url http://127.0.0.1:18080
+"$PYTHON" scripts/acceptance_api.py --base-url http://127.0.0.1:18080 --artifacts-dir .data/verify-runtime/service-acceptance --clean
+"$PYTHON" scripts/acceptance_agent.py --base-url http://127.0.0.1:18080 --artifacts-dir .data/verify-runtime/agent-acceptance
+(
+  cd frontend
+  E2E_PORT="$LIVE_E2E_PORT" \
+    E2E_LIVE_API_BASE_URL=http://127.0.0.1:18080 \
+    npm run test:e2e:live
+)
 cleanup_api
 trap - EXIT
 
@@ -56,7 +66,11 @@ else
 fi
 
 if [[ -f frontend/package.json ]]; then
-  (cd frontend && npm run test:e2e && npm run build)
+  BIDEVIDENCE_E2E_PORT="${E2E_PORT:-}"
+  if [[ -z "$BIDEVIDENCE_E2E_PORT" ]]; then
+    BIDEVIDENCE_E2E_PORT="$($PYTHON -c 'import socket; sock = socket.socket(); sock.bind(("127.0.0.1", 0)); print(sock.getsockname()[1]); sock.close()')"
+  fi
+  (cd frontend && E2E_PORT="$BIDEVIDENCE_E2E_PORT" npm run test:e2e && npm run build)
 fi
 
 echo "BidEvidence 完整交付门禁通过。"

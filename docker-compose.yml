@@ -11,6 +11,8 @@ x-backend-environment: &backend-environment
   S3_BUCKET: ${S3_BUCKET:-bidevidence}
   LLM_PROVIDER: mock
   AI_MANUAL_REVIEW_THRESHOLD: ${AI_MANUAL_REVIEW_THRESHOLD:-0.70}
+  BIDEVIDENCE_OCR_MODE: ${BIDEVIDENCE_OCR_MODE:-auto}
+  BIDEVIDENCE_OCR_LANGUAGES: ${BIDEVIDENCE_OCR_LANGUAGES:-chi_sim+eng}
   AUTH_SECRET: ${AUTH_SECRET:-development-only-change-me}
   CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
 
@@ -84,7 +86,9 @@ services:
     volumes:
       - ./backend:/workspace/backend
       - ./demo:/workspace/demo:ro
-    environment: *backend-environment
+    environment:
+      <<: *backend-environment
+      BIDEVIDENCE_LOCAL_WORKER_ENABLED: "false"
     command: >-
       sh -c '
       pip install --disable-pip-version-check -r requirements-dev.txt &&

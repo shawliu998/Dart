@@ -1,77 +1,103 @@
 "use client";
 
-import { useMemo, useState } from "react";
 import Link from "next/link";
-import { AlertOctagon, CalendarDays, CheckSquare2, Clock3, Grid2X2, List, Plus, Search, SlidersHorizontal } from "lucide-react";
+import { usePathname, useRouter, useSearchParams } from "next/navigation";
+import { useMemo, useState } from "react";
+import {
+  CaretDown,
+  Clock,
+  DotsThree,
+  FunnelSimple,
+  MagnifyingGlass,
+  Plus,
+  SlidersHorizontal,
+} from "@phosphor-icons/react";
 import { ProgressBar } from "@/components/ui/progress";
 import { RiskBadge } from "@/components/ui/badges";
 import type { Project } from "@/lib/types";
 import { DEMO_NOW } from "@/lib/product-context";
+import { getProjectViews, isProjectInView, isDueSoon, normalizeProjectView, type ProjectView } from "@/features/projects/project-views";
 
 export function ProjectList({ initialProjects, source }: { initialProjects: Project[]; source: "api" | "demo" }) {
+  const pathname = usePathname();
+  const router = useRouter();
+  const searchParams = useSearchParams();
   const [query, setQuery] = useState("");
   const [stage, setStage] = useState("all");
   const [risk, setRisk] = useState("all");
-  const [view, setView] = useState<"table" | "card">("table");
+  const view = normalizeProjectView(searchParams.get("view"));
+  const referenceNow = useMemo(() => source === "demo" ? DEMO_NOW : new Date(), [source]);
+
+  const selectView = (nextView: ProjectView) => {
+    const nextSearchParams = new URLSearchParams(searchParams.toString());
+    if (nextView === "active") nextSearchParams.delete("view");
+    else nextSearchParams.set("view", nextView);
+    const queryString = nextSearchParams.toString();
+    router.push(queryString ? `${pathname}?${queryString}` : pathname);
+  };
 
   const filtered = useMemo(() => initialProjects.filter((project) => {
     const textMatch = `${project.name}${project.buyerName}${project.projectCode}`.toLowerCase().includes(query.toLowerCase());
-    return textMatch && (stage === "all" || project.stage === stage) && (risk === "all" || project.risk === risk);
-  }), [initialProjects, query, risk, stage]);
-  const dueWithinSevenDays = initialProjects.filter((project) => { const due = new Date(project.deadline.replace(" ", "T") + "+08:00").getTime(); return due >= DEMO_NOW.getTime() && due <= DEMO_NOW.getTime() + 7 * 86_400_000; }).length;
-  const fatalRisks = initialProjects.reduce((total, project) => total + (project.risk === "fatal" ? project.highRiskCount : 0), 0);
-  const taskCount = initialProjects.reduce((total, project) => total + project.taskCount, 0);
-  const stageCount = new Set(initialProjects.map((project) => project.stage)).size;
+    const viewMatch = isProjectInView(project, view, referenceNow);
+    return textMatch && viewMatch && (stage === "all" || project.stage === stage) && (risk === "all" || project.risk === risk);
+  }), [initialProjects, query, referenceNow, risk, stage, view]);
+
+  const filtersActive = Boolean(query) || stage !== "all" || risk !== "all";
+  const views = getProjectViews(initialProjects, referenceNow);
 
   return (
-    <div className="page">
-      <header className="page-header">
-        <div className="page-title-group"><h1>投标项目</h1><p>集中管理项目阶段、证据完备度与截止风险。</p></div>
-        <Link className="button primary" href="/projects/new"><Plus size={16} />新建项目</Link>
+    <div className="v4-project-page">
+      <header className="v4-directory-head">
+        <div>
+          <h1>项目</h1>
+          <p>查看投标进度、合规状态与待办事项</p>
+        </div>
+        <div>
+          <span className={`data-source ${source}`}>{source === "demo" ? "确定性演示" : "本地 API"}</span>
+          <Link className="v4-primary-button" href="/projects/new"><Plus size={15} weight="bold" />新建项目</Link>
+        </div>
       </header>
 
-      <section className="stats-grid" aria-label="项目统计">
-        <Stat icon={<CheckSquare2 size={15} />} label="进行中项目" value={String(initialProjects.length)} note={`覆盖 ${stageCount} 个当前阶段`} />
-        <Stat icon={<CalendarDays size={15} />} label="7 天内截止" value={String(dueWithinSevenDays)} note={source === "demo" ? "基于确定性演示时点计算" : "按本地项目截止时间计算"} />
-        <Stat fatal icon={<AlertOctagon size={15} />} label="致命风险" value={String(fatalRisks)} note="按项目风险字段汇总" />
-        <Stat icon={<Clock3 size={15} />} label="项目任务" value={String(taskCount)} note="来自项目清单快照" />
-        <Stat icon={<CheckSquare2 size={15} />} label="数据来源" value={source === "demo" ? "Demo" : "本地 API"} note={source === "demo" ? "确定性演示项目清单" : "仅显示已持久化项目"} />
+      <nav className="v4-directory-tabs" aria-label="项目视图">
+        {views.map((item) => <button key={item.key} type="button" className={view === item.key ? "active" : ""} aria-pressed={view === item.key} onClick={() => selectView(item.key)}>{item.label}<span>{item.count}</span></button>)}
+      </nav>
+
+      <section className="v4-project-toolbar" aria-label="项目筛选">
+        <label className="v4-project-search">
+          <MagnifyingGlass size={15} />
+          <span className="sr-only">搜索项目</span>
+          <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目、采购人或编号" />
+        </label>
+        <label className="v4-compact-select"><FunnelSimple size={14} /><select aria-label="按阶段筛选" value={stage} onChange={(event) => setStage(event.target.value)}><option value="all">全部阶段</option><option>要求确认</option><option>证据匹配</option><option>文件封装</option></select><CaretDown size={12} /></label>
+        <label className="v4-compact-select"><select aria-label="按风险筛选" value={risk} onChange={(event) => setRisk(event.target.value)}><option value="all">全部风险</option><option value="fatal">阻断项</option><option value="high">高风险</option><option value="medium">中风险</option><option value="low">低风险</option></select><CaretDown size={12} /></label>
+        {filtersActive && <button className="v4-clear-filter" type="button" onClick={() => { setQuery(""); setStage("all"); setRisk("all"); }}><SlidersHorizontal size={14} />清除</button>}
+        <span className="v4-result-count">共 {filtered.length} 个项目</span>
       </section>
 
-      <section className="panel" aria-label="项目列表">
-        <div className="toolbar">
-          <label className="search-field"><Search size={15} /><span className="sr-only">搜索项目</span><input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索项目名称、采购人、编号" /></label>
-          <select className="select-field" aria-label="按阶段筛选" value={stage} onChange={(event) => setStage(event.target.value)}><option value="all">全部阶段</option><option>要求确认</option><option>证据匹配</option><option>文件封装</option></select>
-          <select className="select-field" aria-label="按风险筛选" value={risk} onChange={(event) => setRisk(event.target.value)}><option value="all">全部风险</option><option value="fatal">致命风险</option><option value="high">高风险</option><option value="low">低风险</option></select>
-          <button type="button" className="button small" onClick={() => { setQuery(""); setStage("all"); setRisk("all"); }}><SlidersHorizontal size={14} />重置筛选</button>
-          <span className="toolbar-spacer" />
-          <span className="result-count">{filtered.length} 个项目</span>
-          <div className="view-toggle" aria-label="视图切换">
-            <button type="button" className={view === "table" ? "active" : ""} aria-label="表格视图" aria-pressed={view === "table"} onClick={() => setView("table")}><List size={15} /></button>
-            <button type="button" className={view === "card" ? "active" : ""} aria-label="卡片视图" aria-pressed={view === "card"} onClick={() => setView("card")}><Grid2X2 size={15} /></button>
-          </div>
-        </div>
-
-        {filtered.length === 0 ? <div className="empty-state"><strong>没有匹配的项目</strong>请调整筛选条件或重置筛选。</div> : view === "table" ? (
-          <div className="data-table-wrap">
-            <table className="data-table">
-              <thead><tr><th>项目名称</th><th>当前阶段</th><th>完成度</th><th>风险</th><th>高风险项</th><th>整改任务</th><th>截止时间</th><th>负责人</th><th>更新时间</th></tr></thead>
-              <tbody>{filtered.map((project) => <tr key={project.id}>
-                <td><Link className="project-cell" href={`/projects/${project.id}/overview`}><strong>{project.name}</strong><span>{project.projectCode} · {project.buyerName}</span></Link></td>
-                <td><span className="stage-label">{project.stage}</span></td>
-                <td><ProgressBar value={project.progress} /></td>
-                <td><RiskBadge level={project.risk} /></td>
-                <td><strong className={project.highRiskCount ? "danger-text" : "success-text"}>{project.highRiskCount}</strong></td>
-                <td>{project.taskCount}</td><td>{project.deadline}</td><td>{project.owner}</td><td className="muted-text">{project.updatedAt}</td>
-              </tr>)}</tbody>
+      <section className="v4-project-table-card" aria-label="项目列表">
+        {filtered.length === 0 ? (
+          <div className="v4-project-empty"><strong>没有匹配的项目</strong><p>调整筛选条件后重试。</p></div>
+        ) : (
+          <div className="v4-project-table-wrap">
+            <table className="v4-project-table">
+              <thead><tr><th>项目名称</th><th>当前阶段</th><th>进度</th><th>风险</th><th>待处理</th><th>截止时间</th><th>负责人</th><th>最后更新</th><th aria-label="操作" /></tr></thead>
+              <tbody>{filtered.map((project) => (
+                <tr key={project.id}>
+                  <td><Link className="v4-project-name" href={`/projects/${project.id}/overview`}><span>{project.name.slice(0, 1)}</span><div><strong>{project.name}</strong><small>{project.projectCode} · {project.buyerName}</small></div></Link></td>
+                  <td><span className="v4-stage-dot"><i />{project.stage}</span></td>
+                  <td><div className="v4-progress-cell"><ProgressBar value={project.progress} /><small>{project.progress}%</small></div></td>
+                  <td><RiskBadge level={project.risk} /></td>
+                  <td><strong className={project.highRiskCount || project.taskCount ? "v4-attention-count" : ""}>{project.highRiskCount + project.taskCount}</strong></td>
+                  <td><span className={isDueSoon(project, referenceNow) ? "v4-due-soon" : "v4-deadline"}><Clock size={13} />{project.deadline}</span></td>
+                  <td><span className="v4-owner"><i>{project.owner.slice(0, 1)}</i>{project.owner}</span></td>
+                  <td className="v4-updated">{project.updatedAt}</td>
+                  <td><Link className="v4-row-action" aria-label={`打开 ${project.name}`} href={`/projects/${project.id}/overview`}><DotsThree size={18} weight="bold" /></Link></td>
+                </tr>
+              ))}</tbody>
             </table>
           </div>
-        ) : <div className="project-card-grid">{filtered.map((project) => <Link key={project.id} className="project-card" href={`/projects/${project.id}/overview`}><div className="project-card-head"><span className="stage-label">{project.stage}</span><RiskBadge level={project.risk} /></div><h2>{project.name}</h2><p>{project.projectCode} · {project.buyerName}</p><ProgressBar value={project.progress} /><dl><div><dt>高风险项</dt><dd>{project.highRiskCount}</dd></div><div><dt>整改任务</dt><dd>{project.taskCount}</dd></div><div><dt>负责人</dt><dd>{project.owner}</dd></div></dl><span className="project-deadline"><CalendarDays size={14} />{project.deadline} 截止</span></Link>)}</div>}
+        )}
       </section>
     </div>
   );
-}
-
-function Stat({ icon, label, value, note, fatal = false }: { icon: React.ReactNode; label: string; value: string; note: string; fatal?: boolean }) {
-  return <article className={fatal ? "stat-card fatal" : "stat-card"}><div className="stat-card-top"><span>{label}</span><span className="stat-card-icon">{icon}</span></div><strong>{value}</strong><small>{note}</small></article>;
 }
