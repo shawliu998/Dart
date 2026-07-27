@@ -6,7 +6,7 @@
 
 推荐 description：
 
-> BidEvidence: a traceable bidding workflow connecting requirements, evidence, responses, and human review.
+> BidEvidence: an agent-native bidding workspace for durable, bounded runs and human-controlled bid decisions.
 
 如果使用中文：
 
@@ -21,19 +21,21 @@
 - `nextjs`
 - `fastapi`
 - `workflow`
+- `agentic-workflow`
+- `ai-agents`
 - `rfp`
 - `document-processing`
 - `human-in-the-loop`
 
-不建议把 `agi`、`autonomous-agent` 或 `ai-agent` 放在首批 topics。它们会让仓库第一印象偏离正式投标工作流。
+不建议使用泛化的 `agi` 或 `autonomous-agent`。`agentic-workflow` 与 `ai-agents` 必须和 `human-in-the-loop` 同时出现，强调这是有边界、可恢复、以业务产物为中心的 Agent loop。
 
 ## Social preview
 
 推荐使用：
 
-`docs/assets/portfolio/hero-response-workbench.jpg`
+`docs/assets/portfolio/social-preview-agent-native.png`
 
-它是一张真实产品截图，无额外营销文字、渐变或拼贴，并且能同时显示项目大纲、响应正文、要求来源和人工复核动作。
+它以真实合规审阅截图为主体，只增加一条清晰的 Agent loop：Observe → Plan → Act → Verify → Human gate → Resume。展示重点是持久化运行、封闭工具、类型化产物和人工决策，而不是通用聊天界面。
 
 ## 发布前检查
 
