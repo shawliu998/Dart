@@ -1,30 +1,21 @@
-# BidEvidence 求职作品测试证据
+# BidEvidence 测试证据
 
-日期：2026-07-27
+日期：2026-07-28
 
 ## 自动化基线
 
 - ESLint：通过
 - TypeScript：通过
 - production build：通过
-- 后端服务/API 测试：126/126
-- 前端单元/组件测试：20 个文件，113/113
+- 后端服务/API 测试：130/130
+- 前端单元/组件测试：21 个文件，115/115
 - 双语界面：英文默认、中文切换、刷新持久化和业务原文保护测试通过
 - 响应版本历史：连续 v1–v4、相同正文不增版本、租户隔离、任意版本比较和批准事件无正文变化提示均通过
 - Playwright E2E：7 passed，1 skipped
-- Batch 05 最终复核聚焦测试：3/3
+- Live API E2E：1 passed
+- macOS DMG：隔离安装、启动、健康检查、项目创建、关闭和同数据重启烟测通过
 
-逐批命令、截图尺寸和交互断言见：
-
-- `BATCH01_EXECUTION_EVIDENCE.md`
-- `BATCH02_EXECUTION_EVIDENCE.md`
-- `BATCH03_EXECUTION_EVIDENCE.md`
-- `BATCH04_EXECUTION_EVIDENCE.md`
-- `BATCH05_EXECUTION_EVIDENCE.md`
-- `BILINGUAL_UI_ACCEPTANCE.md`
-- `RESPONSE_VERSION_HISTORY_EXECUTION_BRIEF.md`
-
-## 当前终验
+## 复现方式
 
 ```bash
 cd frontend
@@ -33,11 +24,10 @@ NEXT_PUBLIC_API_BASE_URL=http://localhost:8000 \
 npm run build
 ```
 
-本轮使用全新临时 SQLite 数据库执行 `backend/scripts/seed.py`，生成完整固定演示数据，再启动 FastAPI 与 production Next.js，逐页访问七条主旅程路由并采集截图。
+完整验证使用临时 SQLite 数据库执行 `backend/scripts/seed.py`，生成固定演示数据，再启动 FastAPI 与 production Next.js，运行七条主旅程路由、Live API E2E 和 production build。
 
 ## 证据边界
 
 - 数量来自合成 fixtures，不代表真实业务效果。
 - `MockLLMProvider` 不是 DeepSeek 或其他真实模型的准确率证据。
 - 截图证明当前可见状态，不替代键盘、读屏、性能或安全专项验收。
-- 旧持久库重复 seed 冲突记录为 P2；干净库运行与本轮作品封装不受影响。

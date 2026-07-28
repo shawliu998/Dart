@@ -8,7 +8,7 @@
 | TypeScript / Tailwind CSS | 开发与样式 | Apache-2.0 / MIT | Apache 组件保留 NOTICE（如有） |
 | TanStack Table/Query | 表格与请求 | MIT | 保留许可证 |
 | React Hook Form / Zod / Zustand | 表单、校验、状态 | MIT | 保留许可证 |
-| Lucide | 图标 | ISC | 保留许可证，不复制竞品资产 |
+| Lucide | 图标 | ISC | 保留许可证与原始归属 |
 | Playwright / Vitest / Testing Library | E2E 与单测 | Apache-2.0 / MIT | 测试工具通常不进入运行镜像 |
 | FastAPI / Pydantic / Uvicorn | API 与 Schema | MIT / MIT / BSD-3-Clause | 保留许可证 |
 | SQLAlchemy / Alembic / psycopg | ORM、迁移、驱动 | MIT / MIT / LGPL-3.0（psycopg，按版本核实） | 分发二进制驱动前核实对应条款 |
@@ -30,7 +30,7 @@
 
 ## 资产来源
 
-演示 PDF/DOCX/XLSX 由仓库确定性脚本生成，只包含虚构企业/项目数据。PDF 嵌入 `BidEvidence Fixture Sans` 字体子集，该字体由 Noto Sans SC 修改并重命名，依据 SIL Open Font License 1.1 分发；来源和完整许可证见 `demo/fonts/`。未使用竞品品牌、文案、图片或真实企业证照。若引入字体、图标包外资源、OCR/Embedding 权重、模板或测试文档，必须建立独立资产台账。
+演示 PDF/DOCX/XLSX 由仓库确定性脚本生成，只包含虚构企业/项目数据。PDF 嵌入 `BidEvidence Fixture Sans` 字体子集，该字体由 Noto Sans SC 修改并重命名，依据 SIL Open Font License 1.1 分发；来源和完整许可证见 `demo/fonts/`。未使用外部产品品牌、文案、图片或真实企业证照。若引入字体、图标包外资源、OCR/Embedding 权重、模板或测试文档，必须建立独立资产台账。
 
 ## 发布流程
 

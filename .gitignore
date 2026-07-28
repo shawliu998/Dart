@@ -28,11 +28,6 @@ artifacts/ui-v2/
 *.tsbuildinfo
 .impeccable/
 
-# Local design-audit captures and competitor reference boards
-opendesign/reference-assets/
-opendesign/references.html
-opendesign/references.css
-
 # Local runtime data and uploads
 .data/
 data/
