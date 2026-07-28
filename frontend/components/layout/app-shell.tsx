@@ -14,6 +14,7 @@ import {
   FileMagnifyingGlass,
   Folder,
   Gauge,
+  GearSix,
   MagnifyingGlass,
   Package,
   PencilLine,
@@ -75,7 +76,9 @@ function AppShellBody({ children, pathname }: { children: React.ReactNode; pathn
   const [logoutOpen, setLogoutOpen] = useState(false);
   const { notify } = useFeedback();
   const { locale, setLocale, t } = useI18n();
-  const pageLabel = t(primaryNav.find((item) => pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`)))?.label ?? "招投标工作台");
+  const pageLabel = pathname === "/settings"
+    ? t("设置")
+    : t(primaryNav.find((item) => pathname === item.href || (item.href !== "/dashboard" && pathname.startsWith(`${item.href}/`)))?.label ?? "招投标工作台");
 
   useEffect(() => {
     const listener = (event: KeyboardEvent) => {
@@ -206,6 +209,7 @@ function AppShellBody({ children, pathname }: { children: React.ReactNode; pathn
                     <button type="button" className={locale === "en" ? "active" : ""} aria-pressed={locale === "en"} onClick={() => setLocale("en")}>English</button>
                     <button type="button" className={locale === "zh" ? "active" : ""} aria-pressed={locale === "zh"} onClick={() => setLocale("zh")}>中文</button>
                   </div>
+                  <Link href="/settings" onClick={() => setUserOpen(false)}><GearSix size={14} />{t("设置")}</Link>
                   <a href="https://github.com/shawliu998/Dart" target="_blank" rel="noreferrer">{t("源代码与许可证 · AGPL-3.0")}</a>
                   <button type="button" onClick={() => { setUserOpen(false); setLogoutOpen(true); }}>{t("退出当前会话")}</button>
                 </div>

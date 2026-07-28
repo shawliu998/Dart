@@ -2,7 +2,7 @@ SHELL := /bin/bash
 .DEFAULT_GOAL := help
 PYTHON ?= $(if $(wildcard backend/.venv/bin/python),backend/.venv/bin/python,python3)
 
-.PHONY: help setup dev dev-infra down logs test lint seed demo generate-demo verify-demo eval-requirements acceptance acceptance-api acceptance-agent verify desktop-dev desktop-build desktop-test verify-desktop clean
+.PHONY: help setup dev dev-infra down logs test lint seed demo generate-demo verify-demo eval-requirements acceptance acceptance-api acceptance-agent verify desktop-dev desktop-build desktop-test desktop-package desktop-smoke verify-desktop clean
 
 help: ## Show available commands
 	@awk 'BEGIN {FS = ":.*## "; printf "BidEvidence commands:\n"} /^[a-zA-Z0-9_-]+:.*## / {printf "  %-16s %s\n", $$1, $$2}' $(MAKEFILE_LIST)
@@ -66,6 +66,12 @@ desktop-test: ## Run focused desktop backend, frontend, and Electron TypeScript 
 	cd backend && .venv/bin/python -m pytest tests/test_desktop_local.py
 	cd frontend && npm run typecheck && npm run lint
 	cd desktop && npm run typecheck
+
+desktop-package: ## Build unsigned macOS DMG/ZIP with bundled backend and frontend runtimes
+	bash scripts/build_desktop_release.sh mac
+
+desktop-smoke: ## Mount the DMG and verify the packaged app with no developer runtimes on PATH
+	bash scripts/smoke_macos_dmg.sh
 
 verify-desktop: desktop-test desktop-build ## Validate the P0 desktop development runtime
 

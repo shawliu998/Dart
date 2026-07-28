@@ -470,7 +470,8 @@ def test_migration_revision_linkage() -> None:
     assert revisions["0010_document_page_revisions"].down_revision == "0009_document_analysis_revisions"
     assert revisions["0011_audit_request_ids"].down_revision == "0010_document_page_revisions"
     assert revisions["0012_response_revisions"].down_revision == "0011_audit_request_ids"
-    assert tuple(script.get_heads()) == ("0012_response_revisions",)
+    assert revisions["0013_workspace_ai_settings"].down_revision == "0012_response_revisions"
+    assert tuple(script.get_heads()) == ("0013_workspace_ai_settings",)
 
 
 def _load_migration_module() -> ModuleType:

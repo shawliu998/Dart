@@ -22,6 +22,11 @@ The demo uses synthetic Chinese tender files and `MockLLMProvider`. It contains 
 
 The interface opens in English by default and can be switched to Chinese from the user menu. Project names, tender clauses, filenames, source excerpts and other Chinese business records stay in their original language.
 
+The workspace model connection is configured from **Settings → Model connection**.
+The built-in Mock provider works offline. A DeepSeek connection can be tested against
+the same structured-output contract used by document analysis and applied without
+restarting the app; API keys are never returned by the settings API.
+
 ## Product flow
 
 ```text
@@ -79,6 +84,21 @@ flowchart LR
 
 [Architecture notes](docs/ARCHITECTURE.md) · [Workflow loop, rules and human review](docs/AI_DESIGN.md)
 
+## Downloadable desktop build
+
+The current release candidate is an unsigned macOS Apple Silicon app. It bundles
+the existing FastAPI and Next.js runtimes, so the person evaluating the project
+does not need Docker, Python or Node.
+
+```bash
+make desktop-package
+make desktop-smoke
+```
+
+The DMG and ZIP are written to `desktop/release/`. Open the DMG, drag BidEvidence
+to Applications, then use the built-in Mock provider or configure DeepSeek from
+**Settings → Model connection**. See [desktop packaging and verification](desktop/README.md).
+
 ## Run locally
 
 Requirements: Docker Compose v2 and Python 3.
@@ -117,10 +137,10 @@ The fixed demo oracle contains:
 Current frontend acceptance:
 
 - ESLint, TypeScript and the production build pass;
-- 20 test files, 113/113 tests pass, including locale persistence, source-language protection and response version history;
+- 21 test files, 115/115 tests pass, including locale persistence, source-language protection, response version history and model settings;
 - Playwright E2E: 7 passed, 1 skipped;
 - Batches 01–05 received Pro `PRODUCT_ACCEPT` and Codex `TECH_ACCEPT`;
-- the final portfolio package received `PORTFOLIO_ACCEPT`, the GitHub presentation received `README_ACCEPT`, and response version history received `RESPONSE_VERSION_ACCEPT`.
+- the final portfolio package received `PORTFOLIO_ACCEPT`, the GitHub presentation received `README_ACCEPT`, response version history received `RESPONSE_VERSION_ACCEPT`, model settings received `PROVIDER_SETTINGS_ACCEPT`, and the packaged desktop release received `DESKTOP_PACKAGE_ACCEPT_FINAL`.
 
 ```bash
 make verify-demo

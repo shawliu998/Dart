@@ -1,69 +1,85 @@
-# BidEvidence Desktop Host
+# BidEvidence Desktop
 
-Electron shell for the local BidEvidence (标证通) stack. This directory owns only the desktop boundary: single-instance window management, a minimal frozen preload API, loopback service supervision, and two IPC actions. The FastAPI backend, Next.js frontend, data model, and product workflows remain owned by the root project.
+The Electron host packages the existing BidEvidence product as a local macOS app.
+It owns the native window, app data directories, loopback service lifecycle and
+two narrow native actions. Product workflows remain in the existing Next.js and
+FastAPI codebases.
 
-> **Warning — dependencies:** Electron, TypeScript, and the Node typings are **not** installed by the root setup. You must run `npm install` inside this `desktop/` directory before any other command.
+## Install the unsigned macOS build
 
-> **Warning — integration configuration:** the `BIDEVIDENCE_DESKTOP_*` command variables below are integration configuration, not working wiring. The root project does not yet provide desktop entry points, so today the realistic mode is: start the stack yourself (e.g. `make dev` in the repo root), leave the commands empty, and the host attaches to the already-running services. If health checks fail, the window shows an error page instead of the app.
+The current release target is Apple Silicon:
 
-## Install and run
+1. Open `BidEvidence-0.2.0-arm64.dmg`.
+2. Drag `BidEvidence.app` to `Applications`.
+3. Open the app. Because the development build is unsigned, macOS may require
+   **Control-click → Open** on first launch.
+4. Use the built-in Mock provider offline, or open **Settings → Model connection**
+   to test and save a DeepSeek API connection.
 
-```sh
-cd desktop
-npm install        # required; installs electron, typescript, @types/node
-npm run typecheck  # strict TS check, no emit
-npm run build      # compile src/ -> dist/
-npm start          # build + launch Electron
-npm run dev        # like start, plus detached DevTools (POSIX shells)
-```
+The app includes its FastAPI and Next.js runtimes. End users do not need Docker,
+Python or Node. Workspace data and logs live under Electron's app-owned user data
+directory; **Open data folder** reveals that location from the desktop menu.
 
-There is deliberately no packaging script. A signed/notarized distributable belongs to a later milestone, after the root project has a production Next standalone build and a release policy.
+## Build and verify
 
-## Service configuration (environment variables)
-
-The supervisor reads `BIDEVIDENCE_DESKTOP_<BACKEND|FRONTEND>_*` variables:
-
-| Variable | Default | Meaning |
-| --- | --- | --- |
-| `..._COMMAND` | _(empty)_ | Executable to spawn. **Optional**: when empty, spawning is skipped with a warning and the host expects an externally managed process at the configured origin. |
-| `..._ARGS` | `[]` | JSON string array of arguments, e.g. `'["-m","uvicorn","app.main:app"]'`. Parsed, never shell-interpolated. |
-| `..._CWD` | `userData/runtime` | Working directory of the spawned process. |
-| `..._HOST` | `127.0.0.1` | Must be loopback: `127.0.0.1`, `::1`, or `localhost`. Anything else fails startup. |
-| `..._PORT` | `8000` / `3000` | Expected port, integer 1–65535. |
-| `..._HEALTH_PATH` | `/health` / `/` | Relative HTTP path polled until it answers 2xx/3xx. |
-
-`BIDEVIDENCE_DESKTOP_DEVTOOLS=1` opens detached DevTools at launch (used by `npm run dev`).
-
-Readiness is reported only when **every** service passes its health check (spawned processes get a 60 s budget, externally managed ones 10 s). The frontend URL is loaded only after full readiness; otherwise the window shows a failure page listing which service failed and why. Readiness is never claimed on configuration or health failure.
-
-Example (integration configuration — not wired by the root project today):
+From the repository root:
 
 ```sh
-BIDEVIDENCE_DESKTOP_BACKEND_COMMAND=.venv/bin/python \
-BIDEVIDENCE_DESKTOP_BACKEND_ARGS='["-m","uvicorn","app.main:app","--host","127.0.0.1","--port","8000"]' \
-BIDEVIDENCE_DESKTOP_BACKEND_CWD=../backend \
-BIDEVIDENCE_DESKTOP_FRONTEND_COMMAND=node \
-BIDEVIDENCE_DESKTOP_FRONTEND_ARGS='["server.js"]' \
-BIDEVIDENCE_DESKTOP_FRONTEND_CWD=../frontend/.next/standalone \
-npm start
+cd backend && .venv/bin/pip install -r requirements-dev.txt
+cd ../desktop && npm install
+cd ..
+
+make desktop-package
+make desktop-smoke
 ```
 
-### Runtime token
+`make desktop-package` builds the Next standalone server, freezes the current
+FastAPI app with PyInstaller, compiles the Electron host, then writes an unsigned
+DMG and ZIP to `desktop/release/`.
 
-Each launch generates `crypto.randomBytes(32)` and passes it to spawned children only via the environment variable `BIDEVIDENCE_RUNTIME_TOKEN`. It is never printed, logged, or exposed to the renderer. The root backend does not yet require or verify this token — that is outstanding integration work.
+`make desktop-smoke` mounts the DMG, copies the app to a temporary Applications
+directory, detaches the image, then launches with a clean user data directory and
+`PATH=/usr/bin:/bin`. It verifies both health endpoints, workspace model settings,
+project creation, clean sidecar shutdown and a same-data restart. This is the
+release gate for the downloadable package.
 
-## Security properties
+For desktop development:
 
-- Single instance: a second launch focuses the existing window instead of starting a new one.
-- Renderer runs with `nodeIntegration: false`, `contextIsolation: true`, `sandbox: true`; every renderer permission request is denied.
-- In-window navigation (including redirects) is limited to the configured loopback frontend origin; `window.open` is always denied; well-formed external `http(s)` links open via `shell.openExternal`; `<webview>` attachment is blocked.
-- Preload exposes exactly one frozen object, `window.bidevidenceDesktop`: frozen `runtimeInfo` plus `selectImportFiles()` and `openDataFolder()`. No generic IPC, no `ipcRenderer`, no Node or shell access.
-- IPC surface is exactly two `ipcMain.handle` channels: `desktop:select-import-files` (picker restricted to pdf/docx/doc/xlsx/xls/pptx/ppt, re-validated in the main process) and `desktop:open-data-folder` (takes no path; opens only the app-owned `userData/data`). IPC errors are short plain strings without environment or secret material.
-- Children spawn with `shell: false`, loopback-only hosts, bounded health checks, and SIGTERM → SIGKILL (5 s grace) shutdown. Child stdout/stderr goes to `userData/logs/<service>.log`.
-- Desktop-owned directories under Electron `userData`: `data/`, `imports/`, `logs/`, `runtime/`.
+```sh
+make desktop-dev
+make desktop-test
+```
 
-## Outstanding integration with the root project
+## Runtime architecture
 
-- The backend has no desktop entry point and does not authenticate `BIDEVIDENCE_RUNTIME_TOKEN`; the frontend has no production standalone server configured and does not yet consume `window.bidevidenceDesktop`.
-- `selectImportFiles` returns validated paths only; importing them into the backend is not connected.
-- Packaging, signing, and auto-update are intentionally absent; root CI does not build this directory.
+At packaged startup the host:
+
+1. creates or restores the local workspace identity;
+2. reserves two loopback ports;
+3. starts the frozen FastAPI executable;
+4. starts the bundled Next standalone server with Electron's embedded Node runtime;
+5. waits for both services to report healthy before loading the product window.
+
+If a service cannot start, the native window shows the failed service and its log
+location instead of claiming that the app is ready. Child output is written to
+`userData/logs/backend.log` and `userData/logs/frontend.log`.
+
+The development host still accepts
+`BIDEVIDENCE_DESKTOP_<BACKEND|FRONTEND>_{COMMAND,ARGS,CWD,HOST,PORT,HEALTH_PATH}`
+overrides. Commands are spawned directly with `shell: false`; hosts must remain on
+loopback.
+
+## Native boundary
+
+- The renderer uses `nodeIntegration: false`, `contextIsolation: true` and the
+  Chromium sandbox.
+- Navigation stays on the selected loopback frontend origin.
+- Preload exposes only `selectImportFiles()` and `openDataFolder()`.
+- Each launch passes a random desktop token and stable local tenant/user identity
+  to the bundled backend without exposing them to the renderer.
+- App-owned directories are `data/`, `imports/`, `logs/` and `runtime/`.
+
+## Release boundary
+
+Version 0.2.0 produces unsigned macOS arm64 artifacts. Code signing, notarization,
+automatic updates, Intel macOS and Windows installers are separate release work.

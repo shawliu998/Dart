@@ -42,7 +42,14 @@ export async function apiRequest<T>(path: string, init?: RequestInit): Promise<T
     headers: { ...(!isFormData ? { "Content-Type": "application/json" } : {}), ...target.headers, ...init?.headers },
   });
   if (!response.ok) {
-    throw new Error(`API_${response.status}`);
+    let code = `API_${response.status}`;
+    try {
+      const body = await response.json() as { detail?: { code?: unknown } };
+      if (typeof body.detail?.code === "string") code = body.detail.code;
+    } catch {
+      // Non-JSON failures keep their stable HTTP status code.
+    }
+    throw new Error(code);
   }
   return response.json() as Promise<T>;
 }

@@ -3,12 +3,19 @@ import { app, BrowserWindow, session, shell } from "electron";
 
 import { registerIpcHandlers } from "./ipc";
 import { ensureAppPaths, type AppPaths } from "./paths";
-import { RuntimeSupervisor, type SupervisorStatus } from "./supervisor";
+import {
+  RuntimeSupervisor,
+  type BundledRuntime,
+  type SupervisorStatus,
+} from "./supervisor";
 
 let mainWindow: BrowserWindow | undefined;
 let supervisor: RuntimeSupervisor | undefined;
 let lastStatus: SupervisorStatus | undefined;
 let quitting = false;
+
+const userDataOverride = process.env.BIDEVIDENCE_DESKTOP_USER_DATA_DIR?.trim();
+if (userDataOverride) app.setPath("userData", path.resolve(userDataOverride));
 
 const HTML_ESCAPES: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" };
 
@@ -84,6 +91,26 @@ function createMainWindow(allowedOrigin: string | undefined): BrowserWindow {
   return window;
 }
 
+function packagedRuntime(): BundledRuntime | undefined {
+  if (!app.isPackaged) return undefined;
+  const resources = process.resourcesPath;
+  const backendExecutable = process.platform === "win32"
+    ? "bidevidence-backend.exe"
+    : "bidevidence-backend";
+  return {
+    backend: {
+      command: path.join(resources, "backend", backendExecutable),
+      args: [],
+      cwd: path.join(resources, "backend"),
+    },
+    frontend: {
+      command: process.execPath,
+      args: [path.join(resources, "frontend", "server.js")],
+      cwd: path.join(resources, "frontend"),
+    },
+  };
+}
+
 function renderFailurePage(paths: AppPaths, status: SupervisorStatus): string {
   const lines = [
     ...status.errors,
@@ -148,7 +175,7 @@ async function boot(): Promise<void> {
 
   const paths = ensureAppPaths(app.getPath("userData"));
   registerIpcHandlers(paths);
-  supervisor = new RuntimeSupervisor(paths);
+  supervisor = new RuntimeSupervisor(paths, packagedRuntime());
 
   app.on("before-quit", (event) => {
     if (quitting) return;

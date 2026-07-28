@@ -1,7 +1,8 @@
 {
   "name": "bidevidence-desktop",
   "private": true,
-  "version": "0.1.0",
+  "version": "0.2.0",
+  "author": "BidEvidence contributors",
   "license": "AGPL-3.0-only",
   "description": "BidEvidence local Electron host",
   "main": "dist/main.js",
@@ -9,11 +10,46 @@
     "build": "tsc -p tsconfig.json",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "start": "npm run build && electron .",
-    "dev": "npm run build && BIDEVIDENCE_DESKTOP_DEVTOOLS=1 electron ."
+    "dev": "npm run build && BIDEVIDENCE_DESKTOP_DEVTOOLS=1 electron .",
+    "dist:dir": "electron-builder --mac dir --publish never",
+    "dist:mac": "electron-builder --mac zip --publish never && bash ../scripts/build_macos_dmg.sh"
+  },
+  "build": {
+    "appId": "com.bidevidence.desktop",
+    "productName": "BidEvidence",
+    "asar": true,
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "build/backend/bidevidence-backend",
+        "to": "backend"
+      },
+      {
+        "from": "build/frontend",
+        "to": "frontend"
+      }
+    ],
+    "mac": {
+      "category": "public.app-category.business",
+      "icon": "assets/bidevidence.icns",
+      "identity": null,
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "artifactName": "${productName}-${version}-${arch}.${ext}"
   },
   "devDependencies": {
     "@types/node": "^22.10.2",
     "electron": "^33.2.1",
+    "electron-builder": "^26.0.12",
     "typescript": "^5.7.2"
   }
 }

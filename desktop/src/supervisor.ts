@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from "node:child_process";
 import { randomBytes, randomUUID } from "node:crypto";
 import { createWriteStream, existsSync, readFileSync, writeFileSync, type WriteStream } from "node:fs";
 import http from "node:http";
+import net from "node:net";
 import path from "node:path";
 
 import type { AppPaths } from "./paths";
@@ -16,6 +17,17 @@ interface ServiceConfig {
   readonly host: string;
   readonly port: number;
   readonly healthPath: string;
+}
+
+export interface BundledService {
+  readonly command: string;
+  readonly args: readonly string[];
+  readonly cwd: string;
+}
+
+export interface BundledRuntime {
+  readonly backend: BundledService;
+  readonly frontend: BundledService;
 }
 
 export interface ServiceStatus {
@@ -100,7 +112,10 @@ function parseArgs(value: string | undefined, label: string): readonly string[] 
   return parsed;
 }
 
-function getServiceConfig(name: ServiceName): ServiceConfig {
+function getServiceConfig(
+  name: ServiceName,
+  bundled?: BundledService,
+): ServiceConfig {
   const prefix = envPrefix(name);
   const defaults = SERVICE_DEFAULTS[name];
   const host = nonEmpty(process.env[`${prefix}_HOST`]) ?? "127.0.0.1";
@@ -114,13 +129,32 @@ function getServiceConfig(name: ServiceName): ServiceConfig {
   }
   return {
     name,
-    command: nonEmpty(process.env[`${prefix}_COMMAND`]),
-    args: parseArgs(nonEmpty(process.env[`${prefix}_ARGS`]), prefix),
-    cwd: nonEmpty(process.env[`${prefix}_CWD`]),
+    command: nonEmpty(process.env[`${prefix}_COMMAND`]) ?? bundled?.command,
+    args: nonEmpty(process.env[`${prefix}_ARGS`])
+      ? parseArgs(nonEmpty(process.env[`${prefix}_ARGS`]), prefix)
+      : bundled?.args ?? [],
+    cwd: nonEmpty(process.env[`${prefix}_CWD`]) ?? bundled?.cwd,
     host,
     port: portValue ? parsePort(portValue, prefix) : defaults.port,
     healthPath,
   };
+}
+
+function findAvailablePort(): Promise<number> {
+  return new Promise((resolve, reject) => {
+    const server = net.createServer();
+    server.once("error", reject);
+    server.listen(0, "127.0.0.1", () => {
+      const address = server.address();
+      if (!address || typeof address === "string") {
+        server.close();
+        reject(new Error("failed to allocate a loopback port"));
+        return;
+      }
+      const port = address.port;
+      server.close((error) => error ? reject(error) : resolve(port));
+    });
+  });
 }
 
 function hostForUrl(host: string): string {
@@ -208,16 +242,29 @@ export class RuntimeSupervisor {
   private readonly localIdentity: LocalIdentity;
   private readonly services: RunningService[] = [];
 
-  public constructor(private readonly paths: AppPaths) {
+  public constructor(
+    private readonly paths: AppPaths,
+    private readonly bundledRuntime?: BundledRuntime,
+  ) {
     this.localIdentity = loadOrCreateIdentity(paths.data);
   }
 
   public async start(): Promise<SupervisorStatus> {
-    const backend = getServiceConfig("backend");
-    const frontend = getServiceConfig("frontend");
+    let backend = getServiceConfig("backend", this.bundledRuntime?.backend);
+    let frontend = getServiceConfig("frontend", this.bundledRuntime?.frontend);
+    if (this.bundledRuntime) {
+      if (!nonEmpty(process.env.BIDEVIDENCE_DESKTOP_BACKEND_PORT)) {
+        backend = { ...backend, port: await findAvailablePort() };
+      }
+      if (!nonEmpty(process.env.BIDEVIDENCE_DESKTOP_FRONTEND_PORT)) {
+        let frontendPort = await findAvailablePort();
+        if (frontendPort === backend.port) frontendPort = await findAvailablePort();
+        frontend = { ...frontend, port: frontendPort };
+      }
+    }
     const statuses: ServiceStatus[] = [];
     for (const config of [backend, frontend]) {
-      statuses.push(await this.ensureHealthy(config));
+      statuses.push(await this.ensureHealthy(config, backend));
     }
     const ready = statuses.every((status) => status.ready);
     // Never leave a half-started stack running when part of it failed.
@@ -234,7 +281,10 @@ export class RuntimeSupervisor {
     await Promise.all(this.services.splice(0).reverse().map((service) => stopService(service)));
   }
 
-  private async ensureHealthy(config: ServiceConfig): Promise<ServiceStatus> {
+  private async ensureHealthy(
+    config: ServiceConfig,
+    backend: ServiceConfig,
+  ): Promise<ServiceStatus> {
     const healthUrl = `${originOf(config)}${config.healthPath}`;
     if (!config.command) {
       console.warn(
@@ -250,7 +300,7 @@ export class RuntimeSupervisor {
         detail: failure ?? "healthy (externally managed)",
       };
     }
-    const service = this.spawnService(config, config.command);
+    const service = this.spawnService(config, config.command, backend);
     const failure = await waitForHealthy(
       healthUrl,
       SPAWNED_HEALTH_BUDGET_MS,
@@ -265,7 +315,11 @@ export class RuntimeSupervisor {
     return { name: config.name, managed: true, ready: true, healthUrl, detail: "healthy (spawned by the desktop host)" };
   }
 
-  private spawnService(config: ServiceConfig, command: string): RunningService {
+  private spawnService(
+    config: ServiceConfig,
+    command: string,
+    backend: ServiceConfig,
+  ): RunningService {
     const logStream = createWriteStream(path.join(this.paths.logs, `${config.name}.log`), { flags: "a", mode: 0o600 });
     const child = spawn(command, [...config.args], {
       cwd: config.cwd ? path.resolve(config.cwd) : this.paths.runtime,
@@ -280,9 +334,23 @@ export class RuntimeSupervisor {
         BIDEVIDENCE_APP_DATA_DIR: this.paths.data,
         BIDEVIDENCE_LOCAL_TENANT_ID: this.localIdentity.tenantId,
         BIDEVIDENCE_LOCAL_USER_ID: this.localIdentity.userId,
-        ...(config.name === "backend" ? { BIDEVIDENCE_RUNTIME_PORT: String(config.port) } : {
-          BIDEVIDENCE_BACKEND_URL: originOf(getServiceConfig("backend")),
-        }),
+        ...(config.name === "backend"
+          ? { BIDEVIDENCE_RUNTIME_PORT: String(config.port) }
+          : {
+              BIDEVIDENCE_BACKEND_URL: originOf(backend),
+              ELECTRON_RUN_AS_NODE: "1",
+              HOSTNAME: config.host,
+              ...(this.bundledRuntime
+                ? {
+                    NODE_PATH: path.join(
+                      this.bundledRuntime.frontend.cwd,
+                      "runtime_modules",
+                    ),
+                  }
+                : {}),
+              NODE_ENV: "production",
+              PORT: String(config.port),
+            }),
       },
     });
     const service: RunningService = { name: config.name, child, logStream };

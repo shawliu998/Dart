@@ -377,6 +377,28 @@ class ModelRun(Base):
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), default=utcnow)
 
 
+class WorkspaceAISettings(UUIDAuditMixin, Base):
+    """The single active model connection for one tenant workspace."""
+
+    __tablename__ = "workspace_ai_settings"
+    __table_args__ = (
+        UniqueConstraint("tenant_id", name="uq_workspace_ai_settings_tenant"),
+    )
+    provider: Mapped[str] = mapped_column(String(40), default="mock")
+    base_url: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    model: Mapped[str | None] = mapped_column(String(150), nullable=True)
+    secret_ref: Mapped[str | None] = mapped_column(String(200), nullable=True)
+    capability_profile: Mapped[dict] = mapped_column(JSON, default=dict)
+    last_test_status: Mapped[str] = mapped_column(String(20), default="untested")
+    last_tested_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_error_code: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    last_test_fingerprint: Mapped[str | None] = mapped_column(
+        String(64), nullable=True
+    )
+
+
 class ResponseItem(UUIDAuditMixin, Base):
     """An editable, source-bound draft for one reviewed tender requirement."""
 

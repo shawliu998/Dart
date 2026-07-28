@@ -31,6 +31,8 @@
 | 最终复核 | 要求、风险、证据、响应、任务和封装的统一复核入口 | `frontend/features/review/final-review.tsx` | 保留，不新建第二个终审页 |
 | 审计 | 项目/全局记录、筛选、导出、追加式后端事件 | `frontend/features/audit/audit-center.tsx`、后端 audit service | 已有基础设施；当前阶段不主动扩张 |
 | Agent | 运行、步骤、产物、审批和失败状态 | `frontend/components/agent/`、`backend/app/services/agent_runtime.py` | 已有辅助能力；当前阶段不提升为产品中心 |
+| 模型设置 | 工作区级 Mock/DeepSeek 选择、结构化连接测试、密钥引用、持久化状态和无重启切换 | `frontend/features/settings/ai-settings.tsx`、`backend/app/services/ai_settings.py`、`backend/app/agents/provider.py` | 复用原 provider 接口和抽取链路；后续提供商必须用 capability profile 扩展，不新建平行模型网关 |
+| 桌面运行时 | Electron 壳层、内嵌 FastAPI/Next sidecar、同源代理、服务监督、本地身份、品牌图标、unsigned DMG/ZIP 和隔离烟测 | `desktop/src/`、`backend/app/desktop_entry.py`、`scripts/build_desktop_release.sh`、`scripts/smoke_macos_dmg.sh` | macOS arm64 下载运行闭环已具备；签名、公证、自动更新和其他平台单独排期 |
 
 ## 3. 投标响应编制：当前复用结论
 

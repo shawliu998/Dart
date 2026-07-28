@@ -8,9 +8,12 @@ from dataclasses import asdict, dataclass
 from time import perf_counter
 from typing import Any, Protocol, TypeVar
 from urllib.parse import urlsplit
+from uuid import UUID
 
 import httpx
 from pydantic import BaseModel
+from sqlalchemy import select
+from sqlalchemy.orm import Session
 
 from app.schemas.requirements import RequirementBatch
 
@@ -279,8 +282,11 @@ class OpenAICompatibleProvider:
         base_url: str,
         api_key: str,
         model: str,
+        provider_name: str = "openai_compatible",
         max_tokens: int = 4096,
         timeout_seconds: float = 60,
+        temperature: float | None = 0,
+        use_json_object: bool = True,
         transport: httpx.AsyncBaseTransport | None = None,
     ) -> None:
         if not 256 <= max_tokens <= 16384:
@@ -300,8 +306,11 @@ class OpenAICompatibleProvider:
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.model = model
+        self.name = provider_name
         self.max_tokens = max_tokens
         self.timeout_seconds = timeout_seconds
+        self.temperature = temperature
+        self.use_json_object = use_json_object
         self._transport = transport
         self.last_call_trace: ProviderCallTrace | None = None
 
@@ -325,19 +334,21 @@ class OpenAICompatibleProvider:
                 {"role": "system", "content": structured_system_prompt},
                 {"role": "user", "content": user_input},
             ],
-            "temperature": 0,
             "max_tokens": self.max_tokens,
-            "response_format": {"type": "json_object"},
         }
+        if self.temperature is not None:
+            payload["temperature"] = self.temperature
+        if self.use_json_object:
+            payload["response_format"] = {"type": "json_object"}
         endpoint = f"{self.base_url}/chat/completions"
         trace = ProviderCallTrace(
             request_config={
                 "endpoint": _redact_sensitive(endpoint, (self.api_key,)),
                 "model": _redact_sensitive(self.model, (self.api_key,)),
-                "temperature": 0,
+                "temperature": self.temperature,
                 "max_tokens": self.max_tokens,
                 "timeout_seconds": self.timeout_seconds,
-                "response_format": payload["response_format"],
+                "response_format": payload.get("response_format"),
                 "output_schema": output_schema.__name__,
                 "schema_sha256": _sha256_text(schema_json),
                 "system_prompt_sha256": _sha256_text(structured_system_prompt),
@@ -402,14 +413,59 @@ class OpenAICompatibleProvider:
             trace.latency_ms = round((perf_counter() - started) * 1000)
 
 
-def get_requirement_provider(provider_name: str | None = None) -> LLMProvider:
+def get_requirement_provider(
+    provider_name: str | None = None,
+    *,
+    db: Session | None = None,
+    tenant_id: UUID | None = None,
+) -> LLMProvider:
     """Return an explicitly approved provider for requirement extraction.
 
     Live providers deliberately have no implicit implementation or credential lookup here.
     A future adapter must be registered after explicit credential approval, schema validation,
     source-evidence handling, and an auditable policy review.
     """
-    selected = (provider_name or os.getenv("BIDEVIDENCE_LLM_PROVIDER") or "mock").strip().lower()
+    if db is not None and tenant_id is not None:
+        from app.core.secrets import get_secret_store
+        from app.models.entities import WorkspaceAISettings
+
+        workspace_settings = db.scalar(
+            select(WorkspaceAISettings).where(
+                WorkspaceAISettings.tenant_id == tenant_id
+            )
+        )
+        if workspace_settings is not None:
+            if workspace_settings.provider == "mock":
+                return MockLLMProvider()
+            if workspace_settings.provider == "deepseek":
+                secret = (
+                    get_secret_store().get(workspace_settings.secret_ref)
+                    if workspace_settings.secret_ref
+                    else None
+                )
+                if not secret:
+                    raise ProviderUnavailableError(
+                        "DeepSeek is selected but its API key is unavailable"
+                    )
+                profile = workspace_settings.capability_profile or {}
+                try:
+                    return OpenAICompatibleProvider(
+                        base_url=workspace_settings.base_url or "",
+                        api_key=secret,
+                        model=workspace_settings.model or "",
+                        provider_name="deepseek",
+                        temperature=profile.get("temperature", 0),
+                        use_json_object=bool(profile.get("json_object", True)),
+                    )
+                except ValueError as exc:
+                    raise ProviderUnavailableError(str(exc)) from exc
+            raise ProviderUnavailableError(
+                f"workspace provider '{workspace_settings.provider}' is not supported"
+            )
+
+    selected = (
+        provider_name or os.getenv("BIDEVIDENCE_LLM_PROVIDER") or "mock"
+    ).strip().lower()
     if selected == "mock":
         return MockLLMProvider()
     if selected == "openai_compatible":
