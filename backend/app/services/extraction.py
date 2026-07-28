@@ -89,7 +89,10 @@ async def run_extraction_job(job_id: UUID, principal: Principal) -> None:
         )
         job.status, job.progress, job.current_step = "running", 5, "classifying_pages"
         db.commit()
-        provider = get_requirement_provider()
+        provider = get_requirement_provider(
+            db=db,
+            tenant_id=principal.tenant_id,
+        )
         added = 0
         for index, page in enumerate(pages, start=1):
             batch = await provider.structured_generate(

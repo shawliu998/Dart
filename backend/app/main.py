@@ -17,6 +17,7 @@ from app.api.routes import router
 from app.api.domain_routes import router as domain_router
 from app.api.auth_routes import router as auth_router
 from app.api.agent_routes import router as agent_router
+from app.api.settings_routes import router as settings_router
 from app.audit.context import bind_http_request_id, reset_http_request_id
 from app.auth.dependencies import Principal, get_principal
 from app.core.config import get_settings
@@ -158,6 +159,7 @@ app.include_router(router)
 app.include_router(domain_router)
 app.include_router(auth_router)
 app.include_router(agent_router)
+app.include_router(settings_router)
 
 
 @app.get("/health")

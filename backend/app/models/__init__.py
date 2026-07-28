@@ -28,4 +28,5 @@ from app.models.entities import (  # noqa: F401
     TenderProject,
     SubmissionPackage,
     User,
+    WorkspaceAISettings,
 )

@@ -112,7 +112,10 @@ async def run_document_reanalysis_job(
             document.mime_type,
             get_ocr_adapter(settings.ocr_mode, settings.ocr_languages),
         )
-        provider = get_requirement_provider()
+        provider = get_requirement_provider(
+            db=db,
+            tenant_id=principal.tenant_id,
+        )
         batches: list[tuple[ParsedPage, RequirementBatch]] = []
         for index, page in enumerate(pages, start=1):
             batch = await provider.structured_generate(

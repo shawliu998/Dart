@@ -153,7 +153,11 @@ def test_document_reanalysis_failure_keeps_existing_pages_and_requirements(clien
         async def structured_generate(self, **_kwargs):
             return RequirementBatch(results=[])
 
-    monkeypatch.setattr(reanalysis, "get_requirement_provider", lambda: EmptyProvider())
+    monkeypatch.setattr(
+        reanalysis,
+        "get_requirement_provider",
+        lambda **_: EmptyProvider(),
+    )
     asyncio.run(reanalysis.run_document_reanalysis_job(job.id, principal))
 
     with SessionLocal() as db:
