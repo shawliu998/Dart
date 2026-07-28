@@ -1,57 +1,34 @@
-# BidEvidence 发布基线
+# BidEvidence v0.2.0 发布记录
 
-## 当前基线
+## 版本
 
-- 发布版本：`v0.1.2`
-- 基线类型：DeepSeek AGI 求职作品与可运行源码
+- Git tag：`v0.2.0`
 - 默认分支：`main`
-- 精确源码：以 Git tag `v0.1.2` 指向的提交为准
-- 上一可回退基线：`v0.1.1`
-- 发布资产：`BidEvidence-DeepSeek-AGI-Portfolio-Final-R10.zip`
-- 资产摘要：以 GitHub Release 中记录的 SHA-256 digest 为准
+- 上一版本：`v0.1.2`
+- 平台：macOS Apple Silicon
+- 发布资产：`BidEvidence-0.2.0-arm64.dmg`、`BidEvidence-0.2.0-arm64.zip`、`SHA256SUMS.txt`
 
-本文件只描述已经验收并允许进入发布的范围。未列入的后续规划、临时截图、数据库、上传物、构建缓存和本地环境不属于发布基线。
+## 产品内容
 
-## 本批纳入范围
+- 从文件接收到最终复核的七步投标工作流。
+- 要求、页码、原文、企业证据、响应和人工复核状态之间的可追溯关联。
+- 默认英文界面、中英切换和中文招标业务原文保护。
+- 响应版本历史、任意版本比较和人工审批记录。
+- 工作区模型设置、内置 Mock provider，以及可测试并即时启用的 DeepSeek 连接。
+- 内置 FastAPI、Next.js 和 Electron 运行时的桌面应用。
 
-### 产品展示
+## 验证结果
 
-- README 和 GitHub About 以要求、证据、响应编制与人工复核为主叙事。
-- Agent loop 只作为受限运行机制与架构证据，不作为介绍页主口号或独立产品中心。
-- 默认英文界面、中英切换和中文招标业务原文保护保持不变。
+- `make verify` 完整通过。
+- 后端 130 项测试、前端 115 项测试全部通过。
+- Playwright live API 路径 1 项通过；全量 7 项通过、1 项按设计跳过。
+- Next.js production build 通过。
+- DMG 隔离安装、启动、健康检查、项目创建、关闭和同数据重启烟测通过。
+- GitHub Actions 的 backend-and-fixtures 与 frontend 检查通过。
 
-### 响应版本历史
+## 安装
 
-- `ResponseItem.revision_number` 作为用户可见内容版本号。
-- 不可变 `ResponseRevision` 保存 baseline、generated、edited 和 approved 快照。
-- Alembic `0012_response_revisions` 为旧响应回填真实基线。
-- 编辑与批准在原事务中追加快照；相同正文保存不生成伪版本。
-- 原响应工作台内提供按需加载的版本历史、From / To 选择和本地差异比较。
-- 审批事件未改变正文时显示明确中性说明。
-- 不包含恢复、回滚、评论、分派、平行响应 API、第二工作台或 Agent UI。
+打开 DMG，将 BidEvidence 拖入 Applications。首次启动可直接使用内置 Mock
+provider，也可以在 **Settings → Model connection** 中配置 DeepSeek。
 
-## 验收证据
-
-- ChatGPT Pro 复审：`RESPONSE_VERSION_ACCEPT`，P2 修正后为 `P2_RESOLVED_ACCEPT`。
-- 本地 `make lint`：通过。
-- 本地 `make test`：后端 126 项、前端 113 项全部通过。
-- Next.js production build：通过。
-- GitHub CI：backend-and-fixtures 与 frontend 全部通过。
-- 迁移回填：模拟旧库中的 ResponseItem 升级后得到且只得到一个一致 baseline。
-- 真实交互：`generated v1 → edited v2 → edited v3 → approved v4`，刷新后历史仍存在。
-- 视觉证据：默认审批比较与真实文本差异两张截图已进入发布资产。
-
-详细契约与执行记录见 `docs/RESPONSE_VERSION_HISTORY_EXECUTION_BRIEF.md`。
-
-## 发布门禁
-
-发布 `v0.1.2` 前必须同时满足：
-
-1. 工作树只包含本批发布文档变更。
-2. `make lint`、`make test` 和 production build 通过。
-3. PR 合入 `main` 且 GitHub CI 全绿。
-4. Git tag `v0.1.2` 指向合入后的 `main` 提交。
-5. R10 ZIP 由该 tag 对应源码重建，ZIP 完整性校验通过。
-6. GitHub Release 附带 R10 ZIP，并在发布说明中记录 SHA-256。
-
-满足以上条件后，本批状态为 `RELEASE_BASELINE_ACCEPT`。
+GitHub Release 同时提供 ZIP 和 `SHA256SUMS.txt`，用于便携分发与文件完整性校验。

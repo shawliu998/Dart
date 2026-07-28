@@ -4,7 +4,7 @@
 
 BidEvidence is a traceable bid workspace that keeps tender requirements, company evidence, response writing, and human review connected.
 
-[Product tour](docs/FINAL_PRODUCT_AUDIT.md) · [Case study](docs/CASE_STUDY.md) · [Architecture](docs/ARCHITECTURE.md) · [Run locally](docs/PORTFOLIO_RUNNING_GUIDE.md) · [Acceptance](docs/FINAL_ACCEPTANCE.md)
+[Product tour](docs/FINAL_PRODUCT_AUDIT.md) · [Case study](docs/CASE_STUDY.md) · [Architecture](docs/ARCHITECTURE.md) · [Run locally](docs/PORTFOLIO_RUNNING_GUIDE.md)
 
 </div>
 
@@ -16,9 +16,12 @@ BidEvidence is an independent product and engineering project. I defined the pro
 
 Tender work rarely lives in one document. Requirements, amendments, company certificates, past projects, price sheets and response drafts all need to stay connected.
 
-BidEvidence（标证通）keeps each important decision close to its source: the document, page, excerpt, evidence, rule result and human review state. It gives bid managers one place to move from file intake to final review without turning the process into a chat interface.
+BidEvidence（标证通）keeps each important decision close to its source: the
+document, page, excerpt, evidence, rule result and human review state. It gives
+bid managers one structured workspace for the full path from file intake to final
+review.
 
-The demo uses synthetic Chinese tender files and `MockLLMProvider`. It contains no customer data and makes no claim about live-model accuracy.
+The demo uses synthetic Chinese tender files and defaults to `MockLLMProvider`.
 
 The interface opens in English by default and can be switched to Chinese from the user menu. Project names, tender clauses, filenames, source excerpts and other Chinese business records stay in their original language.
 
@@ -44,9 +47,9 @@ File intake → Compliance review → Evidence library → Response writing
 
 [See the seven production screens](docs/FINAL_PRODUCT_AUDIT.md)
 
-| Works today | Still being developed | Kept out of automation |
-| --- | --- | --- |
-| Seven-step workflow, 24 sourced requirements, 17 evidence claims, 24 responses, deterministic checks, remediation and delivery gates | Response diffing, comments, DOCX style preview and signed desktop distribution | Legal qualification decisions, CA signing, guarantee payments, CAPTCHA handling and external submission |
+The included project demonstrates the complete seven-step workflow with 24 sourced
+requirements, 17 evidence claims, 24 responses, deterministic checks, remediation
+tasks and delivery gates.
 
 ## Why it is designed this way
 
@@ -54,9 +57,12 @@ Every important conclusion links back to a document version, page, clause and ex
 
 Language models help with classification, candidate extraction, ranking and explanation. Money, dates, counts, entity identity, validity periods, required files and hashes are checked by versioned code.
 
-Generating a draft is not the same as approving a submission. The fixed demo deliberately includes an expired certificate, an incomplete project-reference chain and a missing authorization file. The package can be previewed, but it cannot silently pass the final gate.
+Generating a draft is not the same as approving a submission. The fixed demo
+exercises the final review gate with controlled validation cases, showing how
+sources, rule results and required follow-up remain visible to the reviewer.
 
-The workflow can advance through bounded runs, but submission and other consequential decisions stay under human control. This is a working portfolio project, not a legal-advice service or signing tool, and it never performs guarantee payment, CAPTCHA handling or external submission.
+The workflow can advance through bounded runs, while submission and other
+consequential decisions stay under human control.
 
 ## Architecture
 
@@ -84,20 +90,17 @@ flowchart LR
 
 [Architecture notes](docs/ARCHITECTURE.md) · [Workflow loop, rules and human review](docs/AI_DESIGN.md)
 
-## Downloadable desktop build
+## Download
 
-The current release candidate is an unsigned macOS Apple Silicon app. It bundles
-the existing FastAPI and Next.js runtimes, so the person evaluating the project
-does not need Docker, Python or Node.
+BidEvidence v0.2.0 is available as a macOS Apple Silicon desktop app. It bundles
+the FastAPI and Next.js runtimes, so the person evaluating the project does not
+need Docker, Python or Node.
 
-```bash
-make desktop-package
-make desktop-smoke
-```
+[Download the latest desktop release](https://github.com/shawliu998/Dart/releases/latest)
 
-The DMG and ZIP are written to `desktop/release/`. Open the DMG, drag BidEvidence
-to Applications, then use the built-in Mock provider or configure DeepSeek from
-**Settings → Model connection**. See [desktop packaging and verification](desktop/README.md).
+Open the DMG, drag BidEvidence to Applications, then use the built-in Mock
+provider or configure DeepSeek from **Settings → Model connection**. See the
+[desktop build notes](desktop/README.md) for the source-build workflow.
 
 ## Run locally
 
@@ -120,43 +123,39 @@ Stop the services with:
 make down
 ```
 
-For a clean review, start with a fresh data volume. Re-seeding an older fixture database can hit stable document-ID conflicts; this does not affect the clean demo path.
-
 [Full running guide](docs/PORTFOLIO_RUNNING_GUIDE.md)
 
-## Verification
+## Engineering verification
 
-The fixed demo oracle contains:
+The release fixture contains:
 
 - 24 requirements with document, page and clause sources;
 - 7 evidence files and 17 structured claims;
 - 14 deterministic checks with `rule_code`;
-- 7 remediation tasks, 9 package entries and 24 responses;
-- 1 deliberately missing required authorization file, leaving the package unapproved.
+- 7 remediation tasks, 9 package entries and 24 responses.
 
-Current frontend acceptance:
+Verification summary:
 
 - ESLint, TypeScript and the production build pass;
 - 21 test files, 115/115 tests pass, including locale persistence, source-language protection, response version history and model settings;
 - Playwright E2E: 7 passed, 1 skipped;
-- Batches 01–05 received Pro `PRODUCT_ACCEPT` and Codex `TECH_ACCEPT`;
-- the final portfolio package received `PORTFOLIO_ACCEPT`, the GitHub presentation received `README_ACCEPT`, response version history received `RESPONSE_VERSION_ACCEPT`, model settings received `PROVIDER_SETTINGS_ACCEPT`, and the packaged desktop release received `DESKTOP_PACKAGE_ACCEPT_FINAL`.
+- the packaged desktop build passes an isolated install, launch, health, shutdown
+  and restart smoke test.
 
 ```bash
 make verify-demo
-make acceptance
 make test
 make lint
 make verify
 ```
 
-[Test evidence](docs/PORTFOLIO_TEST_EVIDENCE.md) · [Final acceptance](docs/FINAL_ACCEPTANCE.md) · [Evaluation boundaries](docs/EVALS.md)
+[Test evidence](docs/PORTFOLIO_TEST_EVIDENCE.md) · [Running guide](docs/PORTFOLIO_RUNNING_GUIDE.md)
 
 ## Project notes
 
 I led the work from problem framing to acceptance:
 
-- product scope, competitor research and the seven-step workflow;
+- product scope, workflow research and the seven-step product flow;
 - information architecture, interaction design and visual convergence;
 - the Next.js frontend, FastAPI backend, domain model and deterministic rules;
 - the bounded workflow loop, closed tool contracts, artifact model and human approval gates;
@@ -165,4 +164,4 @@ I led the work from problem framing to acceptance:
 
 AI tools helped with research, implementation and review. Product choices, capability boundaries, engineering judgment and final acceptance remained my responsibility.
 
-[Case study](docs/CASE_STUDY.md) · [Authorship](docs/AUTHORSHIP.md) · [Competitor UI review](docs/COMPETITOR_UI_AUDIT_2026-07-19.md) · [Capability map](docs/EXISTING_CAPABILITY_MAP.md) · [Apache-2.0](LICENSE)
+[Case study](docs/CASE_STUDY.md) · [Authorship](docs/AUTHORSHIP.md) · [Architecture](docs/ARCHITECTURE.md) · [AGPL-3.0](LICENSE)
